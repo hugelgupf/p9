@@ -1,5 +1,6 @@
 ## p9
 
+[![CircleCI](https://circleci.com/gh/hugelgupf/p9.svg?style=svg)](https://circleci.com/gh/hugelgupf/p9)
 [![Go Report Card](https://goreportcard.com/badge/github.com/hugelgupf/p9)](https://goreportcard.com/report/github.com/hugelgupf/p9)
 [![GoDoc](https://godoc.org/github.com/hugelgupf/p9?status.svg)](https://godoc.org/github.com/hugelgupf/p9)
 
