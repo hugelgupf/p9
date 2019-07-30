@@ -15,11 +15,8 @@
 package p9
 
 import (
-	"io/ioutil"
-	"os"
 	"testing"
 
-	"github.com/hugelgupf/p9/fd"
 	"github.com/hugelgupf/p9/unet"
 )
 
@@ -101,47 +98,6 @@ func TestRecvInvalidType(t *testing.T) {
 	_, _, err = recv(server, maximumLength, msgRegistry.get)
 	if _, ok := err.(*ErrInvalidMsgType); !ok {
 		t.Fatalf("recv got err %v expected ErrInvalidMsgType", err)
-	}
-}
-
-func TestSendRecvWithFile(t *testing.T) {
-	server, client, err := unet.SocketPair(false)
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
-	defer server.Close()
-	defer client.Close()
-
-	// Create a tempfile.
-	osf, err := ioutil.TempFile("", "p9")
-	if err != nil {
-		t.Fatalf("tempfile got err %v expected nil", err)
-	}
-	os.Remove(osf.Name())
-	f, err := fd.NewFromFile(osf)
-	osf.Close()
-	if err != nil {
-		t.Fatalf("unable to create file: %v", err)
-	}
-
-	if err := send(client, Tag(1), &Rlopen{File: f}); err != nil {
-		t.Fatalf("send got err %v expected nil", err)
-	}
-
-	// Enable withFile.
-	tag, m, err := recv(server, maximumLength, msgRegistry.get)
-	if err != nil {
-		t.Fatalf("recv got err %v expected nil", err)
-	}
-	if tag != Tag(1) {
-		t.Fatalf("got tag %v expected 1", tag)
-	}
-	rlopen, ok := m.(*Rlopen)
-	if !ok {
-		t.Fatalf("got m %v expected *Rlopen", m)
-	}
-	if rlopen.File == nil {
-		t.Fatalf("got nil file expected non-nil")
 	}
 }
 

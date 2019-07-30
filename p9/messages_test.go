@@ -118,10 +118,6 @@ func TestEncodeDecode(t *testing.T) {
 			QID:    QID{Type: 1},
 			IoUnit: 2,
 		},
-		&Tlconnect{
-			FID: 1,
-		},
-		&Rlconnect{},
 		&Tlcreate{
 			FID:         1,
 			Name:        "a",
@@ -376,11 +372,6 @@ func TestEncodeDecode(t *testing.T) {
 		// To be fair, we need to add any payloads (directly).
 		if pl, ok := enc.(payloader); ok {
 			enc2.(payloader).SetPayload(pl.Payload())
-		}
-
-		// And any file payloads (directly).
-		if fl, ok := enc.(filer); ok {
-			enc2.(filer).SetFilePayload(fl.FilePayload())
 		}
 
 		// Mark sure it was okay.

@@ -20,7 +20,6 @@ import (
 	"path"
 	"syscall"
 
-	"github.com/hugelgupf/p9/fd"
 	"github.com/hugelgupf/p9/p9"
 )
 
@@ -169,21 +168,20 @@ func (l *Local) Close() error {
 }
 
 // Open implements p9.File.Open.
-func (l *Local) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
+func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	qid, _, err := l.info()
 	if err != nil {
-		return nil, qid, 0, err
+		return qid, 0, err
 	}
 
 	// Do the actual open.
 	f, err := os.OpenFile(l.path, int(mode), 0)
 	if err != nil {
-		return nil, qid, 0, err
+		return qid, 0, err
 	}
 	l.file = f
 
-	// Note: we don't send the Local file for this server.
-	return nil, qid, 4096, nil
+	return qid, 4096, nil
 }
 
 // Read implements p9.File.Read.
@@ -197,20 +195,20 @@ func (l *Local) WriteAt(p []byte, offset uint64) (int, error) {
 }
 
 // Create implements p9.File.Create.
-func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
+func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
 	f, err := os.OpenFile(l.path, int(mode)|syscall.O_CREAT|syscall.O_EXCL, os.FileMode(permissions))
 	if err != nil {
-		return nil, nil, p9.QID{}, 0, err
+		return nil, p9.QID{}, 0, err
 	}
 
 	l2 := &Local{path: path.Join(l.path, name), file: f}
 	qid, _, err := l2.info()
 	if err != nil {
 		l2.Close()
-		return nil, nil, p9.QID{}, 0, err
+		return nil, p9.QID{}, 0, err
 	}
 
-	return nil, l2, qid, 4096, nil
+	return l2, qid, 4096, nil
 }
 
 // Mkdir implements p9.File.Mkdir.
@@ -306,11 +304,6 @@ func (l *Local) Readlink() (string, error) {
 // Flush implements p9.File.Flush.
 func (l *Local) Flush() error {
 	return nil
-}
-
-// Connect implements p9.File.Connect.
-func (l *Local) Connect(p9.ConnectFlags) (*fd.FD, error) {
-	return nil, syscall.ECONNREFUSED
 }
 
 // Renamed implements p9.File.Renamed.

@@ -16,8 +16,6 @@ package p9
 
 import (
 	"syscall"
-
-	"github.com/hugelgupf/p9/fd"
 )
 
 // Attacher is provided by the server.
@@ -109,14 +107,13 @@ type File interface {
 	// On the client, Open should be called only once. The fd return is
 	// optional, and may be nil.
 	//
-	// On the server, Open has a read concurrency guarantee. If an *fd.FD
-	// is provided, ownership now belongs to the caller. Open is guaranteed
-	// to be called only once.
+	// On the server, Open has a read concurrency guarantee.  Open is
+	// guaranteed to be called only once.
 	//
 	// N.B. The server must resolve any lazy paths when open is called.
 	// After this point, read and write may be called on files with no
 	// deletion check, so resolving in the data path is not viable.
-	Open(mode OpenFlags) (*fd.FD, QID, uint32, error)
+	Open(mode OpenFlags) (QID, uint32, error)
 
 	// Read reads from this file. Open must be called first.
 	//
@@ -147,10 +144,8 @@ type File interface {
 	// the server. These semantics are very subtle and can easily lead to
 	// bugs, but are a consequence of the 9P create operation.
 	//
-	// See p9.File.Open for a description of *fd.FD.
-	//
 	// On the server, Create has a write concurrency guarantee.
-	Create(name string, flags OpenFlags, permissions FileMode, uid UID, gid GID) (*fd.FD, File, QID, uint32, error)
+	Create(name string, flags OpenFlags, permissions FileMode, uid UID, gid GID) (File, QID, uint32, error)
 
 	// Mkdir creates a subdirectory.
 	//
@@ -219,20 +214,6 @@ type File interface {
 	//
 	// On the server, Flush has a read concurrency guarantee.
 	Flush() error
-
-	// Connect establishes a new host-socket backed connection with a
-	// socket. A File does not need to be opened before it can be connected
-	// and it can be connected to multiple times resulting in a unique
-	// *fd.FD each time. In addition, the lifetime of the *fd.FD is
-	// independent from the lifetime of the p9.File and must be managed by
-	// the caller.
-	//
-	// The returned FD must be non-blocking.
-	//
-	// Flags indicates the requested type of socket.
-	//
-	// On the server, Connect has a read concurrency guarantee.
-	Connect(flags ConnectFlags) (*fd.FD, error)
 
 	// Renamed is called when this node is renamed.
 	//
