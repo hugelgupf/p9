@@ -105,13 +105,13 @@ func TestEncodeDecode(t *testing.T) {
 			Error: 1,
 		},
 		&tstatfs{
-			FID: 1,
+			fid: 1,
 		},
 		&rstatfs{
 			FSStat: FSStat{Type: 1},
 		},
 		&tlopen{
-			FID:   1,
+			fid:   1,
 			Flags: WriteOnly,
 		},
 		&rlopen{
@@ -119,7 +119,7 @@ func TestEncodeDecode(t *testing.T) {
 			IoUnit: 2,
 		},
 		&tlcreate{
-			FID:         1,
+			fid:         1,
 			Name:        "a",
 			OpenFlags:   2,
 			Permissions: 3,
@@ -149,19 +149,19 @@ func TestEncodeDecode(t *testing.T) {
 			QID: QID{Type: 1},
 		},
 		&trename{
-			FID:       1,
+			fid:       1,
 			Directory: 2,
 			Name:      "a",
 		},
 		&rrename{},
 		&treadlink{
-			FID: 1,
+			fid: 1,
 		},
 		&rreadlink{
 			Target: "a",
 		},
 		&tgetattr{
-			FID:      1,
+			fid:      1,
 			AttrMask: AttrMask{Mode: true},
 		},
 		&rgetattr{
@@ -170,21 +170,21 @@ func TestEncodeDecode(t *testing.T) {
 			Attr:  Attr{Mode: Write},
 		},
 		&tsetattr{
-			FID:     1,
+			fid:     1,
 			Valid:   SetAttrMask{Permissions: true},
 			SetAttr: SetAttr{Permissions: Write},
 		},
 		&rsetattr{},
 		&txattrwalk{
-			FID:    1,
-			NewFID: 2,
+			fid:    1,
+			newFID: 2,
 			Name:   "a",
 		},
 		&rxattrwalk{
 			Size: 1,
 		},
 		&txattrcreate{
-			FID:      1,
+			fid:      1,
 			Name:     "a",
 			AttrSize: 2,
 			Flags:    3,
@@ -201,7 +201,7 @@ func TestEncodeDecode(t *testing.T) {
 			Entries: []Dirent{{QID: QID{Type: 2}}},
 		},
 		&tfsync{
-			FID: 1,
+			fid: 1,
 		},
 		&rfsync{},
 		&tlink{
@@ -241,7 +241,7 @@ func TestEncodeDecode(t *testing.T) {
 			Version: "a",
 		},
 		&tauth{
-			AuthenticationFID: 1,
+			Authenticationfid: 1,
 			UserName:          "a",
 			AttachName:        "b",
 			UID:               2,
@@ -250,8 +250,8 @@ func TestEncodeDecode(t *testing.T) {
 			QID: QID{Type: 1},
 		},
 		&tattach{
-			FID:  1,
-			Auth: tauth{AuthenticationFID: 2},
+			fid:  1,
+			Auth: tauth{Authenticationfid: 2},
 		},
 		&rattach{
 			QID: QID{Type: 1},
@@ -261,15 +261,15 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		&rflush{},
 		&twalk{
-			FID:    1,
-			NewFID: 2,
+			fid:    1,
+			newFID: 2,
 			Names:  []string{"a"},
 		},
 		&rwalk{
 			QIDs: []QID{{Type: 1}},
 		},
 		&tread{
-			FID:    1,
+			fid:    1,
 			Offset: 2,
 			Count:  3,
 		},
@@ -277,7 +277,7 @@ func TestEncodeDecode(t *testing.T) {
 			Data: []byte{'a'},
 		},
 		&twrite{
-			FID:    1,
+			fid:    1,
 			Offset: 2,
 			Data:   []byte{'a'},
 		},
@@ -285,20 +285,20 @@ func TestEncodeDecode(t *testing.T) {
 			Count: 1,
 		},
 		&tclunk{
-			FID: 1,
+			fid: 1,
 		},
 		&rclunk{},
 		&tremove{
-			FID: 1,
+			fid: 1,
 		},
 		&rremove{},
 		&tflushf{
-			FID: 1,
+			fid: 1,
 		},
 		&rflushf{},
 		&twalkgetattr{
-			FID:    1,
-			NewFID: 2,
+			fid:    1,
+			newFID: 2,
 			Names:  []string{"a"},
 		},
 		&rwalkgetattr{
@@ -308,7 +308,7 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		&tucreate{
 			tlcreate: tlcreate{
-				FID:         1,
+				fid:         1,
 				Name:        "a",
 				OpenFlags:   2,
 				Permissions: 3,

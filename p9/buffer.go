@@ -124,13 +124,13 @@ func (b *buffer) ReadQIDType() QIDType {
 }
 
 // ReadTag reads a Tag value.
-func (b *buffer) ReadTag() Tag {
-	return Tag(b.Read16())
+func (b *buffer) ReadTag() tag {
+	return tag(b.Read16())
 }
 
 // ReadFID reads a FID value.
-func (b *buffer) ReadFID() FID {
-	return FID(b.Read32())
+func (b *buffer) ReadFID() fid {
+	return fid(b.Read32())
 }
 
 // ReadUID reads a UID value.
@@ -205,12 +205,12 @@ func (b *buffer) WriteQIDType(qidType QIDType) {
 }
 
 // WriteTag writes a Tag value.
-func (b *buffer) WriteTag(tag Tag) {
+func (b *buffer) WriteTag(tag tag) {
 	b.Write16(uint16(tag))
 }
 
 // WriteFID writes a FID value.
-func (b *buffer) WriteFID(fid FID) {
+func (b *buffer) WriteFID(fid fid) {
 	b.Write32(uint32(fid))
 }
 

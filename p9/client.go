@@ -77,7 +77,7 @@ type Client struct {
 	fidPool pool
 
 	// pending is the set of pending messages.
-	pending   map[Tag]*response
+	pending   map[tag]*response
 	pendingMu sync.Mutex
 
 	// sendMu is the lock for sending a request.
@@ -124,9 +124,9 @@ func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, er
 	}
 	c := &Client{
 		socket:      socket,
-		tagPool:     pool{start: 1, limit: uint64(NoTag)},
-		fidPool:     pool{start: 1, limit: uint64(NoFID)},
-		pending:     make(map[Tag]*response),
+		tagPool:     pool{start: 1, limit: uint64(noTag)},
+		fidPool:     pool{start: 1, limit: uint64(noFID)},
+		pending:     make(map[tag]*response),
 		recvr:       make(chan bool, 1),
 		messageSize: messageSize,
 		payloadSize: payloadSize,
@@ -172,26 +172,26 @@ func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, er
 // This should only be called with the token from recvr. Note that the received
 // tag will automatically be cleared from pending.
 func (c *Client) handleOne() {
-	tag, r, err := recv(c.socket, c.messageSize, func(tag Tag, t msgType) (message, error) {
+	t, r, err := recv(c.socket, c.messageSize, func(t tag, mt msgType) (message, error) {
 		c.pendingMu.Lock()
-		resp := c.pending[tag]
+		resp := c.pending[t]
 		c.pendingMu.Unlock()
 
 		// Not expecting this message?
 		if resp == nil {
-			log.Printf("client received unexpected tag %v, ignoring", tag)
+			log.Printf("client received unexpected tag %v, ignoring", t)
 			return nil, ErrUnexpectedTag
 		}
 
 		// Is it an error? We specifically allow this to
 		// go through, and then we deserialize below.
-		if t == msgRlerror {
+		if mt == msgRlerror {
 			return &rlerror{}, nil
 		}
 
 		// Does it match expectations?
-		if t != resp.r.typ() {
-			return nil, &ErrBadResponse{Got: t, Want: resp.r.typ()}
+		if mt != resp.r.typ() {
+			return nil, &ErrBadResponse{Got: mt, Want: resp.r.typ()}
 		}
 
 		// Return the response.
@@ -206,7 +206,7 @@ func (c *Client) handleOne() {
 		for _, resp := range c.pending {
 			resp.done <- err
 		}
-		c.pending = make(map[Tag]*response)
+		c.pending = make(map[tag]*response)
 		c.pendingMu.Unlock()
 	} else {
 		// Process the tag.
@@ -214,8 +214,8 @@ func (c *Client) handleOne() {
 		// We know that is is contained in the map because our lookup function
 		// above must have succeeded (found the tag) to return nil err.
 		c.pendingMu.Lock()
-		resp := c.pending[tag]
-		delete(c.pending, tag)
+		resp := c.pending[t]
+		delete(c.pending, t)
 		c.pendingMu.Unlock()
 		resp.r = r
 		resp.done <- err
@@ -249,12 +249,12 @@ func (c *Client) waitAndRecv(done chan error) error {
 // sendRecv performs a roundtrip message exchange.
 //
 // This is called by internal functions.
-func (c *Client) sendRecv(t message, r message) error {
-	tag, ok := c.tagPool.Get()
+func (c *Client) sendRecv(tm message, rm message) error {
+	t, ok := c.tagPool.Get()
 	if !ok {
 		return ErrOutOfTags
 	}
-	defer c.tagPool.Put(tag)
+	defer c.tagPool.Put(t)
 
 	// Indicate we're expecting a response.
 	//
@@ -262,14 +262,14 @@ func (c *Client) sendRecv(t message, r message) error {
 	// automatically (see handleOne for details).
 	resp := responsePool.Get().(*response)
 	defer responsePool.Put(resp)
-	resp.r = r
+	resp.r = rm
 	c.pendingMu.Lock()
-	c.pending[Tag(tag)] = resp
+	c.pending[tag(t)] = resp
 	c.pendingMu.Unlock()
 
 	// Send the request over the wire.
 	c.sendMu.Lock()
-	err := send(c.socket, Tag(tag), t)
+	err := send(c.socket, tag(t), tm)
 	c.sendMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("send: %v", err)

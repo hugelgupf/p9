@@ -34,16 +34,16 @@ func TestSendRecv(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, Tag(1), &tlopen{}); err != nil {
+	if err := send(client, tag(1), &tlopen{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	tag, m, err := recv(server, maximumLength, msgRegistry.get)
+	tagg, m, err := recv(server, maximumLength, msgRegistry.get)
 	if err != nil {
 		t.Fatalf("recv got err %v expected nil", err)
 	}
-	if tag != Tag(1) {
-		t.Fatalf("got tag %v expected 1", tag)
+	if tagg != tag(1) {
+		t.Fatalf("got tag %v expected 1", tagg)
 	}
 	if _, ok := m.(*tlopen); !ok {
 		t.Fatalf("got message %v expected *Tlopen", m)
@@ -66,7 +66,7 @@ func TestRecvOverrun(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, Tag(1), &badDecode{}); err != nil {
+	if err := send(client, tag(1), &badDecode{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
@@ -91,7 +91,7 @@ func TestRecvInvalidType(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, Tag(1), &unregistered{}); err != nil {
+	if err := send(client, tag(1), &unregistered{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
@@ -126,7 +126,7 @@ func DISABLEDTestSendClosed(t *testing.T) {
 	server.Close()
 	defer client.Close()
 
-	err = send(client, Tag(1), &tlopen{})
+	err = send(client, tag(1), &tlopen{})
 	if err == nil {
 		t.Fatalf("send got err nil expected non-nil")
 	}
@@ -147,32 +147,32 @@ func BenchmarkSendRecv(b *testing.B) {
 	// no additional marshaling overhead.
 	go func() {
 		for i := 0; i < b.N; i++ {
-			tag, m, err := recv(server, maximumLength, msgRegistry.get)
+			t, m, err := recv(server, maximumLength, msgRegistry.get)
 			if err != nil {
 				b.Fatalf("recv got err %v expected nil", err)
 			}
-			if tag != Tag(1) {
-				b.Fatalf("got tag %v expected 1", tag)
+			if t != tag(1) {
+				b.Fatalf("got tag %v expected 1", t)
 			}
 			if _, ok := m.(*rflush); !ok {
 				b.Fatalf("got message %T expected *Rflush", m)
 			}
-			if err := send(server, Tag(2), &rflush{}); err != nil {
+			if err := send(server, tag(2), &rflush{}); err != nil {
 				b.Fatalf("send got err %v expected nil", err)
 			}
 		}
 	}()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := send(client, Tag(1), &rflush{}); err != nil {
+		if err := send(client, tag(1), &rflush{}); err != nil {
 			b.Fatalf("send got err %v expected nil", err)
 		}
-		tag, m, err := recv(client, maximumLength, msgRegistry.get)
+		t, m, err := recv(client, maximumLength, msgRegistry.get)
 		if err != nil {
 			b.Fatalf("recv got err %v expected nil", err)
 		}
-		if tag != Tag(2) {
-			b.Fatalf("got tag %v expected 2", tag)
+		if t != tag(2) {
+			b.Fatalf("got tag %v expected 2", t)
 		}
 		if _, ok := m.(*rflush); !ok {
 			b.Fatalf("got message %v expected *Rflush", m)

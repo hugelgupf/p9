@@ -27,22 +27,22 @@ import (
 //
 // Note that authentication is not currently supported.
 func (c *Client) Attach(name string) (File, error) {
-	fid, ok := c.fidPool.Get()
+	id, ok := c.fidPool.Get()
 	if !ok {
 		return nil, ErrOutOfFIDs
 	}
 
 	rattach := rattach{}
-	if err := c.sendRecv(&tattach{FID: FID(fid), Auth: tauth{AttachName: name, AuthenticationFID: NoFID, UID: NoUID}}, &rattach); err != nil {
-		c.fidPool.Put(fid)
+	if err := c.sendRecv(&tattach{fid: fid(id), Auth: tauth{AttachName: name, Authenticationfid: noFID, UID: NoUID}}, &rattach); err != nil {
+		c.fidPool.Put(id)
 		return nil, err
 	}
 
-	return c.newFile(FID(fid)), nil
+	return c.newFile(fid(id)), nil
 }
 
 // newFile returns a new client file.
-func (c *Client) newFile(fid FID) *clientFile {
+func (c *Client) newFile(fid fid) *clientFile {
 	cf := &clientFile{
 		client: c,
 		fid:    fid,
@@ -61,8 +61,8 @@ type clientFile struct {
 	// client is the originating client.
 	client *Client
 
-	// fid is the FID for this file.
-	fid FID
+	// fid is the fid for this file.
+	fid fid
 
 	// closed indicates whether this file has been closed.
 	closed uint32
@@ -74,19 +74,19 @@ func (c *clientFile) Walk(names []string) ([]QID, File, error) {
 		return nil, nil, syscall.EBADF
 	}
 
-	fid, ok := c.client.fidPool.Get()
+	id, ok := c.client.fidPool.Get()
 	if !ok {
 		return nil, nil, ErrOutOfFIDs
 	}
 
 	rwalk := rwalk{}
-	if err := c.client.sendRecv(&twalk{FID: c.fid, NewFID: FID(fid), Names: names}, &rwalk); err != nil {
-		c.client.fidPool.Put(fid)
+	if err := c.client.sendRecv(&twalk{fid: c.fid, newFID: fid(id), Names: names}, &rwalk); err != nil {
+		c.client.fidPool.Put(id)
 		return nil, nil, err
 	}
 
 	// Return a new client file.
-	return rwalk.QIDs, c.client.newFile(FID(fid)), nil
+	return rwalk.QIDs, c.client.newFile(fid(id)), nil
 }
 
 // WalkGetAttr implements File.WalkGetAttr.
@@ -108,19 +108,19 @@ func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, At
 		return qids, file, valid, attr, nil
 	}
 
-	fid, ok := c.client.fidPool.Get()
+	id, ok := c.client.fidPool.Get()
 	if !ok {
 		return nil, nil, AttrMask{}, Attr{}, ErrOutOfFIDs
 	}
 
 	rwalkgetattr := rwalkgetattr{}
-	if err := c.client.sendRecv(&twalkgetattr{FID: c.fid, NewFID: FID(fid), Names: components}, &rwalkgetattr); err != nil {
-		c.client.fidPool.Put(fid)
+	if err := c.client.sendRecv(&twalkgetattr{fid: c.fid, newFID: fid(id), Names: components}, &rwalkgetattr); err != nil {
+		c.client.fidPool.Put(id)
 		return nil, nil, AttrMask{}, Attr{}, err
 	}
 
 	// Return a new client file.
-	return rwalkgetattr.QIDs, c.client.newFile(FID(fid)), rwalkgetattr.Valid, rwalkgetattr.Attr, nil
+	return rwalkgetattr.QIDs, c.client.newFile(fid(id)), rwalkgetattr.Valid, rwalkgetattr.Attr, nil
 }
 
 // StatFS implements File.StatFS.
@@ -130,7 +130,7 @@ func (c *clientFile) StatFS() (FSStat, error) {
 	}
 
 	rstatfs := rstatfs{}
-	if err := c.client.sendRecv(&tstatfs{FID: c.fid}, &rstatfs); err != nil {
+	if err := c.client.sendRecv(&tstatfs{fid: c.fid}, &rstatfs); err != nil {
 		return FSStat{}, err
 	}
 
@@ -143,7 +143,7 @@ func (c *clientFile) FSync() error {
 		return syscall.EBADF
 	}
 
-	return c.client.sendRecv(&tfsync{FID: c.fid}, &rfsync{})
+	return c.client.sendRecv(&tfsync{fid: c.fid}, &rfsync{})
 }
 
 // GetAttr implements File.GetAttr.
@@ -153,7 +153,7 @@ func (c *clientFile) GetAttr(req AttrMask) (QID, AttrMask, Attr, error) {
 	}
 
 	rgetattr := rgetattr{}
-	if err := c.client.sendRecv(&tgetattr{FID: c.fid, AttrMask: req}, &rgetattr); err != nil {
+	if err := c.client.sendRecv(&tgetattr{fid: c.fid, AttrMask: req}, &rgetattr); err != nil {
 		return QID{}, AttrMask{}, Attr{}, err
 	}
 
@@ -166,7 +166,7 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 		return syscall.EBADF
 	}
 
-	return c.client.sendRecv(&tsetattr{FID: c.fid, Valid: valid, SetAttr: attr}, &rsetattr{})
+	return c.client.sendRecv(&tsetattr{fid: c.fid, Valid: valid, SetAttr: attr}, &rsetattr{})
 }
 
 // Allocate implements File.Allocate.
@@ -178,7 +178,7 @@ func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
 		return syscall.EOPNOTSUPP
 	}
 
-	return c.client.sendRecv(&tallocate{FID: c.fid, Mode: mode, Offset: offset, Length: length}, &rallocate{})
+	return c.client.sendRecv(&tallocate{fid: c.fid, Mode: mode, Offset: offset, Length: length}, &rallocate{})
 }
 
 // Remove implements File.Remove.
@@ -193,7 +193,7 @@ func (c *clientFile) Remove() error {
 	runtime.SetFinalizer(c, nil)
 
 	// Send the remove message.
-	if err := c.client.sendRecv(&tremove{FID: c.fid}, &rremove{}); err != nil {
+	if err := c.client.sendRecv(&tremove{fid: c.fid}, &rremove{}); err != nil {
 		return err
 	}
 
@@ -201,7 +201,7 @@ func (c *clientFile) Remove() error {
 	// of removing the file if permissions allow."
 	// https://swtch.com/plan9port/man/man9/remove.html
 
-	// Return the FID to the pool.
+	// Return the fid to the pool.
 	c.client.fidPool.Put(uint64(c.fid))
 	return nil
 }
@@ -215,14 +215,14 @@ func (c *clientFile) Close() error {
 	runtime.SetFinalizer(c, nil)
 
 	// Send the close message.
-	if err := c.client.sendRecv(&tclunk{FID: c.fid}, &rclunk{}); err != nil {
-		// If an error occurred, we toss away the FID. This isn't ideal,
+	if err := c.client.sendRecv(&tclunk{fid: c.fid}, &rclunk{}); err != nil {
+		// If an error occurred, we toss away the fid. This isn't ideal,
 		// but I'm not sure what else makes sense in this context.
-		log.Printf("Tclunk failed, losing FID %v: %v", c.fid, err)
+		log.Printf("Tclunk failed, losing fid %v: %v", c.fid, err)
 		return err
 	}
 
-	// Return the FID to the pool.
+	// Return the fid to the pool.
 	c.client.fidPool.Put(uint64(c.fid))
 	return nil
 }
@@ -234,7 +234,7 @@ func (c *clientFile) Open(flags OpenFlags) (QID, uint32, error) {
 	}
 
 	rlopen := rlopen{}
-	if err := c.client.sendRecv(&tlopen{FID: c.fid, Flags: flags}, &rlopen); err != nil {
+	if err := c.client.sendRecv(&tlopen{fid: c.fid, Flags: flags}, &rlopen); err != nil {
 		return QID{}, 0, err
 	}
 
@@ -299,7 +299,7 @@ func (c *clientFile) readAt(p []byte, offset uint64) (int, error) {
 	}
 
 	rread := rread{Data: p}
-	if err := c.client.sendRecv(&tread{FID: c.fid, Offset: offset, Count: uint32(len(p))}, &rread); err != nil {
+	if err := c.client.sendRecv(&tread{fid: c.fid, Offset: offset, Count: uint32(len(p))}, &rread); err != nil {
 		return 0, err
 	}
 
@@ -330,7 +330,7 @@ func (c *clientFile) writeAt(p []byte, offset uint64) (int, error) {
 	}
 
 	rwrite := rwrite{}
-	if err := c.client.sendRecv(&twrite{FID: c.fid, Offset: offset, Data: p}, &rwrite); err != nil {
+	if err := c.client.sendRecv(&twrite{fid: c.fid, Offset: offset, Data: p}, &rwrite); err != nil {
 		return 0, err
 	}
 
@@ -404,7 +404,7 @@ func (c *clientFile) Rename(dir File, name string) error {
 		return syscall.EBADF
 	}
 
-	return c.client.sendRecv(&trename{FID: c.fid, Directory: clientDir.fid, Name: name}, &rrename{})
+	return c.client.sendRecv(&trename{fid: c.fid, Directory: clientDir.fid, Name: name}, &rrename{})
 }
 
 // Create implements File.Create.
@@ -414,7 +414,7 @@ func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMo
 	}
 
 	msg := tlcreate{
-		FID:         c.fid,
+		fid:         c.fid,
 		Name:        name,
 		OpenFlags:   openFlags,
 		Permissions: permissions,
@@ -588,7 +588,7 @@ func (c *clientFile) Readlink() (string, error) {
 	}
 
 	rreadlink := rreadlink{}
-	if err := c.client.sendRecv(&treadlink{FID: c.fid}, &rreadlink); err != nil {
+	if err := c.client.sendRecv(&treadlink{fid: c.fid}, &rreadlink); err != nil {
 		return "", err
 	}
 
@@ -605,7 +605,7 @@ func (c *clientFile) Flush() error {
 		return nil
 	}
 
-	return c.client.sendRecv(&tflushf{FID: c.fid}, &rflushf{})
+	return c.client.sendRecv(&tflushf{fid: c.fid}, &rflushf{})
 }
 
 // Renamed implements File.Renamed.

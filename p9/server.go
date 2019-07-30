@@ -63,18 +63,18 @@ type connState struct {
 	// conn is the connection.
 	conn net.Conn
 
-	// fids is the set of active FIDs.
+	// fids is the set of active fids.
 	//
-	// This is used to find FIDs for files.
+	// This is used to find fids for files.
 	fidMu sync.Mutex
-	fids  map[FID]*fidRef
+	fids  map[fid]*fidRef
 
 	// tags is the set of active tags.
 	//
 	// The given channel is closed when the
 	// tag is finished with processing.
 	tagMu sync.Mutex
-	tags  map[Tag]chan struct{}
+	tags  map[tag]chan struct{}
 
 	// messageSize is the maximum message size. The server does not
 	// do automatic splitting of messages.
@@ -126,7 +126,7 @@ type fidRef struct {
 	// This is updated in handlers.go.
 	openFlags OpenFlags
 
-	// pathNode is the current pathNode for this FID.
+	// pathNode is the current pathNode for this fid.
 	pathNode *pathNode
 
 	// parent is the parent fidRef. We hold on to a parent reference to
@@ -299,10 +299,10 @@ func (f *fidRef) safelyGlobal(fn func() error) (err error) {
 	return fn()
 }
 
-// LookupFID finds the given FID.
+// Lookupfid finds the given fid.
 //
 // You should call fid.DecRef when you are finished using the fid.
-func (cs *connState) LookupFID(fid FID) (*fidRef, bool) {
+func (cs *connState) LookupFID(fid fid) (*fidRef, bool) {
 	cs.fidMu.Lock()
 	defer cs.fidMu.Unlock()
 	fidRef, ok := cs.fids[fid]
@@ -313,11 +313,11 @@ func (cs *connState) LookupFID(fid FID) (*fidRef, bool) {
 	return nil, false
 }
 
-// InsertFID installs the given FID.
+// Insertfid installs the given fid.
 //
-// This fid starts with a reference count of one. If a FID exists in
+// This fid starts with a reference count of one. If a fid exists in
 // the slot already it is closed, per the specification.
-func (cs *connState) InsertFID(fid FID, newRef *fidRef) {
+func (cs *connState) InsertFID(fid fid, newRef *fidRef) {
 	cs.fidMu.Lock()
 	defer cs.fidMu.Unlock()
 	origRef, ok := cs.fids[fid]
@@ -328,10 +328,10 @@ func (cs *connState) InsertFID(fid FID, newRef *fidRef) {
 	cs.fids[fid] = newRef
 }
 
-// DeleteFID removes the given FID.
+// Deletefid removes the given fid.
 //
 // This simply removes it from the map and drops a reference.
-func (cs *connState) DeleteFID(fid FID) bool {
+func (cs *connState) DeleteFID(fid fid) bool {
 	cs.fidMu.Lock()
 	defer cs.fidMu.Unlock()
 	fidRef, ok := cs.fids[fid]
@@ -346,7 +346,7 @@ func (cs *connState) DeleteFID(fid FID) bool {
 // StartTag starts handling the tag.
 //
 // False is returned if this tag is already active.
-func (cs *connState) StartTag(t Tag) bool {
+func (cs *connState) StartTag(t tag) bool {
 	cs.tagMu.Lock()
 	defer cs.tagMu.Unlock()
 	_, ok := cs.tags[t]
@@ -358,7 +358,7 @@ func (cs *connState) StartTag(t Tag) bool {
 }
 
 // ClearTag finishes handling a tag.
-func (cs *connState) ClearTag(t Tag) {
+func (cs *connState) ClearTag(t tag) {
 	cs.tagMu.Lock()
 	defer cs.tagMu.Unlock()
 	ch, ok := cs.tags[t]
@@ -372,8 +372,8 @@ func (cs *connState) ClearTag(t Tag) {
 	close(ch)
 }
 
-// WaitTag waits for a tag to finish.
-func (cs *connState) WaitTag(t Tag) {
+// Waittag waits for a tag to finish.
+func (cs *connState) WaitTag(t tag) {
 	cs.tagMu.Lock()
 	ch, ok := cs.tags[t]
 	cs.tagMu.Unlock()
@@ -476,7 +476,7 @@ func (cs *connState) stop() {
 	close(cs.sendDone)
 
 	for _, fidRef := range cs.fids {
-		// Drop final reference in the FID table. Note this should
+		// Drop final reference in the fid table. Note this should
 		// always close the file, since we've ensured that there are no
 		// handlers running via the wait for Pending => 0 below.
 		fidRef.DecRef()
@@ -541,8 +541,8 @@ func (s *Server) Handle(conn net.Conn) error {
 	cs := &connState{
 		server:   s,
 		conn:     conn,
-		fids:     make(map[FID]*fidRef),
-		tags:     make(map[Tag]chan struct{}),
+		fids:     make(map[fid]*fidRef),
+		tags:     make(map[tag]chan struct{}),
 		recvOkay: make(chan bool),
 		recvDone: make(chan error, 10),
 		sendDone: make(chan error, 10),

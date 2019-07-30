@@ -71,7 +71,7 @@ var dataPool = sync.Pool{
 }
 
 // send sends the given message over the socket.
-func send(conn net.Conn, tag Tag, m message) error {
+func send(conn net.Conn, tag tag, m message) error {
 	data := dataPool.Get().([]byte)
 	dataBuf := buffer{data: data[:0]}
 
@@ -118,7 +118,7 @@ func send(conn net.Conn, tag Tag, m message) error {
 // This is called by recv after decoding the header. Any error returned will be
 // propagating back to the caller. You may use messageByType directly as a
 // lookupTagAndType function (by design).
-type lookupTagAndType func(tag Tag, t msgType) (message, error)
+type lookupTagAndType func(tag tag, t msgType) (message, error)
 
 // recv decodes a message from the socket.
 //
@@ -127,12 +127,12 @@ type lookupTagAndType func(tag Tag, t msgType) (message, error)
 // On a socket error, the special error type ErrSocket is returned.
 //
 // The tag value NoTag will always be returned if err is non-nil.
-func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, error) {
+func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, error) {
 	// Read a header.
 	var hdr [headerLength]byte
 
 	if _, err := io.ReadAtLeast(conn, hdr[:], int(headerLength)); err != nil {
-		return NoTag, nil, ErrSocket{err}
+		return noTag, nil, ErrSocket{err}
 	}
 
 	// Decode the header.
@@ -144,11 +144,11 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, e
 		// The message is too small.
 		//
 		// See above: it's probably screwed.
-		return NoTag, nil, ErrSocket{ErrNoValidMessage}
+		return noTag, nil, ErrSocket{ErrNoValidMessage}
 	}
 	if size > maximumLength || size > msize {
 		// The message is too big.
-		return NoTag, nil, ErrSocket{&ErrMessageTooLarge{size, msize}}
+		return noTag, nil, ErrSocket{&ErrMessageTooLarge{size, msize}}
 	}
 	remaining := size - headerLength
 
@@ -179,7 +179,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, e
 			if remaining > 0 {
 				io.Copy(ioutil.Discard, io.LimitReader(conn, int64(remaining)))
 			}
-			return NoTag, nil, ErrNoValidMessage
+			return noTag, nil, ErrNoValidMessage
 		}
 
 		if fixedSize != 0 {
@@ -229,7 +229,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, e
 
 	if len(vecs) > 0 {
 		if _, err := vecs.ReadFrom(conn.(syscall.Conn)); err != nil {
-			return NoTag, nil, ErrSocket{err}
+			return noTag, nil, ErrSocket{err}
 		}
 	}
 
@@ -237,7 +237,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, e
 	m.decode(&dataBuf)
 	if dataBuf.isOverrun() {
 		// No need to drain the socket.
-		return NoTag, nil, ErrNoValidMessage
+		return noTag, nil, ErrNoValidMessage
 	}
 
 	Debug("recv [conn %p] [Tag %06d] %s", conn, tag, m)

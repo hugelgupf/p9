@@ -120,7 +120,7 @@ func (r *rversion) String() string {
 // tflush is a flush request.
 type tflush struct {
 	// OldTag is the tag to wait on.
-	OldTag Tag
+	OldTag tag
 }
 
 // decode implements encoder.decode.
@@ -167,11 +167,11 @@ func (r *rflush) String() string {
 
 // twalk is a walk request.
 type twalk struct {
-	// FID is the FID to be walked.
-	FID FID
+	// fid is the fid to be walked.
+	fid fid
 
-	// NewFID is the resulting FID.
-	NewFID FID
+	// newFID is the resulting fid.
+	newFID fid
 
 	// Names are the set of names to be walked.
 	Names []string
@@ -179,8 +179,8 @@ type twalk struct {
 
 // decode implements encoder.decode.
 func (t *twalk) decode(b *buffer) {
-	t.FID = b.ReadFID()
-	t.NewFID = b.ReadFID()
+	t.fid = b.ReadFID()
+	t.newFID = b.ReadFID()
 	n := b.Read16()
 	t.Names = t.Names[:0]
 	for i := 0; i < int(n); i++ {
@@ -190,8 +190,8 @@ func (t *twalk) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *twalk) encode(b *buffer) {
-	b.WriteFID(t.FID)
-	b.WriteFID(t.NewFID)
+	b.WriteFID(t.fid)
+	b.WriteFID(t.newFID)
 	b.Write16(uint16(len(t.Names)))
 	for _, name := range t.Names {
 		b.WriteString(name)
@@ -205,7 +205,7 @@ func (*twalk) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *twalk) String() string {
-	return fmt.Sprintf("Twalk{FID: %d, NewFID: %d, Names: %v}", t.FID, t.NewFID, t.Names)
+	return fmt.Sprintf("Twalk{FID: %d, newFID: %d, Names: %v}", t.fid, t.newFID, t.Names)
 }
 
 // rwalk is a walk response.
@@ -245,18 +245,18 @@ func (r *rwalk) String() string {
 
 // tclunk is a close request.
 type tclunk struct {
-	// FID is the FID to be closed.
-	FID FID
+	// fid is the fid to be closed.
+	fid fid
 }
 
 // decode implements encoder.decode.
 func (t *tclunk) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 }
 
 // encode implements encoder.encode.
 func (t *tclunk) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 }
 
 // Type implements message.Type.
@@ -266,7 +266,7 @@ func (*tclunk) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tclunk) String() string {
-	return fmt.Sprintf("Tclunk{FID: %d}", t.FID)
+	return fmt.Sprintf("Tclunk{FID: %d}", t.fid)
 }
 
 // rclunk is a close response.
@@ -292,18 +292,18 @@ func (r *rclunk) String() string {
 
 // tremove is a remove request.
 type tremove struct {
-	// FID is the FID to be removed.
-	FID FID
+	// fid is the fid to be removed.
+	fid fid
 }
 
 // decode implements encoder.decode.
 func (t *tremove) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 }
 
 // encode implements encoder.encode.
 func (t *tremove) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 }
 
 // Type implements message.Type.
@@ -313,7 +313,7 @@ func (*tremove) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tremove) String() string {
-	return fmt.Sprintf("Tremove{FID: %d}", t.FID)
+	return fmt.Sprintf("Tremove{FID: %d}", t.fid)
 }
 
 // rremove is a remove response.
@@ -367,8 +367,8 @@ func (r *rlerror) String() string {
 
 // tauth is an authentication request.
 type tauth struct {
-	// AuthenticationFID is the FID to attach the authentication result.
-	AuthenticationFID FID
+	// Authenticationfid is the fid to attach the authentication result.
+	Authenticationfid fid
 
 	// UserName is the user to attach.
 	UserName string
@@ -382,7 +382,7 @@ type tauth struct {
 
 // decode implements encoder.decode.
 func (t *tauth) decode(b *buffer) {
-	t.AuthenticationFID = b.ReadFID()
+	t.Authenticationfid = b.ReadFID()
 	t.UserName = b.ReadString()
 	t.AttachName = b.ReadString()
 	t.UID = b.ReadUID()
@@ -390,7 +390,7 @@ func (t *tauth) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *tauth) encode(b *buffer) {
-	b.WriteFID(t.AuthenticationFID)
+	b.WriteFID(t.Authenticationfid)
 	b.WriteString(t.UserName)
 	b.WriteString(t.AttachName)
 	b.WriteUID(t.UID)
@@ -403,7 +403,7 @@ func (*tauth) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tauth) String() string {
-	return fmt.Sprintf("Tauth{AuthFID: %d, UserName: %s, AttachName: %s, UID: %d", t.AuthenticationFID, t.UserName, t.AttachName, t.UID)
+	return fmt.Sprintf("Tauth{AuthFID: %d, UserName: %s, AttachName: %s, UID: %d", t.Authenticationfid, t.UserName, t.AttachName, t.UID)
 }
 
 // rauth is an authentication response.
@@ -425,8 +425,8 @@ func (r *rauth) String() string {
 
 // tattach is an attach request.
 type tattach struct {
-	// FID is the FID to be attached.
-	FID FID
+	// fid is the fid to be attached.
+	fid fid
 
 	// Auth is the embedded authentication request.
 	//
@@ -436,13 +436,13 @@ type tattach struct {
 
 // decode implements encoder.decode.
 func (t *tattach) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Auth.decode(b)
 }
 
 // encode implements encoder.encode.
 func (t *tattach) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	t.Auth.encode(b)
 }
 
@@ -453,7 +453,7 @@ func (*tattach) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tattach) String() string {
-	return fmt.Sprintf("Tattach{FID: %d, AuthFID: %d, UserName: %s, AttachName: %s, UID: %d}", t.FID, t.Auth.AuthenticationFID, t.Auth.UserName, t.Auth.AttachName, t.Auth.UID)
+	return fmt.Sprintf("Tattach{FID: %d, AuthFID: %d, UserName: %s, AttachName: %s, UID: %d}", t.fid, t.Auth.Authenticationfid, t.Auth.UserName, t.Auth.AttachName, t.Auth.UID)
 }
 
 // rattach is an attach response.
@@ -473,8 +473,8 @@ func (r *rattach) String() string {
 
 // tlopen is an open request.
 type tlopen struct {
-	// FID is the FID to be opened.
-	FID FID
+	// fid is the fid to be opened.
+	fid fid
 
 	// Flags are the open flags.
 	Flags OpenFlags
@@ -482,13 +482,13 @@ type tlopen struct {
 
 // decode implements encoder.decode.
 func (t *tlopen) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Flags = b.ReadOpenFlags()
 }
 
 // encode implements encoder.encode.
 func (t *tlopen) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	b.WriteOpenFlags(t.Flags)
 }
 
@@ -499,7 +499,7 @@ func (*tlopen) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tlopen) String() string {
-	return fmt.Sprintf("Tlopen{FID: %d, Flags: %v}", t.FID, t.Flags)
+	return fmt.Sprintf("Tlopen{FID: %d, Flags: %v}", t.fid, t.Flags)
 }
 
 // rlopen is a open response.
@@ -535,10 +535,10 @@ func (r *rlopen) String() string {
 
 // tlcreate is a create request.
 type tlcreate struct {
-	// FID is the parent FID.
+	// fid is the parent fid.
 	//
 	// This becomes the new file.
-	FID FID
+	fid fid
 
 	// Name is the file name to create.
 	Name string
@@ -558,7 +558,7 @@ type tlcreate struct {
 
 // decode implements encoder.decode.
 func (t *tlcreate) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Name = b.ReadString()
 	t.OpenFlags = b.ReadOpenFlags()
 	t.Permissions = b.ReadPermissions()
@@ -567,7 +567,7 @@ func (t *tlcreate) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *tlcreate) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	b.WriteString(t.Name)
 	b.WriteOpenFlags(t.OpenFlags)
 	b.WritePermissions(t.Permissions)
@@ -581,7 +581,7 @@ func (*tlcreate) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tlcreate) String() string {
-	return fmt.Sprintf("Tlcreate{FID: %d, Name: %s, OpenFlags: %s, Permissions: 0o%o, GID: %d}", t.FID, t.Name, t.OpenFlags, t.Permissions, t.GID)
+	return fmt.Sprintf("Tlcreate{FID: %d, Name: %s, OpenFlags: %s, Permissions: 0o%o, GID: %d}", t.fid, t.Name, t.OpenFlags, t.Permissions, t.GID)
 }
 
 // rlcreate is a create response.
@@ -603,8 +603,8 @@ func (r *rlcreate) String() string {
 
 // tsymlink is a symlink request.
 type tsymlink struct {
-	// Directory is the directory FID.
-	Directory FID
+	// Directory is the directory fid.
+	Directory fid
 
 	// Name is the new in the directory.
 	Name string
@@ -671,10 +671,10 @@ func (r *rsymlink) String() string {
 // tlink is a link request.
 type tlink struct {
 	// Directory is the directory to contain the link.
-	Directory FID
+	Directory fid
 
-	// FID is the target.
-	Target FID
+	// fid is the target.
+	Target fid
 
 	// Name is the new source name.
 	Name string
@@ -729,13 +729,13 @@ func (r *rlink) String() string {
 // trenameat is a rename request.
 type trenameat struct {
 	// OldDirectory is the source directory.
-	OldDirectory FID
+	OldDirectory fid
 
 	// OldName is the source file name.
 	OldName string
 
 	// NewDirectory is the target directory.
-	NewDirectory FID
+	NewDirectory fid
 
 	// NewName is the new file name.
 	NewName string
@@ -792,7 +792,7 @@ func (r *rrenameat) String() string {
 // tunlinkat is an unlink request.
 type tunlinkat struct {
 	// Directory is the originating directory.
-	Directory FID
+	Directory fid
 
 	// Name is the name of the entry to unlink.
 	Name string
@@ -849,11 +849,11 @@ func (r *runlinkat) String() string {
 
 // trename is a rename request.
 type trename struct {
-	// FID is the FID to rename.
-	FID FID
+	// fid is the fid to rename.
+	fid fid
 
 	// Directory is the target directory.
-	Directory FID
+	Directory fid
 
 	// Name is the new file name.
 	Name string
@@ -861,14 +861,14 @@ type trename struct {
 
 // decode implements encoder.decode.
 func (t *trename) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
 // encode implements encoder.encode.
 func (t *trename) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 }
@@ -880,7 +880,7 @@ func (*trename) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *trename) String() string {
-	return fmt.Sprintf("Trename{FID: %d, DirectoryFID: %d, Name: %s}", t.FID, t.Directory, t.Name)
+	return fmt.Sprintf("Trename{FID: %d, DirectoryFID: %d, Name: %s}", t.fid, t.Directory, t.Name)
 }
 
 // rrename is a rename response.
@@ -907,18 +907,18 @@ func (r *rrename) String() string {
 
 // treadlink is a readlink request.
 type treadlink struct {
-	// FID is the symlink.
-	FID FID
+	// fid is the symlink.
+	fid fid
 }
 
 // decode implements encoder.decode.
 func (t *treadlink) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 }
 
 // encode implements encoder.encode.
 func (t *treadlink) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 }
 
 // Type implements message.Type.
@@ -928,7 +928,7 @@ func (*treadlink) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *treadlink) String() string {
-	return fmt.Sprintf("Treadlink{FID: %d}", t.FID)
+	return fmt.Sprintf("Treadlink{FID: %d}", t.fid)
 }
 
 // rreadlink is a readlink response.
@@ -959,8 +959,8 @@ func (r *rreadlink) String() string {
 
 // tread is a read request.
 type tread struct {
-	// FID is the FID to read.
-	FID FID
+	// fid is the fid to read.
+	fid fid
 
 	// Offset indicates the file offset.
 	Offset uint64
@@ -971,14 +971,14 @@ type tread struct {
 
 // decode implements encoder.decode.
 func (t *tread) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Offset = b.Read64()
 	t.Count = b.Read32()
 }
 
 // encode implements encoder.encode.
 func (t *tread) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	b.Write64(t.Offset)
 	b.Write32(t.Count)
 }
@@ -990,7 +990,7 @@ func (*tread) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tread) String() string {
-	return fmt.Sprintf("Tread{FID: %d, Offset: %d, Count: %d}", t.FID, t.Offset, t.Count)
+	return fmt.Sprintf("Tread{FID: %d, Offset: %d, Count: %d}", t.fid, t.Offset, t.Count)
 }
 
 // rread is the response for a Tread.
@@ -1043,8 +1043,8 @@ func (r *rread) String() string {
 
 // twrite is a write request.
 type twrite struct {
-	// FID is the FID to read.
-	FID FID
+	// fid is the fid to read.
+	fid fid
 
 	// Offset indicates the file offset.
 	Offset uint64
@@ -1055,7 +1055,7 @@ type twrite struct {
 
 // decode implements encoder.decode.
 func (t *twrite) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Offset = b.Read64()
 	count := b.Read32()
 	if count != uint32(len(t.Data)) {
@@ -1067,7 +1067,7 @@ func (t *twrite) decode(b *buffer) {
 //
 // This uses the buffer payload to avoid a copy.
 func (t *twrite) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	b.Write64(t.Offset)
 	b.Write32(uint32(len(t.Data)))
 }
@@ -1094,7 +1094,7 @@ func (t *twrite) SetPayload(p []byte) {
 
 // String implements fmt.Stringer.
 func (t *twrite) String() string {
-	return fmt.Sprintf("Twrite{FID: %v, Offset %d, len(Data): %d}", t.FID, t.Offset, len(t.Data))
+	return fmt.Sprintf("Twrite{FID: %v, Offset %d, len(Data): %d}", t.fid, t.Offset, len(t.Data))
 }
 
 // rwrite is the response for a Twrite.
@@ -1126,7 +1126,7 @@ func (r *rwrite) String() string {
 // tmknod is a mknod request.
 type tmknod struct {
 	// Directory is the parent directory.
-	Directory FID
+	Directory fid
 
 	// Name is the device name.
 	Name string
@@ -1203,7 +1203,7 @@ func (r *rmknod) String() string {
 // tmkdir is a mkdir request.
 type tmkdir struct {
 	// Directory is the parent directory.
-	Directory FID
+	Directory fid
 
 	// Name is the new directory name.
 	Name string
@@ -1269,8 +1269,8 @@ func (r *rmkdir) String() string {
 
 // tgetattr is a getattr request.
 type tgetattr struct {
-	// FID is the FID to get attributes for.
-	FID FID
+	// fid is the fid to get attributes for.
+	fid fid
 
 	// AttrMask is the set of attributes to get.
 	AttrMask AttrMask
@@ -1278,13 +1278,13 @@ type tgetattr struct {
 
 // decode implements encoder.decode.
 func (t *tgetattr) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.AttrMask.decode(b)
 }
 
 // encode implements encoder.encode.
 func (t *tgetattr) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	t.AttrMask.encode(b)
 }
 
@@ -1295,7 +1295,7 @@ func (*tgetattr) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tgetattr) String() string {
-	return fmt.Sprintf("Tgetattr{FID: %d, AttrMask: %s}", t.FID, t.AttrMask)
+	return fmt.Sprintf("Tgetattr{FID: %d, AttrMask: %s}", t.fid, t.AttrMask)
 }
 
 // rgetattr is a getattr response.
@@ -1336,8 +1336,8 @@ func (r *rgetattr) String() string {
 
 // tsetattr is a setattr request.
 type tsetattr struct {
-	// FID is the FID to change.
-	FID FID
+	// fid is the fid to change.
+	fid fid
 
 	// Valid is the set of bits which will be used.
 	Valid SetAttrMask
@@ -1348,14 +1348,14 @@ type tsetattr struct {
 
 // decode implements encoder.decode.
 func (t *tsetattr) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Valid.decode(b)
 	t.SetAttr.decode(b)
 }
 
 // encode implements encoder.encode.
 func (t *tsetattr) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	t.Valid.encode(b)
 	t.SetAttr.encode(b)
 }
@@ -1367,7 +1367,7 @@ func (*tsetattr) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tsetattr) String() string {
-	return fmt.Sprintf("Tsetattr{FID: %d, Valid: %v, SetAttr: %s}", t.FID, t.Valid, t.SetAttr)
+	return fmt.Sprintf("Tsetattr{FID: %d, Valid: %v, SetAttr: %s}", t.fid, t.Valid, t.SetAttr)
 }
 
 // rsetattr is a setattr response.
@@ -1395,7 +1395,7 @@ func (r *rsetattr) String() string {
 // tallocate is an allocate request. This is an extension to 9P protocol, not
 // present in the 9P2000.L standard.
 type tallocate struct {
-	FID    FID
+	fid    fid
 	Mode   AllocateMode
 	Offset uint64
 	Length uint64
@@ -1403,7 +1403,7 @@ type tallocate struct {
 
 // decode implements encoder.decode.
 func (t *tallocate) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Mode.decode(b)
 	t.Offset = b.Read64()
 	t.Length = b.Read64()
@@ -1411,7 +1411,7 @@ func (t *tallocate) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *tallocate) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	t.Mode.encode(b)
 	b.Write64(t.Offset)
 	b.Write64(t.Length)
@@ -1424,7 +1424,7 @@ func (*tallocate) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tallocate) String() string {
-	return fmt.Sprintf("Tallocate{FID: %d, Offset: %d, Length: %d}", t.FID, t.Offset, t.Length)
+	return fmt.Sprintf("Tallocate{FID: %d, Offset: %d, Length: %d}", t.fid, t.Offset, t.Length)
 }
 
 // rallocate is an allocate response.
@@ -1451,11 +1451,11 @@ func (r *rallocate) String() string {
 
 // txattrwalk walks extended attributes.
 type txattrwalk struct {
-	// FID is the FID to check for attributes.
-	FID FID
+	// fid is the fid to check for attributes.
+	fid fid
 
-	// NewFID is the new FID associated with the attributes.
-	NewFID FID
+	// newFID is the new fid associated with the attributes.
+	newFID fid
 
 	// Name is the attribute name.
 	Name string
@@ -1463,15 +1463,15 @@ type txattrwalk struct {
 
 // decode implements encoder.decode.
 func (t *txattrwalk) decode(b *buffer) {
-	t.FID = b.ReadFID()
-	t.NewFID = b.ReadFID()
+	t.fid = b.ReadFID()
+	t.newFID = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
 // encode implements encoder.encode.
 func (t *txattrwalk) encode(b *buffer) {
-	b.WriteFID(t.FID)
-	b.WriteFID(t.NewFID)
+	b.WriteFID(t.fid)
+	b.WriteFID(t.newFID)
 	b.WriteString(t.Name)
 }
 
@@ -1482,7 +1482,7 @@ func (*txattrwalk) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *txattrwalk) String() string {
-	return fmt.Sprintf("Txattrwalk{FID: %d, NewFID: %d, Name: %s}", t.FID, t.NewFID, t.Name)
+	return fmt.Sprintf("Txattrwalk{FID: %d, newFID: %d, Name: %s}", t.fid, t.newFID, t.Name)
 }
 
 // rxattrwalk is a xattrwalk response.
@@ -1513,16 +1513,16 @@ func (r *rxattrwalk) String() string {
 
 // txattrcreate prepare to set extended attributes.
 type txattrcreate struct {
-	// FID is input/output parameter, it identifies the file on which
+	// fid is input/output parameter, it identifies the file on which
 	// extended attributes will be set but after successful Rxattrcreate
 	// it is used to write the extended attribute value.
-	FID FID
+	fid fid
 
 	// Name is the attribute name.
 	Name string
 
-	// Size of the attribute value. When the FID is clunked it has to match
-	// the number of bytes written to the FID.
+	// Size of the attribute value. When the fid is clunked it has to match
+	// the number of bytes written to the fid.
 	AttrSize uint64
 
 	// Linux setxattr(2) flags.
@@ -1531,7 +1531,7 @@ type txattrcreate struct {
 
 // decode implements encoder.decode.
 func (t *txattrcreate) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 	t.Name = b.ReadString()
 	t.AttrSize = b.Read64()
 	t.Flags = b.Read32()
@@ -1539,7 +1539,7 @@ func (t *txattrcreate) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *txattrcreate) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 	b.WriteString(t.Name)
 	b.Write64(t.AttrSize)
 	b.Write32(t.Flags)
@@ -1552,7 +1552,7 @@ func (*txattrcreate) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *txattrcreate) String() string {
-	return fmt.Sprintf("Txattrcreate{FID: %d, Name: %s, AttrSize: %d, Flags: %d}", t.FID, t.Name, t.AttrSize, t.Flags)
+	return fmt.Sprintf("Txattrcreate{FID: %d, Name: %s, AttrSize: %d, Flags: %d}", t.fid, t.Name, t.AttrSize, t.Flags)
 }
 
 // rxattrcreate is a xattrcreate response.
@@ -1579,8 +1579,8 @@ func (r *rxattrcreate) String() string {
 
 // treaddir is a readdir request.
 type treaddir struct {
-	// Directory is the directory FID to read.
-	Directory FID
+	// Directory is the directory fid to read.
+	Directory fid
 
 	// Offset is the offset to read at.
 	Offset uint64
@@ -1692,18 +1692,18 @@ func (r *rreaddir) String() string {
 
 // Tfsync is an fsync request.
 type tfsync struct {
-	// FID is the fid to sync.
-	FID FID
+	// fid is the fid to sync.
+	fid fid
 }
 
 // decode implements encoder.decode.
 func (t *tfsync) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 }
 
 // encode implements encoder.encode.
 func (t *tfsync) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 }
 
 // Type implements message.Type.
@@ -1713,7 +1713,7 @@ func (*tfsync) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tfsync) String() string {
-	return fmt.Sprintf("Tfsync{FID: %d}", t.FID)
+	return fmt.Sprintf("Tfsync{FID: %d}", t.fid)
 }
 
 // rfsync is an fsync response.
@@ -1740,18 +1740,18 @@ func (r *rfsync) String() string {
 
 // tstatfs is a stat request.
 type tstatfs struct {
-	// FID is the root.
-	FID FID
+	// fid is the root.
+	fid fid
 }
 
 // decode implements encoder.decode.
 func (t *tstatfs) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 }
 
 // encode implements encoder.encode.
 func (t *tstatfs) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 }
 
 // Type implements message.Type.
@@ -1761,7 +1761,7 @@ func (*tstatfs) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tstatfs) String() string {
-	return fmt.Sprintf("Tstatfs{FID: %d}", t.FID)
+	return fmt.Sprintf("Tstatfs{FID: %d}", t.fid)
 }
 
 // rstatfs is the response for a Tstatfs.
@@ -1792,18 +1792,18 @@ func (r *rstatfs) String() string {
 
 // tflushf is a flush file request, not to be confused with tflush.
 type tflushf struct {
-	// FID is the FID to be flushed.
-	FID FID
+	// fid is the fid to be flushed.
+	fid fid
 }
 
 // decode implements encoder.decode.
 func (t *tflushf) decode(b *buffer) {
-	t.FID = b.ReadFID()
+	t.fid = b.ReadFID()
 }
 
 // encode implements encoder.encode.
 func (t *tflushf) encode(b *buffer) {
-	b.WriteFID(t.FID)
+	b.WriteFID(t.fid)
 }
 
 // Type implements message.Type.
@@ -1813,7 +1813,7 @@ func (*tflushf) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *tflushf) String() string {
-	return fmt.Sprintf("Tflushf{FID: %d}", t.FID)
+	return fmt.Sprintf("Tflushf{FID: %d}", t.fid)
 }
 
 // rflushf is a flush file response.
@@ -1840,11 +1840,11 @@ func (*rflushf) String() string {
 
 // twalkgetattr is a walk request.
 type twalkgetattr struct {
-	// FID is the FID to be walked.
-	FID FID
+	// fid is the fid to be walked.
+	fid fid
 
-	// NewFID is the resulting FID.
-	NewFID FID
+	// newFID is the resulting fid.
+	newFID fid
 
 	// Names are the set of names to be walked.
 	Names []string
@@ -1852,8 +1852,8 @@ type twalkgetattr struct {
 
 // decode implements encoder.decode.
 func (t *twalkgetattr) decode(b *buffer) {
-	t.FID = b.ReadFID()
-	t.NewFID = b.ReadFID()
+	t.fid = b.ReadFID()
+	t.newFID = b.ReadFID()
 	n := b.Read16()
 	t.Names = t.Names[:0]
 	for i := 0; i < int(n); i++ {
@@ -1863,8 +1863,8 @@ func (t *twalkgetattr) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *twalkgetattr) encode(b *buffer) {
-	b.WriteFID(t.FID)
-	b.WriteFID(t.NewFID)
+	b.WriteFID(t.fid)
+	b.WriteFID(t.newFID)
 	b.Write16(uint16(len(t.Names)))
 	for _, name := range t.Names {
 		b.WriteString(name)
@@ -1878,7 +1878,7 @@ func (*twalkgetattr) typ() msgType {
 
 // String implements fmt.Stringer.
 func (t *twalkgetattr) String() string {
-	return fmt.Sprintf("Twalkgetattr{FID: %d, NewFID: %d, Names: %v}", t.FID, t.NewFID, t.Names)
+	return fmt.Sprintf("Twalkgetattr{FID: %d, newFID: %d, Names: %v}", t.fid, t.newFID, t.Names)
 }
 
 // rwalkgetattr is a walk response.
@@ -2132,8 +2132,8 @@ type registry struct {
 // An error is returned in the case of an unknown message.
 //
 // This takes, and ignores, a message tag so that it may be used directly as a
-// lookupTagAndType function for recv (by design).
-func (r *registry) get(_ Tag, t msgType) (message, error) {
+// lookuptagAndType function for recv (by design).
+func (r *registry) get(_ tag, t msgType) (message, error) {
 	entry := &r.factories[t]
 	if entry.create == nil {
 		return nil, &ErrInvalidMsgType{t}

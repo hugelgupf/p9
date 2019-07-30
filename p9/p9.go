@@ -79,11 +79,11 @@ func (o OpenFlags) String() string {
 	}
 }
 
-// Tag is a message tag.
-type Tag uint16
+// tag is a message tag.
+type tag uint16
 
-// FID is a file identifier.
-type FID uint64
+// fid is a file identifier.
+type fid uint64
 
 // FileMode are flags corresponding to file modes.
 //
@@ -277,11 +277,11 @@ func (gid GID) Ok() bool {
 }
 
 const (
-	// NoTag is a sentinel used to indicate no valid tag.
-	NoTag Tag = math.MaxUint16
+	// notag is a sentinel used to indicate no valid tag.
+	noTag tag = math.MaxUint16
 
-	// NoFID is a sentinel used to indicate no valid FID.
-	NoFID FID = math.MaxUint32
+	// Nofid is a sentinel used to indicate no valid fid.
+	noFID fid = math.MaxUint32
 
 	// NoUID is a sentinel used to indicate no valid UID.
 	NoUID UID = math.MaxUint32
