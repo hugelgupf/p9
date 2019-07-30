@@ -21,11 +21,13 @@ import (
 	"syscall"
 
 	"github.com/hugelgupf/p9/p9"
+	"github.com/hugelgupf/p9/unimplfs"
 )
 
 // Local is a p9.Attacher.
 type Local struct {
 	p9.DefaultWalkGetAttr
+	unimplfs.NoopFile
 
 	path string
 	file *os.File
@@ -84,13 +86,6 @@ func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	return qids, last, nil
 }
 
-// StatFS implements p9.File.StatFS.
-//
-// Not implemented.
-func (l *Local) StatFS() (p9.FSStat, error) {
-	return p9.FSStat{}, syscall.ENOSYS
-}
-
 // FSync implements p9.File.FSync.
 func (l *Local) FSync() error {
 	return l.file.Sync()
@@ -136,27 +131,6 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 	}
 
 	return qid, valid, attr, nil
-}
-
-// SetAttr implements p9.File.SetAttr.
-//
-// Not implemented.
-func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
-	return syscall.ENOSYS
-}
-
-// Remove implements p9.File.Remove.
-//
-// Not implemented.
-func (l *Local) Remove() error {
-	return syscall.ENOSYS
-}
-
-// Rename implements p9.File.Rename.
-//
-// Not implemented.
-func (l *Local) Rename(directory p9.File, name string) error {
-	return syscall.ENOSYS
 }
 
 // Close implements p9.File.Close.
@@ -240,27 +214,6 @@ func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 // Not properly implemented.
 func (l *Local) Link(target p9.File, newname string) error {
 	return os.Link(target.(*Local).path, path.Join(l.path, newname))
-}
-
-// Mknod implements p9.File.Mknod.
-//
-// Not implemented.
-func (l *Local) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	return p9.QID{}, syscall.ENOSYS
-}
-
-// RenameAt implements p9.File.RenameAt.
-//
-// Not implemented.
-func (l *Local) RenameAt(oldname string, newdir p9.File, newname string) error {
-	return syscall.ENOSYS
-}
-
-// UnlinkAt implements p9.File.UnlinkAt.
-//
-// Not implemented.
-func (l *Local) UnlinkAt(name string, flags uint32) error {
-	return syscall.ENOSYS
 }
 
 // Readdir implements p9.File.Readdir.
