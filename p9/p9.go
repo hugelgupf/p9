@@ -52,26 +52,6 @@ const (
 	OpenFlagsIgnoreMask OpenFlags = syscall.O_DIRECTORY | syscall.O_NOATIME | 0100000
 )
 
-// ConnectFlags is the mode passed to Connect operations.
-//
-// These correspond to bits sent over the wire.
-type ConnectFlags uint32
-
-const (
-	// StreamSocket is a Tlconnect flag indicating SOCK_STREAM mode.
-	StreamSocket ConnectFlags = 0
-
-	// DgramSocket is a Tlconnect flag indicating SOCK_DGRAM mode.
-	DgramSocket ConnectFlags = 1
-
-	// SeqpacketSocket is a Tlconnect flag indicating SOCK_SEQPACKET mode.
-	SeqpacketSocket ConnectFlags = 2
-
-	// AnonymousSocket is a Tlconnect flag indicating that the mode does not
-	// matter and that the requester will accept any socket type.
-	AnonymousSocket ConnectFlags = 3
-)
-
 // OSFlags converts a p9.OpenFlags to an int compatible with open(2).
 func (o OpenFlags) OSFlags() int {
 	return int(o & OpenFlagsModeMask)

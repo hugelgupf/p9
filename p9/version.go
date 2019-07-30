@@ -123,21 +123,6 @@ func versionSupportsTucreation(v uint32) bool {
 	return v >= 3
 }
 
-// VersionSupportsConnect returns true if version v supports the Tlconnect
-// message. This predicate must be checked by clients
-// before attempting to make a Tlconnect request. If Tlconnect messages are not
-// supported, Tlopen should be used.
-func VersionSupportsConnect(v uint32) bool {
-	return v >= 4
-}
-
-// VersionSupportsAnonymous returns true if version v supports Tlconnect
-// with the AnonymousSocket mode. This predicate must be checked by clients
-// before attempting to use the AnonymousSocket Tlconnect mode.
-func VersionSupportsAnonymous(v uint32) bool {
-	return v >= 5
-}
-
 // VersionSupportsMultiUser returns true if version v supports multi-user fake
 // directory permissions and ID values.
 func VersionSupportsMultiUser(v uint32) bool {

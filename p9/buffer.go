@@ -158,11 +158,6 @@ func (b *buffer) ReadOpenFlags() OpenFlags {
 	return OpenFlags(b.Read32())
 }
 
-// ReadConnectFlags reads a ConnectFlags.
-func (b *buffer) ReadConnectFlags() ConnectFlags {
-	return ConnectFlags(b.Read32())
-}
-
 // ReadMsgType writes a msgType.
 func (b *buffer) ReadMsgType() msgType {
 	return msgType(b.Read8())
@@ -241,11 +236,6 @@ func (b *buffer) WriteFileMode(mode FileMode) {
 
 // WriteOpenFlags writes an OpenFlags.
 func (b *buffer) WriteOpenFlags(flags OpenFlags) {
-	b.Write32(uint32(flags))
-}
-
-// WriteConnectFlags writes a ConnectFlags.
-func (b *buffer) WriteConnectFlags(flags ConnectFlags) {
 	b.Write32(uint32(flags))
 }
 
