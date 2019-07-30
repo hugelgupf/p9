@@ -18,13 +18,13 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/hugelgupf/p9/unet"
+	"github.com/hugelgupf/socketpair"
 )
 
 // TestVersion tests the version negotiation.
 func TestVersion(t *testing.T) {
 	// First, create a new server and connection.
-	serverSocket, clientSocket, err := unet.SocketPair(false)
+	serverSocket, clientSocket, err := socketpair.TCPPair()
 	if err != nil {
 		t.Fatalf("socketpair got err %v expected nil", err)
 	}
