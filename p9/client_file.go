@@ -21,8 +21,6 @@ import (
 	"runtime"
 	"sync/atomic"
 	"syscall"
-
-	"github.com/hugelgupf/p9/fd"
 )
 
 // Attach attaches to a server.
@@ -230,35 +228,17 @@ func (c *clientFile) Close() error {
 }
 
 // Open implements File.Open.
-func (c *clientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
+func (c *clientFile) Open(flags OpenFlags) (QID, uint32, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
-		return nil, QID{}, 0, syscall.EBADF
+		return QID{}, 0, syscall.EBADF
 	}
 
 	rlopen := Rlopen{}
 	if err := c.client.sendRecv(&Tlopen{FID: c.fid, Flags: flags}, &rlopen); err != nil {
-		return nil, QID{}, 0, err
+		return QID{}, 0, err
 	}
 
-	return rlopen.File, rlopen.QID, rlopen.IoUnit, nil
-}
-
-// Connect implements File.Connect.
-func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
-		return nil, syscall.EBADF
-	}
-
-	if !VersionSupportsConnect(c.client.version) {
-		return nil, syscall.ECONNREFUSED
-	}
-
-	rlconnect := Rlconnect{}
-	if err := c.client.sendRecv(&Tlconnect{FID: c.fid, Flags: flags}, &rlconnect); err != nil {
-		return nil, err
-	}
-
-	return rlconnect.File, nil
+	return rlopen.QID, rlopen.IoUnit, nil
 }
 
 // chunk applies fn to p in chunkSize-sized chunks until fn returns a partial result, p is
@@ -428,9 +408,9 @@ func (c *clientFile) Rename(dir File, name string) error {
 }
 
 // Create implements File.Create.
-func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMode, uid UID, gid GID) (*fd.FD, File, QID, uint32, error) {
+func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMode, uid UID, gid GID) (File, QID, uint32, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
-		return nil, nil, QID{}, 0, syscall.EBADF
+		return nil, QID{}, 0, syscall.EBADF
 	}
 
 	msg := Tlcreate{
@@ -445,17 +425,17 @@ func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMo
 		msg.GID = gid
 		rucreate := Rucreate{}
 		if err := c.client.sendRecv(&Tucreate{Tlcreate: msg, UID: uid}, &rucreate); err != nil {
-			return nil, nil, QID{}, 0, err
+			return nil, QID{}, 0, err
 		}
-		return rucreate.File, c, rucreate.QID, rucreate.IoUnit, nil
+		return c, rucreate.QID, rucreate.IoUnit, nil
 	}
 
 	rlcreate := Rlcreate{}
 	if err := c.client.sendRecv(&msg, &rlcreate); err != nil {
-		return nil, nil, QID{}, 0, err
+		return nil, QID{}, 0, err
 	}
 
-	return rlcreate.File, c, rlcreate.QID, rlcreate.IoUnit, nil
+	return c, rlcreate.QID, rlcreate.IoUnit, nil
 }
 
 // Mkdir implements File.Mkdir.

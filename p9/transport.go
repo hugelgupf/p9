@@ -20,9 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"sync"
-	"syscall"
 
-	"github.com/hugelgupf/p9/fd"
 	"github.com/hugelgupf/p9/unet"
 )
 
@@ -100,13 +98,6 @@ func send(s *unet.Socket, tag Tag, m message) error {
 
 	// Pack any files if necessary.
 	w := s.Writer(true)
-	if filer, ok := m.(filer); ok {
-		if f := filer.FilePayload(); f != nil {
-			defer f.Close()
-			// Pack the file into the message.
-			w.PackFDs(f.FD())
-		}
-	}
 
 	for n := 0; n < int(totalLength); {
 		cur, err := w.WriteVec(vecs)
@@ -124,11 +115,6 @@ func send(s *unet.Socket, tag Tag, m message) error {
 				vecs[0] = vecs[0][cur-consumed:]
 				break
 			}
-		}
-
-		if n > 0 && n < int(totalLength) {
-			// Don't resend any control message.
-			w.UnpackFDs()
 		}
 	}
 
@@ -153,33 +139,13 @@ type lookupTagAndType func(tag Tag, t MsgType) (message, error)
 // The tag value NoTag will always be returned if err is non-nil.
 func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, error) {
 	// Read a header.
-	//
-	// Since the send above is atomic, we must always receive control
-	// messages along with the header. This means we need to be careful
-	// about closing FDs during errors to prevent leaks.
 	var hdr [headerLength]byte
 	r := s.Reader(true)
-	r.EnableFDs(1)
 
 	n, err := r.ReadVec([][]byte{hdr[:]})
 	if err != nil && (n == 0 || err != io.EOF) {
-		r.CloseFDs()
 		return NoTag, nil, ErrSocket{err}
 	}
-
-	fds, err := r.ExtractFDs()
-	if err != nil {
-		return NoTag, nil, ErrSocket{err}
-	}
-	defer func() {
-		// Close anything left open. The case where
-		// fds are caught and used is handled below,
-		// and the fds variable will be set to nil.
-		for _, fd := range fds {
-			syscall.Close(fd)
-		}
-	}()
-	r.EnableFDs(0)
 
 	// Continuing reading for a short header.
 	for n < int(headerLength) {
@@ -312,20 +278,6 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	if dataBuf.isOverrun() {
 		// No need to drain the socket.
 		return NoTag, nil, ErrNoValidMessage
-	}
-
-	// Save the file, if any came out.
-	if filer, ok := m.(filer); ok && len(fds) > 0 {
-		// Set the file object.
-		filer.SetFilePayload(fd.New(fds[0]))
-
-		// Close the rest. We support only one.
-		for i := 1; i < len(fds); i++ {
-			syscall.Close(fds[i])
-		}
-
-		// Don't close in the defer.
-		fds = nil
 	}
 
 	// All set.

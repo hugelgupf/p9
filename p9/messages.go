@@ -17,8 +17,6 @@ package p9
 import (
 	"fmt"
 	"math"
-
-	"github.com/hugelgupf/p9/fd"
 )
 
 // ErrInvalidMsgType is returned when an unsupported message type is found.
@@ -53,15 +51,6 @@ type payloader interface {
 	// This is going to be total message size - FixedSize. But this should
 	// be validated during Decode, which will be called after SetPayload.
 	SetPayload([]byte)
-}
-
-// filer is a message capable of passing a file.
-type filer interface {
-	// FilePayload returns the file payload.
-	FilePayload() *fd.FD
-
-	// SetFilePayload sets the file payload.
-	SetFilePayload(*fd.FD)
 }
 
 // Tversion is a version request.
@@ -523,11 +512,6 @@ type Rlopen struct {
 
 	// IoUnit is the recommended I/O unit.
 	IoUnit uint32
-
-	// File may be attached via the socket.
-	//
-	// This is an extension specific to this package.
-	File *fd.FD
 }
 
 // Decode implements encoder.Decode.
@@ -547,19 +531,9 @@ func (*Rlopen) Type() MsgType {
 	return MsgRlopen
 }
 
-// FilePayload returns the file payload.
-func (r *Rlopen) FilePayload() *fd.FD {
-	return r.File
-}
-
-// SetFilePayload sets the received file.
-func (r *Rlopen) SetFilePayload(file *fd.FD) {
-	r.File = file
-}
-
 // String implements fmt.Stringer.
 func (r *Rlopen) String() string {
-	return fmt.Sprintf("Rlopen{QID: %s, IoUnit: %d, File: %v}", r.QID, r.IoUnit, r.File)
+	return fmt.Sprintf("Rlopen{QID: %s, IoUnit: %d}", r.QID, r.IoUnit)
 }
 
 // Tlcreate is a create request.
@@ -627,7 +601,7 @@ func (*Rlcreate) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (r *Rlcreate) String() string {
-	return fmt.Sprintf("Rlcreate{QID: %s, IoUnit: %d, File: %v}", r.QID, r.IoUnit, r.File)
+	return fmt.Sprintf("Rlcreate{QID: %s, IoUnit: %d}", r.QID, r.IoUnit)
 }
 
 // Tsymlink is a symlink request.
@@ -2138,69 +2112,6 @@ func (r *Rusymlink) String() string {
 	return fmt.Sprintf("Rusymlink{%v}", &r.Rsymlink)
 }
 
-// Tlconnect is a connect request.
-type Tlconnect struct {
-	// FID is the FID to be connected.
-	FID FID
-
-	// Flags are the connect flags.
-	Flags ConnectFlags
-}
-
-// Decode implements encoder.Decode.
-func (t *Tlconnect) Decode(b *buffer) {
-	t.FID = b.ReadFID()
-	t.Flags = b.ReadConnectFlags()
-}
-
-// Encode implements encoder.Encode.
-func (t *Tlconnect) Encode(b *buffer) {
-	b.WriteFID(t.FID)
-	b.WriteConnectFlags(t.Flags)
-}
-
-// Type implements message.Type.
-func (*Tlconnect) Type() MsgType {
-	return MsgTlconnect
-}
-
-// String implements fmt.Stringer.
-func (t *Tlconnect) String() string {
-	return fmt.Sprintf("Tlconnect{FID: %d, Flags: %v}", t.FID, t.Flags)
-}
-
-// Rlconnect is a connect response.
-type Rlconnect struct {
-	// File is a host socket.
-	File *fd.FD
-}
-
-// Decode implements encoder.Decode.
-func (r *Rlconnect) Decode(*buffer) {}
-
-// Encode implements encoder.Encode.
-func (r *Rlconnect) Encode(*buffer) {}
-
-// Type implements message.Type.
-func (*Rlconnect) Type() MsgType {
-	return MsgRlconnect
-}
-
-// FilePayload returns the file payload.
-func (r *Rlconnect) FilePayload() *fd.FD {
-	return r.File
-}
-
-// SetFilePayload sets the received file.
-func (r *Rlconnect) SetFilePayload(file *fd.FD) {
-	r.File = file
-}
-
-// String implements fmt.Stringer.
-func (r *Rlconnect) String() string {
-	return fmt.Sprintf("Rlconnect{File: %v}", r.File)
-}
-
 const maxCacheSize = 3
 
 // msgFactory is used to reduce allocations by caching messages for reuse.
@@ -2245,9 +2156,6 @@ func (r *registry) get(_ Tag, t MsgType) (message, error) {
 func (r *registry) put(msg message) {
 	if p, ok := msg.(payloader); ok {
 		p.SetPayload(nil)
-	}
-	if f, ok := msg.(filer); ok {
-		f.SetFilePayload(nil)
 	}
 
 	entry := &r.factories[msg.Type()]
@@ -2352,8 +2260,6 @@ func init() {
 	msgRegistry.register(MsgRumknod, func() message { return &Rumknod{} })
 	msgRegistry.register(MsgTusymlink, func() message { return &Tusymlink{} })
 	msgRegistry.register(MsgRusymlink, func() message { return &Rusymlink{} })
-	msgRegistry.register(MsgTlconnect, func() message { return &Tlconnect{} })
-	msgRegistry.register(MsgRlconnect, func() message { return &Rlconnect{} })
 	msgRegistry.register(MsgTallocate, func() message { return &Tallocate{} })
 	msgRegistry.register(MsgRallocate, func() message { return &Rallocate{} })
 }

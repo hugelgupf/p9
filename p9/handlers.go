@@ -23,8 +23,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
-
-	"github.com/hugelgupf/p9/fd"
 )
 
 // ExtractErrno extracts a syscall.Errno from a error, best effort.
@@ -286,7 +284,6 @@ func (t *Tlopen) handle(cs *connState) message {
 	var (
 		qid    QID
 		ioUnit uint32
-		osFile *fd.FD
 	)
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been deleted already?
@@ -295,7 +292,7 @@ func (t *Tlopen) handle(cs *connState) message {
 		}
 
 		// Do the open.
-		osFile, qid, ioUnit, err = ref.file.Open(t.Flags)
+		qid, ioUnit, err = ref.file.Open(t.Flags)
 		return err
 	}); err != nil {
 		return newErr(err)
@@ -305,7 +302,7 @@ func (t *Tlopen) handle(cs *connState) message {
 	ref.opened = true
 	ref.openFlags = t.Flags
 
-	return &Rlopen{QID: qid, IoUnit: ioUnit, File: osFile}
+	return &Rlopen{QID: qid, IoUnit: ioUnit}
 }
 
 func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
@@ -322,7 +319,6 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 	defer ref.DecRef()
 
 	var (
-		osFile *fd.FD
 		nsf    File
 		qid    QID
 		ioUnit uint32
@@ -340,7 +336,7 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 		}
 
 		// Do the create.
-		osFile, nsf, qid, ioUnit, err = ref.file.Create(t.Name, t.OpenFlags, t.Permissions, uid, t.GID)
+		nsf, qid, ioUnit, err = ref.file.Create(t.Name, t.OpenFlags, t.Permissions, uid, t.GID)
 		if err != nil {
 			return err
 		}
@@ -364,7 +360,7 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 	// Replace the FID reference.
 	cs.InsertFID(t.FID, newRef)
 
-	return &Rlcreate{Rlopen: Rlopen{QID: qid, IoUnit: ioUnit, File: osFile}}, nil
+	return &Rlcreate{Rlopen: Rlopen{QID: qid, IoUnit: ioUnit}}, nil
 }
 
 // handle implements handler.handle.
@@ -1262,30 +1258,4 @@ func (t *Tumknod) handle(cs *connState) message {
 		return newErr(err)
 	}
 	return &Rumknod{*rmknod}
-}
-
-// handle implements handler.handle.
-func (t *Tlconnect) handle(cs *connState) message {
-	// Lookup the FID.
-	ref, ok := cs.LookupFID(t.FID)
-	if !ok {
-		return newErr(syscall.EBADF)
-	}
-	defer ref.DecRef()
-
-	var osFile *fd.FD
-	if err := ref.safelyRead(func() (err error) {
-		// Don't allow connecting to deleted files.
-		if ref.isDeleted() || !ref.mode.IsSocket() {
-			return syscall.EINVAL
-		}
-
-		// Do the connect.
-		osFile, err = ref.file.Connect(t.Flags)
-		return err
-	}); err != nil {
-		return newErr(err)
-	}
-
-	return &Rlconnect{File: osFile}
 }
