@@ -49,7 +49,7 @@ type payloader interface {
 	// SetPayload returns the decoded message.
 	//
 	// This is going to be total message size - FixedSize. But this should
-	// be validated during Decode, which will be called after SetPayload.
+	// be validated during decode, which will be called after SetPayload.
 	SetPayload([]byte)
 }
 
@@ -64,14 +64,14 @@ type tversion struct {
 	Version string
 }
 
-// Decode implements encoder.Decode.
-func (t *tversion) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tversion) decode(b *buffer) {
 	t.MSize = b.Read32()
 	t.Version = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (t *tversion) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tversion) encode(b *buffer) {
 	b.Write32(t.MSize)
 	b.WriteString(t.Version)
 }
@@ -95,14 +95,14 @@ type rversion struct {
 	Version string
 }
 
-// Decode implements encoder.Decode.
-func (r *rversion) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rversion) decode(b *buffer) {
 	r.MSize = b.Read32()
 	r.Version = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (r *rversion) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rversion) encode(b *buffer) {
 	b.Write32(r.MSize)
 	b.WriteString(r.Version)
 }
@@ -123,13 +123,13 @@ type tflush struct {
 	OldTag Tag
 }
 
-// Decode implements encoder.Decode.
-func (t *tflush) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tflush) decode(b *buffer) {
 	t.OldTag = b.ReadTag()
 }
 
-// Encode implements encoder.Encode.
-func (t *tflush) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tflush) encode(b *buffer) {
 	b.WriteTag(t.OldTag)
 }
 
@@ -147,12 +147,12 @@ func (t *tflush) String() string {
 type rflush struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rflush) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rflush) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rflush) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rflush) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -177,8 +177,8 @@ type twalk struct {
 	Names []string
 }
 
-// Decode implements encoder.Decode.
-func (t *twalk) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *twalk) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
 	n := b.Read16()
@@ -188,8 +188,8 @@ func (t *twalk) Decode(b *buffer) {
 	}
 }
 
-// Encode implements encoder.Encode.
-func (t *twalk) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *twalk) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.NewFID)
 	b.Write16(uint16(len(t.Names)))
@@ -214,22 +214,22 @@ type rwalk struct {
 	QIDs []QID
 }
 
-// Decode implements encoder.Decode.
-func (r *rwalk) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rwalk) decode(b *buffer) {
 	n := b.Read16()
 	r.QIDs = r.QIDs[:0]
 	for i := 0; i < int(n); i++ {
 		var q QID
-		q.Decode(b)
+		q.decode(b)
 		r.QIDs = append(r.QIDs, q)
 	}
 }
 
-// Encode implements encoder.Encode.
-func (r *rwalk) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rwalk) encode(b *buffer) {
 	b.Write16(uint16(len(r.QIDs)))
 	for _, q := range r.QIDs {
-		q.Encode(b)
+		q.encode(b)
 	}
 }
 
@@ -249,13 +249,13 @@ type tclunk struct {
 	FID FID
 }
 
-// Decode implements encoder.Decode.
-func (t *tclunk) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tclunk) decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tclunk) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tclunk) encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
@@ -272,12 +272,12 @@ func (t *tclunk) String() string {
 // rclunk is a close response.
 type rclunk struct{}
 
-// Decode implements encoder.Decode.
-func (*rclunk) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rclunk) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rclunk) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rclunk) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -296,13 +296,13 @@ type tremove struct {
 	FID FID
 }
 
-// Decode implements encoder.Decode.
-func (t *tremove) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tremove) decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tremove) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tremove) encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
@@ -320,12 +320,12 @@ func (t *tremove) String() string {
 type rremove struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rremove) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rremove) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rremove) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rremove) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -345,13 +345,13 @@ type rlerror struct {
 	Error uint32
 }
 
-// Decode implements encoder.Decode.
-func (r *rlerror) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rlerror) decode(b *buffer) {
 	r.Error = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (r *rlerror) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rlerror) encode(b *buffer) {
 	b.Write32(r.Error)
 }
 
@@ -380,16 +380,16 @@ type tauth struct {
 	UID UID
 }
 
-// Decode implements encoder.Decode.
-func (t *tauth) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tauth) decode(b *buffer) {
 	t.AuthenticationFID = b.ReadFID()
 	t.UserName = b.ReadString()
 	t.AttachName = b.ReadString()
 	t.UID = b.ReadUID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tauth) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tauth) encode(b *buffer) {
 	b.WriteFID(t.AuthenticationFID)
 	b.WriteString(t.UserName)
 	b.WriteString(t.AttachName)
@@ -408,7 +408,7 @@ func (t *tauth) String() string {
 
 // rauth is an authentication response.
 //
-// Encode, Decode and Length are inherited directly from QID.
+// encode, decode and Length are inherited directly from QID.
 type rauth struct {
 	QID
 }
@@ -434,16 +434,16 @@ type tattach struct {
 	Auth tauth
 }
 
-// Decode implements encoder.Decode.
-func (t *tattach) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tattach) decode(b *buffer) {
 	t.FID = b.ReadFID()
-	t.Auth.Decode(b)
+	t.Auth.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (t *tattach) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tattach) encode(b *buffer) {
 	b.WriteFID(t.FID)
-	t.Auth.Encode(b)
+	t.Auth.encode(b)
 }
 
 // Type implements message.Type.
@@ -480,14 +480,14 @@ type tlopen struct {
 	Flags OpenFlags
 }
 
-// Decode implements encoder.Decode.
-func (t *tlopen) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tlopen) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Flags = b.ReadOpenFlags()
 }
 
-// Encode implements encoder.Encode.
-func (t *tlopen) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tlopen) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteOpenFlags(t.Flags)
 }
@@ -511,15 +511,15 @@ type rlopen struct {
 	IoUnit uint32
 }
 
-// Decode implements encoder.Decode.
-func (r *rlopen) Decode(b *buffer) {
-	r.QID.Decode(b)
+// decode implements encoder.decode.
+func (r *rlopen) decode(b *buffer) {
+	r.QID.decode(b)
 	r.IoUnit = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (r *rlopen) Encode(b *buffer) {
-	r.QID.Encode(b)
+// encode implements encoder.encode.
+func (r *rlopen) encode(b *buffer) {
+	r.QID.encode(b)
 	b.Write32(r.IoUnit)
 }
 
@@ -556,8 +556,8 @@ type tlcreate struct {
 	GID GID
 }
 
-// Decode implements encoder.Decode.
-func (t *tlcreate) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tlcreate) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Name = b.ReadString()
 	t.OpenFlags = b.ReadOpenFlags()
@@ -565,8 +565,8 @@ func (t *tlcreate) Decode(b *buffer) {
 	t.GID = b.ReadGID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tlcreate) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tlcreate) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteString(t.Name)
 	b.WriteOpenFlags(t.OpenFlags)
@@ -586,7 +586,7 @@ func (t *tlcreate) String() string {
 
 // rlcreate is a create response.
 //
-// The Encode, Decode, etc. methods are inherited from Rlopen.
+// The encode, decode, etc. methods are inherited from Rlopen.
 type rlcreate struct {
 	rlopen
 }
@@ -616,16 +616,16 @@ type tsymlink struct {
 	GID GID
 }
 
-// Decode implements encoder.Decode.
-func (t *tsymlink) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tsymlink) decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Target = b.ReadString()
 	t.GID = b.ReadGID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tsymlink) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tsymlink) encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.WriteString(t.Target)
@@ -648,14 +648,14 @@ type rsymlink struct {
 	QID QID
 }
 
-// Decode implements encoder.Decode.
-func (r *rsymlink) Decode(b *buffer) {
-	r.QID.Decode(b)
+// decode implements encoder.decode.
+func (r *rsymlink) decode(b *buffer) {
+	r.QID.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (r *rsymlink) Encode(b *buffer) {
-	r.QID.Encode(b)
+// encode implements encoder.encode.
+func (r *rsymlink) encode(b *buffer) {
+	r.QID.encode(b)
 }
 
 // Type implements message.Type.
@@ -680,15 +680,15 @@ type tlink struct {
 	Name string
 }
 
-// Decode implements encoder.Decode.
-func (t *tlink) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tlink) decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Target = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (t *tlink) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tlink) encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteFID(t.Target)
 	b.WriteString(t.Name)
@@ -713,12 +713,12 @@ func (*rlink) Type() msgType {
 	return msgRlink
 }
 
-// Decode implements encoder.Decode.
-func (*rlink) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rlink) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rlink) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rlink) encode(b *buffer) {
 }
 
 // String implements fmt.Stringer.
@@ -741,16 +741,16 @@ type trenameat struct {
 	NewName string
 }
 
-// Decode implements encoder.Decode.
-func (t *trenameat) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *trenameat) decode(b *buffer) {
 	t.OldDirectory = b.ReadFID()
 	t.OldName = b.ReadString()
 	t.NewDirectory = b.ReadFID()
 	t.NewName = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (t *trenameat) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *trenameat) encode(b *buffer) {
 	b.WriteFID(t.OldDirectory)
 	b.WriteString(t.OldName)
 	b.WriteFID(t.NewDirectory)
@@ -771,12 +771,12 @@ func (t *trenameat) String() string {
 type rrenameat struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rrenameat) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rrenameat) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rrenameat) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rrenameat) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -801,15 +801,15 @@ type tunlinkat struct {
 	Flags uint32
 }
 
-// Decode implements encoder.Decode.
-func (t *tunlinkat) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tunlinkat) decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Flags = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (t *tunlinkat) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tunlinkat) encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.Write32(t.Flags)
@@ -829,12 +829,12 @@ func (t *tunlinkat) String() string {
 type runlinkat struct {
 }
 
-// Decode implements encoder.Decode.
-func (*runlinkat) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*runlinkat) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*runlinkat) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*runlinkat) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -859,15 +859,15 @@ type trename struct {
 	Name string
 }
 
-// Decode implements encoder.Decode.
-func (t *trename) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *trename) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (t *trename) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *trename) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
@@ -887,12 +887,12 @@ func (t *trename) String() string {
 type rrename struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rrename) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rrename) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rrename) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rrename) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -911,13 +911,13 @@ type treadlink struct {
 	FID FID
 }
 
-// Decode implements encoder.Decode.
-func (t *treadlink) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *treadlink) decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
-// Encode implements encoder.Encode.
-func (t *treadlink) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *treadlink) encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
@@ -937,13 +937,13 @@ type rreadlink struct {
 	Target string
 }
 
-// Decode implements encoder.Decode.
-func (r *rreadlink) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rreadlink) decode(b *buffer) {
 	r.Target = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (r *rreadlink) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rreadlink) encode(b *buffer) {
 	b.WriteString(r.Target)
 }
 
@@ -969,15 +969,15 @@ type tread struct {
 	Count uint32
 }
 
-// Decode implements encoder.Decode.
-func (t *tread) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tread) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Offset = b.Read64()
 	t.Count = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (t *tread) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tread) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.Write64(t.Offset)
 	b.Write32(t.Count)
@@ -999,20 +999,20 @@ type rread struct {
 	Data []byte
 }
 
-// Decode implements encoder.Decode.
+// decode implements encoder.decode.
 //
 // Data is automatically decoded via Payload.
-func (r *rread) Decode(b *buffer) {
+func (r *rread) decode(b *buffer) {
 	count := b.Read32()
 	if count != uint32(len(r.Data)) {
 		b.markOverrun()
 	}
 }
 
-// Encode implements encoder.Encode.
+// encode implements encoder.encode.
 //
 // Data is automatically encoded via Payload.
-func (r *rread) Encode(b *buffer) {
+func (r *rread) encode(b *buffer) {
 	b.Write32(uint32(len(r.Data)))
 }
 
@@ -1053,8 +1053,8 @@ type twrite struct {
 	Data []byte
 }
 
-// Decode implements encoder.Decode.
-func (t *twrite) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *twrite) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Offset = b.Read64()
 	count := b.Read32()
@@ -1063,10 +1063,10 @@ func (t *twrite) Decode(b *buffer) {
 	}
 }
 
-// Encode implements encoder.Encode.
+// encode implements encoder.encode.
 //
 // This uses the buffer payload to avoid a copy.
-func (t *twrite) Encode(b *buffer) {
+func (t *twrite) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.Write64(t.Offset)
 	b.Write32(uint32(len(t.Data)))
@@ -1103,13 +1103,13 @@ type rwrite struct {
 	Count uint32
 }
 
-// Decode implements encoder.Decode.
-func (r *rwrite) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rwrite) decode(b *buffer) {
 	r.Count = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (r *rwrite) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rwrite) encode(b *buffer) {
 	b.Write32(r.Count)
 }
 
@@ -1144,8 +1144,8 @@ type tmknod struct {
 	GID GID
 }
 
-// Decode implements encoder.Decode.
-func (t *tmknod) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tmknod) decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Mode = b.ReadFileMode()
@@ -1154,8 +1154,8 @@ func (t *tmknod) Decode(b *buffer) {
 	t.GID = b.ReadGID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tmknod) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tmknod) encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.WriteFileMode(t.Mode)
@@ -1180,14 +1180,14 @@ type rmknod struct {
 	QID QID
 }
 
-// Decode implements encoder.Decode.
-func (r *rmknod) Decode(b *buffer) {
-	r.QID.Decode(b)
+// decode implements encoder.decode.
+func (r *rmknod) decode(b *buffer) {
+	r.QID.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (r *rmknod) Encode(b *buffer) {
-	r.QID.Encode(b)
+// encode implements encoder.encode.
+func (r *rmknod) encode(b *buffer) {
+	r.QID.encode(b)
 }
 
 // Type implements message.Type.
@@ -1215,16 +1215,16 @@ type tmkdir struct {
 	GID GID
 }
 
-// Decode implements encoder.Decode.
-func (t *tmkdir) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tmkdir) decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Permissions = b.ReadPermissions()
 	t.GID = b.ReadGID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tmkdir) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tmkdir) encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.WritePermissions(t.Permissions)
@@ -1247,14 +1247,14 @@ type rmkdir struct {
 	QID QID
 }
 
-// Decode implements encoder.Decode.
-func (r *rmkdir) Decode(b *buffer) {
-	r.QID.Decode(b)
+// decode implements encoder.decode.
+func (r *rmkdir) decode(b *buffer) {
+	r.QID.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (r *rmkdir) Encode(b *buffer) {
-	r.QID.Encode(b)
+// encode implements encoder.encode.
+func (r *rmkdir) encode(b *buffer) {
+	r.QID.encode(b)
 }
 
 // Type implements message.Type.
@@ -1276,16 +1276,16 @@ type tgetattr struct {
 	AttrMask AttrMask
 }
 
-// Decode implements encoder.Decode.
-func (t *tgetattr) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tgetattr) decode(b *buffer) {
 	t.FID = b.ReadFID()
-	t.AttrMask.Decode(b)
+	t.AttrMask.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (t *tgetattr) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tgetattr) encode(b *buffer) {
 	b.WriteFID(t.FID)
-	t.AttrMask.Encode(b)
+	t.AttrMask.encode(b)
 }
 
 // Type implements message.Type.
@@ -1310,18 +1310,18 @@ type rgetattr struct {
 	Attr Attr
 }
 
-// Decode implements encoder.Decode.
-func (r *rgetattr) Decode(b *buffer) {
-	r.Valid.Decode(b)
-	r.QID.Decode(b)
-	r.Attr.Decode(b)
+// decode implements encoder.decode.
+func (r *rgetattr) decode(b *buffer) {
+	r.Valid.decode(b)
+	r.QID.decode(b)
+	r.Attr.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (r *rgetattr) Encode(b *buffer) {
-	r.Valid.Encode(b)
-	r.QID.Encode(b)
-	r.Attr.Encode(b)
+// encode implements encoder.encode.
+func (r *rgetattr) encode(b *buffer) {
+	r.Valid.encode(b)
+	r.QID.encode(b)
+	r.Attr.encode(b)
 }
 
 // Type implements message.Type.
@@ -1346,18 +1346,18 @@ type tsetattr struct {
 	SetAttr SetAttr
 }
 
-// Decode implements encoder.Decode.
-func (t *tsetattr) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tsetattr) decode(b *buffer) {
 	t.FID = b.ReadFID()
-	t.Valid.Decode(b)
-	t.SetAttr.Decode(b)
+	t.Valid.decode(b)
+	t.SetAttr.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (t *tsetattr) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tsetattr) encode(b *buffer) {
 	b.WriteFID(t.FID)
-	t.Valid.Encode(b)
-	t.SetAttr.Encode(b)
+	t.Valid.encode(b)
+	t.SetAttr.encode(b)
 }
 
 // Type implements message.Type.
@@ -1374,12 +1374,12 @@ func (t *tsetattr) String() string {
 type rsetattr struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rsetattr) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rsetattr) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rsetattr) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rsetattr) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -1401,18 +1401,18 @@ type tallocate struct {
 	Length uint64
 }
 
-// Decode implements encoder.Decode.
-func (t *tallocate) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tallocate) decode(b *buffer) {
 	t.FID = b.ReadFID()
-	t.Mode.Decode(b)
+	t.Mode.decode(b)
 	t.Offset = b.Read64()
 	t.Length = b.Read64()
 }
 
-// Encode implements encoder.Encode.
-func (t *tallocate) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tallocate) encode(b *buffer) {
 	b.WriteFID(t.FID)
-	t.Mode.Encode(b)
+	t.Mode.encode(b)
 	b.Write64(t.Offset)
 	b.Write64(t.Length)
 }
@@ -1431,12 +1431,12 @@ func (t *tallocate) String() string {
 type rallocate struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rallocate) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rallocate) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rallocate) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rallocate) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -1461,15 +1461,15 @@ type txattrwalk struct {
 	Name string
 }
 
-// Decode implements encoder.Decode.
-func (t *txattrwalk) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *txattrwalk) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
-// Encode implements encoder.Encode.
-func (t *txattrwalk) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *txattrwalk) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.NewFID)
 	b.WriteString(t.Name)
@@ -1491,13 +1491,13 @@ type rxattrwalk struct {
 	Size uint64
 }
 
-// Decode implements encoder.Decode.
-func (r *rxattrwalk) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rxattrwalk) decode(b *buffer) {
 	r.Size = b.Read64()
 }
 
-// Encode implements encoder.Encode.
-func (r *rxattrwalk) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rxattrwalk) encode(b *buffer) {
 	b.Write64(r.Size)
 }
 
@@ -1529,16 +1529,16 @@ type txattrcreate struct {
 	Flags uint32
 }
 
-// Decode implements encoder.Decode.
-func (t *txattrcreate) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *txattrcreate) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Name = b.ReadString()
 	t.AttrSize = b.Read64()
 	t.Flags = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (t *txattrcreate) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *txattrcreate) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteString(t.Name)
 	b.Write64(t.AttrSize)
@@ -1559,12 +1559,12 @@ func (t *txattrcreate) String() string {
 type rxattrcreate struct {
 }
 
-// Decode implements encoder.Decode.
-func (r *rxattrcreate) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rxattrcreate) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (r *rxattrcreate) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rxattrcreate) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -1589,15 +1589,15 @@ type treaddir struct {
 	Count uint32
 }
 
-// Decode implements encoder.Decode.
-func (t *treaddir) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *treaddir) decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Offset = b.Read64()
 	t.Count = b.Read32()
 }
 
-// Encode implements encoder.Encode.
-func (t *treaddir) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *treaddir) encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.Write64(t.Offset)
 	b.Write32(t.Count)
@@ -1631,14 +1631,14 @@ type rreaddir struct {
 	payload []byte
 }
 
-// Decode implements encoder.Decode.
-func (r *rreaddir) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (r *rreaddir) decode(b *buffer) {
 	r.Count = b.Read32()
 	entriesBuf := buffer{data: r.payload}
 	r.Entries = r.Entries[:0]
 	for {
 		var d Dirent
-		d.Decode(&entriesBuf)
+		d.decode(&entriesBuf)
 		if entriesBuf.isOverrun() {
 			// Couldn't decode a complete entry.
 			break
@@ -1647,11 +1647,11 @@ func (r *rreaddir) Decode(b *buffer) {
 	}
 }
 
-// Encode implements encoder.Encode.
-func (r *rreaddir) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (r *rreaddir) encode(b *buffer) {
 	entriesBuf := buffer{}
 	for _, d := range r.Entries {
-		d.Encode(&entriesBuf)
+		d.encode(&entriesBuf)
 		if len(entriesBuf.data) >= int(r.Count) {
 			break
 		}
@@ -1696,13 +1696,13 @@ type tfsync struct {
 	FID FID
 }
 
-// Decode implements encoder.Decode.
-func (t *tfsync) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tfsync) decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tfsync) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tfsync) encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
@@ -1720,12 +1720,12 @@ func (t *tfsync) String() string {
 type rfsync struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rfsync) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rfsync) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rfsync) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rfsync) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -1744,13 +1744,13 @@ type tstatfs struct {
 	FID FID
 }
 
-// Decode implements encoder.Decode.
-func (t *tstatfs) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tstatfs) decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tstatfs) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tstatfs) encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
@@ -1770,14 +1770,14 @@ type rstatfs struct {
 	FSStat FSStat
 }
 
-// Decode implements encoder.Decode.
-func (r *rstatfs) Decode(b *buffer) {
-	r.FSStat.Decode(b)
+// decode implements encoder.decode.
+func (r *rstatfs) decode(b *buffer) {
+	r.FSStat.decode(b)
 }
 
-// Encode implements encoder.Encode.
-func (r *rstatfs) Encode(b *buffer) {
-	r.FSStat.Encode(b)
+// encode implements encoder.encode.
+func (r *rstatfs) encode(b *buffer) {
+	r.FSStat.encode(b)
 }
 
 // Type implements message.Type.
@@ -1796,13 +1796,13 @@ type tflushf struct {
 	FID FID
 }
 
-// Decode implements encoder.Decode.
-func (t *tflushf) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *tflushf) decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tflushf) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *tflushf) encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
@@ -1820,12 +1820,12 @@ func (t *tflushf) String() string {
 type rflushf struct {
 }
 
-// Decode implements encoder.Decode.
-func (*rflushf) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (*rflushf) decode(b *buffer) {
 }
 
-// Encode implements encoder.Encode.
-func (*rflushf) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (*rflushf) encode(b *buffer) {
 }
 
 // Type implements message.Type.
@@ -1850,8 +1850,8 @@ type twalkgetattr struct {
 	Names []string
 }
 
-// Decode implements encoder.Decode.
-func (t *twalkgetattr) Decode(b *buffer) {
+// decode implements encoder.decode.
+func (t *twalkgetattr) decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
 	n := b.Read16()
@@ -1861,8 +1861,8 @@ func (t *twalkgetattr) Decode(b *buffer) {
 	}
 }
 
-// Encode implements encoder.Encode.
-func (t *twalkgetattr) Encode(b *buffer) {
+// encode implements encoder.encode.
+func (t *twalkgetattr) encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.NewFID)
 	b.Write16(uint16(len(t.Names)))
@@ -1893,26 +1893,26 @@ type rwalkgetattr struct {
 	QIDs []QID
 }
 
-// Decode implements encoder.Decode.
-func (r *rwalkgetattr) Decode(b *buffer) {
-	r.Valid.Decode(b)
-	r.Attr.Decode(b)
+// decode implements encoder.decode.
+func (r *rwalkgetattr) decode(b *buffer) {
+	r.Valid.decode(b)
+	r.Attr.decode(b)
 	n := b.Read16()
 	r.QIDs = r.QIDs[:0]
 	for i := 0; i < int(n); i++ {
 		var q QID
-		q.Decode(b)
+		q.decode(b)
 		r.QIDs = append(r.QIDs, q)
 	}
 }
 
-// Encode implements encoder.Encode.
-func (r *rwalkgetattr) Encode(b *buffer) {
-	r.Valid.Encode(b)
-	r.Attr.Encode(b)
+// encode implements encoder.encode.
+func (r *rwalkgetattr) encode(b *buffer) {
+	r.Valid.encode(b)
+	r.Attr.encode(b)
 	b.Write16(uint16(len(r.QIDs)))
 	for _, q := range r.QIDs {
-		q.Encode(b)
+		q.encode(b)
 	}
 }
 
@@ -1934,15 +1934,15 @@ type tucreate struct {
 	UID UID
 }
 
-// Decode implements encoder.Decode.
-func (t *tucreate) Decode(b *buffer) {
-	t.tlcreate.Decode(b)
+// decode implements encoder.decode.
+func (t *tucreate) decode(b *buffer) {
+	t.tlcreate.decode(b)
 	t.UID = b.ReadUID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tucreate) Encode(b *buffer) {
-	t.tlcreate.Encode(b)
+// encode implements encoder.encode.
+func (t *tucreate) encode(b *buffer) {
+	t.tlcreate.encode(b)
 	b.WriteUID(t.UID)
 }
 
@@ -1979,15 +1979,15 @@ type tumkdir struct {
 	UID UID
 }
 
-// Decode implements encoder.Decode.
-func (t *tumkdir) Decode(b *buffer) {
-	t.tmkdir.Decode(b)
+// decode implements encoder.decode.
+func (t *tumkdir) decode(b *buffer) {
+	t.tmkdir.decode(b)
 	t.UID = b.ReadUID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tumkdir) Encode(b *buffer) {
-	t.tmkdir.Encode(b)
+// encode implements encoder.encode.
+func (t *tumkdir) encode(b *buffer) {
+	t.tmkdir.encode(b)
 	b.WriteUID(t.UID)
 }
 
@@ -2024,15 +2024,15 @@ type tumknod struct {
 	UID UID
 }
 
-// Decode implements encoder.Decode.
-func (t *tumknod) Decode(b *buffer) {
-	t.tmknod.Decode(b)
+// decode implements encoder.decode.
+func (t *tumknod) decode(b *buffer) {
+	t.tmknod.decode(b)
 	t.UID = b.ReadUID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tumknod) Encode(b *buffer) {
-	t.tmknod.Encode(b)
+// encode implements encoder.encode.
+func (t *tumknod) encode(b *buffer) {
+	t.tmknod.encode(b)
 	b.WriteUID(t.UID)
 }
 
@@ -2069,15 +2069,15 @@ type tusymlink struct {
 	UID UID
 }
 
-// Decode implements encoder.Decode.
-func (t *tusymlink) Decode(b *buffer) {
-	t.tsymlink.Decode(b)
+// decode implements encoder.decode.
+func (t *tusymlink) decode(b *buffer) {
+	t.tsymlink.decode(b)
 	t.UID = b.ReadUID()
 }
 
-// Encode implements encoder.Encode.
-func (t *tusymlink) Encode(b *buffer) {
-	t.tsymlink.Encode(b)
+// encode implements encoder.encode.
+func (t *tusymlink) encode(b *buffer) {
+	t.tsymlink.encode(b)
 	b.WriteUID(t.UID)
 }
 
@@ -2184,7 +2184,7 @@ func calculateSize(m message) uint32 {
 		return p.FixedSize()
 	}
 	var dataBuf buffer
-	m.Encode(&dataBuf)
+	m.encode(&dataBuf)
 	return uint32(len(dataBuf.data))
 }
 

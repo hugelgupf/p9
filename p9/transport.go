@@ -78,7 +78,7 @@ func send(conn net.Conn, tag Tag, m message) error {
 	Debug("send [conn %p] [Tag %06d] %s", conn, tag, m)
 
 	// Encode the message. The buffer will grow automatically.
-	m.Encode(&dataBuf)
+	m.encode(&dataBuf)
 
 	// Get our vectors to send.
 	var hdr [headerLength]byte
@@ -234,7 +234,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, e
 	}
 
 	// Decode the message data.
-	m.Decode(&dataBuf)
+	m.decode(&dataBuf)
 	if dataBuf.isOverrun() {
 		// No need to drain the socket.
 		return NoTag, nil, ErrNoValidMessage
