@@ -53,8 +53,8 @@ type payloader interface {
 	SetPayload([]byte)
 }
 
-// Tversion is a version request.
-type Tversion struct {
+// tversion is a version request.
+type tversion struct {
 	// MSize is the message size to use.
 	MSize uint32
 
@@ -65,29 +65,29 @@ type Tversion struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tversion) Decode(b *buffer) {
+func (t *tversion) Decode(b *buffer) {
 	t.MSize = b.Read32()
 	t.Version = b.ReadString()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tversion) Encode(b *buffer) {
+func (t *tversion) Encode(b *buffer) {
 	b.Write32(t.MSize)
 	b.WriteString(t.Version)
 }
 
 // Type implements message.Type.
-func (*Tversion) Type() msgType {
+func (*tversion) Type() msgType {
 	return msgTversion
 }
 
 // String implements fmt.Stringer.
-func (t *Tversion) String() string {
+func (t *tversion) String() string {
 	return fmt.Sprintf("Tversion{MSize: %d, Version: %s}", t.MSize, t.Version)
 }
 
-// Rversion is a version response.
-type Rversion struct {
+// rversion is a version response.
+type rversion struct {
 	// MSize is the negotiated size.
 	MSize uint32
 
@@ -96,77 +96,77 @@ type Rversion struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rversion) Decode(b *buffer) {
+func (r *rversion) Decode(b *buffer) {
 	r.MSize = b.Read32()
 	r.Version = b.ReadString()
 }
 
 // Encode implements encoder.Encode.
-func (r *Rversion) Encode(b *buffer) {
+func (r *rversion) Encode(b *buffer) {
 	b.Write32(r.MSize)
 	b.WriteString(r.Version)
 }
 
 // Type implements message.Type.
-func (*Rversion) Type() msgType {
+func (*rversion) Type() msgType {
 	return msgRversion
 }
 
 // String implements fmt.Stringer.
-func (r *Rversion) String() string {
+func (r *rversion) String() string {
 	return fmt.Sprintf("Rversion{MSize: %d, Version: %s}", r.MSize, r.Version)
 }
 
-// Tflush is a flush request.
-type Tflush struct {
+// tflush is a flush request.
+type tflush struct {
 	// OldTag is the tag to wait on.
 	OldTag Tag
 }
 
 // Decode implements encoder.Decode.
-func (t *Tflush) Decode(b *buffer) {
+func (t *tflush) Decode(b *buffer) {
 	t.OldTag = b.ReadTag()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tflush) Encode(b *buffer) {
+func (t *tflush) Encode(b *buffer) {
 	b.WriteTag(t.OldTag)
 }
 
 // Type implements message.Type.
-func (*Tflush) Type() msgType {
+func (*tflush) Type() msgType {
 	return msgTflush
 }
 
 // String implements fmt.Stringer.
-func (t *Tflush) String() string {
+func (t *tflush) String() string {
 	return fmt.Sprintf("Tflush{OldTag: %d}", t.OldTag)
 }
 
-// Rflush is a flush response.
-type Rflush struct {
+// rflush is a flush response.
+type rflush struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rflush) Decode(b *buffer) {
+func (*rflush) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rflush) Encode(b *buffer) {
+func (*rflush) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rflush) Type() msgType {
+func (*rflush) Type() msgType {
 	return msgRflush
 }
 
 // String implements fmt.Stringer.
-func (r *Rflush) String() string {
-	return fmt.Sprintf("RFlush{}")
+func (r *rflush) String() string {
+	return fmt.Sprintf("Rflush{}")
 }
 
-// Twalk is a walk request.
-type Twalk struct {
+// twalk is a walk request.
+type twalk struct {
 	// FID is the FID to be walked.
 	FID FID
 
@@ -178,7 +178,7 @@ type Twalk struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Twalk) Decode(b *buffer) {
+func (t *twalk) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
 	n := b.Read16()
@@ -189,7 +189,7 @@ func (t *Twalk) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Twalk) Encode(b *buffer) {
+func (t *twalk) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.NewFID)
 	b.Write16(uint16(len(t.Names)))
@@ -199,23 +199,23 @@ func (t *Twalk) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Twalk) Type() msgType {
+func (*twalk) Type() msgType {
 	return msgTwalk
 }
 
 // String implements fmt.Stringer.
-func (t *Twalk) String() string {
+func (t *twalk) String() string {
 	return fmt.Sprintf("Twalk{FID: %d, NewFID: %d, Names: %v}", t.FID, t.NewFID, t.Names)
 }
 
-// Rwalk is a walk response.
-type Rwalk struct {
+// rwalk is a walk response.
+type rwalk struct {
 	// QIDs are the set of QIDs returned.
 	QIDs []QID
 }
 
 // Decode implements encoder.Decode.
-func (r *Rwalk) Decode(b *buffer) {
+func (r *rwalk) Decode(b *buffer) {
 	n := b.Read16()
 	r.QIDs = r.QIDs[:0]
 	for i := 0; i < int(n); i++ {
@@ -226,7 +226,7 @@ func (r *Rwalk) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (r *Rwalk) Encode(b *buffer) {
+func (r *rwalk) Encode(b *buffer) {
 	b.Write16(uint16(len(r.QIDs)))
 	for _, q := range r.QIDs {
 		q.Encode(b)
@@ -234,142 +234,139 @@ func (r *Rwalk) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rwalk) Type() msgType {
+func (*rwalk) Type() msgType {
 	return msgRwalk
 }
 
 // String implements fmt.Stringer.
-func (r *Rwalk) String() string {
+func (r *rwalk) String() string {
 	return fmt.Sprintf("Rwalk{QIDs: %v}", r.QIDs)
 }
 
-// Tclunk is a close request.
-type Tclunk struct {
+// tclunk is a close request.
+type tclunk struct {
 	// FID is the FID to be closed.
 	FID FID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tclunk) Decode(b *buffer) {
+func (t *tclunk) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tclunk) Encode(b *buffer) {
+func (t *tclunk) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
 // Type implements message.Type.
-func (*Tclunk) Type() msgType {
+func (*tclunk) Type() msgType {
 	return msgTclunk
 }
 
 // String implements fmt.Stringer.
-func (t *Tclunk) String() string {
+func (t *tclunk) String() string {
 	return fmt.Sprintf("Tclunk{FID: %d}", t.FID)
 }
 
-// Rclunk is a close response.
-type Rclunk struct {
-}
+// rclunk is a close response.
+type rclunk struct{}
 
 // Decode implements encoder.Decode.
-func (*Rclunk) Decode(b *buffer) {
+func (*rclunk) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rclunk) Encode(b *buffer) {
+func (*rclunk) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rclunk) Type() msgType {
+func (*rclunk) Type() msgType {
 	return msgRclunk
 }
 
 // String implements fmt.Stringer.
-func (r *Rclunk) String() string {
+func (r *rclunk) String() string {
 	return fmt.Sprintf("Rclunk{}")
 }
 
-// Tremove is a remove request.
-//
-// This will eventually be replaced by Tunlinkat.
-type Tremove struct {
+// tremove is a remove request.
+type tremove struct {
 	// FID is the FID to be removed.
 	FID FID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tremove) Decode(b *buffer) {
+func (t *tremove) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tremove) Encode(b *buffer) {
+func (t *tremove) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
 // Type implements message.Type.
-func (*Tremove) Type() msgType {
+func (*tremove) Type() msgType {
 	return msgTremove
 }
 
 // String implements fmt.Stringer.
-func (t *Tremove) String() string {
+func (t *tremove) String() string {
 	return fmt.Sprintf("Tremove{FID: %d}", t.FID)
 }
 
-// Rremove is a remove response.
-type Rremove struct {
+// rremove is a remove response.
+type rremove struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rremove) Decode(b *buffer) {
+func (*rremove) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rremove) Encode(b *buffer) {
+func (*rremove) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rremove) Type() msgType {
+func (*rremove) Type() msgType {
 	return msgRremove
 }
 
 // String implements fmt.Stringer.
-func (r *Rremove) String() string {
+func (r *rremove) String() string {
 	return fmt.Sprintf("Rremove{}")
 }
 
-// Rlerror is an error response.
+// rlerror is an error response.
 //
 // Note that this replaces the error code used in 9p.
-type Rlerror struct {
+type rlerror struct {
 	Error uint32
 }
 
 // Decode implements encoder.Decode.
-func (r *Rlerror) Decode(b *buffer) {
+func (r *rlerror) Decode(b *buffer) {
 	r.Error = b.Read32()
 }
 
 // Encode implements encoder.Encode.
-func (r *Rlerror) Encode(b *buffer) {
+func (r *rlerror) Encode(b *buffer) {
 	b.Write32(r.Error)
 }
 
 // Type implements message.Type.
-func (*Rlerror) Type() msgType {
+func (*rlerror) Type() msgType {
 	return msgRlerror
 }
 
 // String implements fmt.Stringer.
-func (r *Rlerror) String() string {
+func (r *rlerror) String() string {
 	return fmt.Sprintf("Rlerror{Error: %d}", r.Error)
 }
 
-// Tauth is an authentication request.
-type Tauth struct {
+// tauth is an authentication request.
+type tauth struct {
 	// AuthenticationFID is the FID to attach the authentication result.
 	AuthenticationFID FID
 
@@ -384,7 +381,7 @@ type Tauth struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tauth) Decode(b *buffer) {
+func (t *tauth) Decode(b *buffer) {
 	t.AuthenticationFID = b.ReadFID()
 	t.UserName = b.ReadString()
 	t.AttachName = b.ReadString()
@@ -392,7 +389,7 @@ func (t *Tauth) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Tauth) Encode(b *buffer) {
+func (t *tauth) Encode(b *buffer) {
 	b.WriteFID(t.AuthenticationFID)
 	b.WriteString(t.UserName)
 	b.WriteString(t.AttachName)
@@ -400,82 +397,82 @@ func (t *Tauth) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Tauth) Type() msgType {
+func (*tauth) Type() msgType {
 	return msgTauth
 }
 
 // String implements fmt.Stringer.
-func (t *Tauth) String() string {
+func (t *tauth) String() string {
 	return fmt.Sprintf("Tauth{AuthFID: %d, UserName: %s, AttachName: %s, UID: %d", t.AuthenticationFID, t.UserName, t.AttachName, t.UID)
 }
 
-// Rauth is an authentication response.
+// rauth is an authentication response.
 //
 // Encode, Decode and Length are inherited directly from QID.
-type Rauth struct {
+type rauth struct {
 	QID
 }
 
 // Type implements message.Type.
-func (*Rauth) Type() msgType {
+func (*rauth) Type() msgType {
 	return msgRauth
 }
 
 // String implements fmt.Stringer.
-func (r *Rauth) String() string {
+func (r *rauth) String() string {
 	return fmt.Sprintf("Rauth{QID: %s}", r.QID)
 }
 
-// Tattach is an attach request.
-type Tattach struct {
+// tattach is an attach request.
+type tattach struct {
 	// FID is the FID to be attached.
 	FID FID
 
 	// Auth is the embedded authentication request.
 	//
 	// See client.Attach for information regarding authentication.
-	Auth Tauth
+	Auth tauth
 }
 
 // Decode implements encoder.Decode.
-func (t *Tattach) Decode(b *buffer) {
+func (t *tattach) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Auth.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (t *Tattach) Encode(b *buffer) {
+func (t *tattach) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	t.Auth.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Tattach) Type() msgType {
+func (*tattach) Type() msgType {
 	return msgTattach
 }
 
 // String implements fmt.Stringer.
-func (t *Tattach) String() string {
+func (t *tattach) String() string {
 	return fmt.Sprintf("Tattach{FID: %d, AuthFID: %d, UserName: %s, AttachName: %s, UID: %d}", t.FID, t.Auth.AuthenticationFID, t.Auth.UserName, t.Auth.AttachName, t.Auth.UID)
 }
 
-// Rattach is an attach response.
-type Rattach struct {
+// rattach is an attach response.
+type rattach struct {
 	QID
 }
 
 // Type implements message.Type.
-func (*Rattach) Type() msgType {
+func (*rattach) Type() msgType {
 	return msgRattach
 }
 
 // String implements fmt.Stringer.
-func (r *Rattach) String() string {
+func (r *rattach) String() string {
 	return fmt.Sprintf("Rattach{QID: %s}", r.QID)
 }
 
-// Tlopen is an open request.
-type Tlopen struct {
+// tlopen is an open request.
+type tlopen struct {
 	// FID is the FID to be opened.
 	FID FID
 
@@ -484,29 +481,29 @@ type Tlopen struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tlopen) Decode(b *buffer) {
+func (t *tlopen) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Flags = b.ReadOpenFlags()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tlopen) Encode(b *buffer) {
+func (t *tlopen) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteOpenFlags(t.Flags)
 }
 
 // Type implements message.Type.
-func (*Tlopen) Type() msgType {
+func (*tlopen) Type() msgType {
 	return msgTlopen
 }
 
 // String implements fmt.Stringer.
-func (t *Tlopen) String() string {
+func (t *tlopen) String() string {
 	return fmt.Sprintf("Tlopen{FID: %d, Flags: %v}", t.FID, t.Flags)
 }
 
-// Rlopen is a open response.
-type Rlopen struct {
+// rlopen is a open response.
+type rlopen struct {
 	// QID is the file's QID.
 	QID QID
 
@@ -515,29 +512,29 @@ type Rlopen struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rlopen) Decode(b *buffer) {
+func (r *rlopen) Decode(b *buffer) {
 	r.QID.Decode(b)
 	r.IoUnit = b.Read32()
 }
 
 // Encode implements encoder.Encode.
-func (r *Rlopen) Encode(b *buffer) {
+func (r *rlopen) Encode(b *buffer) {
 	r.QID.Encode(b)
 	b.Write32(r.IoUnit)
 }
 
 // Type implements message.Type.
-func (*Rlopen) Type() msgType {
+func (*rlopen) Type() msgType {
 	return msgRlopen
 }
 
 // String implements fmt.Stringer.
-func (r *Rlopen) String() string {
+func (r *rlopen) String() string {
 	return fmt.Sprintf("Rlopen{QID: %s, IoUnit: %d}", r.QID, r.IoUnit)
 }
 
-// Tlcreate is a create request.
-type Tlcreate struct {
+// tlcreate is a create request.
+type tlcreate struct {
 	// FID is the parent FID.
 	//
 	// This becomes the new file.
@@ -560,7 +557,7 @@ type Tlcreate struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tlcreate) Decode(b *buffer) {
+func (t *tlcreate) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Name = b.ReadString()
 	t.OpenFlags = b.ReadOpenFlags()
@@ -569,7 +566,7 @@ func (t *Tlcreate) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Tlcreate) Encode(b *buffer) {
+func (t *tlcreate) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteString(t.Name)
 	b.WriteOpenFlags(t.OpenFlags)
@@ -578,34 +575,34 @@ func (t *Tlcreate) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Tlcreate) Type() msgType {
+func (*tlcreate) Type() msgType {
 	return msgTlcreate
 }
 
 // String implements fmt.Stringer.
-func (t *Tlcreate) String() string {
+func (t *tlcreate) String() string {
 	return fmt.Sprintf("Tlcreate{FID: %d, Name: %s, OpenFlags: %s, Permissions: 0o%o, GID: %d}", t.FID, t.Name, t.OpenFlags, t.Permissions, t.GID)
 }
 
-// Rlcreate is a create response.
+// rlcreate is a create response.
 //
 // The Encode, Decode, etc. methods are inherited from Rlopen.
-type Rlcreate struct {
-	Rlopen
+type rlcreate struct {
+	rlopen
 }
 
 // Type implements message.Type.
-func (*Rlcreate) Type() msgType {
+func (*rlcreate) Type() msgType {
 	return msgRlcreate
 }
 
 // String implements fmt.Stringer.
-func (r *Rlcreate) String() string {
+func (r *rlcreate) String() string {
 	return fmt.Sprintf("Rlcreate{QID: %s, IoUnit: %d}", r.QID, r.IoUnit)
 }
 
-// Tsymlink is a symlink request.
-type Tsymlink struct {
+// tsymlink is a symlink request.
+type tsymlink struct {
 	// Directory is the directory FID.
 	Directory FID
 
@@ -620,7 +617,7 @@ type Tsymlink struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tsymlink) Decode(b *buffer) {
+func (t *tsymlink) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Target = b.ReadString()
@@ -628,7 +625,7 @@ func (t *Tsymlink) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Tsymlink) Encode(b *buffer) {
+func (t *tsymlink) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.WriteString(t.Target)
@@ -636,43 +633,43 @@ func (t *Tsymlink) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Tsymlink) Type() msgType {
+func (*tsymlink) Type() msgType {
 	return msgTsymlink
 }
 
 // String implements fmt.Stringer.
-func (t *Tsymlink) String() string {
+func (t *tsymlink) String() string {
 	return fmt.Sprintf("Tsymlink{DirectoryFID: %d, Name: %s, Target: %s, GID: %d}", t.Directory, t.Name, t.Target, t.GID)
 }
 
-// Rsymlink is a symlink response.
-type Rsymlink struct {
+// rsymlink is a symlink response.
+type rsymlink struct {
 	// QID is the new symlink's QID.
 	QID QID
 }
 
 // Decode implements encoder.Decode.
-func (r *Rsymlink) Decode(b *buffer) {
+func (r *rsymlink) Decode(b *buffer) {
 	r.QID.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (r *Rsymlink) Encode(b *buffer) {
+func (r *rsymlink) Encode(b *buffer) {
 	r.QID.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Rsymlink) Type() msgType {
+func (*rsymlink) Type() msgType {
 	return msgRsymlink
 }
 
 // String implements fmt.Stringer.
-func (r *Rsymlink) String() string {
+func (r *rsymlink) String() string {
 	return fmt.Sprintf("Rsymlink{QID: %s}", r.QID)
 }
 
-// Tlink is a link request.
-type Tlink struct {
+// tlink is a link request.
+type tlink struct {
 	// Directory is the directory to contain the link.
 	Directory FID
 
@@ -684,53 +681,53 @@ type Tlink struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tlink) Decode(b *buffer) {
+func (t *tlink) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Target = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tlink) Encode(b *buffer) {
+func (t *tlink) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteFID(t.Target)
 	b.WriteString(t.Name)
 }
 
 // Type implements message.Type.
-func (*Tlink) Type() msgType {
+func (*tlink) Type() msgType {
 	return msgTlink
 }
 
 // String implements fmt.Stringer.
-func (t *Tlink) String() string {
+func (t *tlink) String() string {
 	return fmt.Sprintf("Tlink{DirectoryFID: %d, TargetFID: %d, Name: %s}", t.Directory, t.Target, t.Name)
 }
 
-// Rlink is a link response.
-type Rlink struct {
+// rlink is a link response.
+type rlink struct {
 }
 
 // Type implements message.Type.
-func (*Rlink) Type() msgType {
+func (*rlink) Type() msgType {
 	return msgRlink
 }
 
 // Decode implements encoder.Decode.
-func (*Rlink) Decode(b *buffer) {
+func (*rlink) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rlink) Encode(b *buffer) {
+func (*rlink) Encode(b *buffer) {
 }
 
 // String implements fmt.Stringer.
-func (r *Rlink) String() string {
+func (r *rlink) String() string {
 	return fmt.Sprintf("Rlink{}")
 }
 
-// Trenameat is a rename request.
-type Trenameat struct {
+// trenameat is a rename request.
+type trenameat struct {
 	// OldDirectory is the source directory.
 	OldDirectory FID
 
@@ -745,7 +742,7 @@ type Trenameat struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Trenameat) Decode(b *buffer) {
+func (t *trenameat) Decode(b *buffer) {
 	t.OldDirectory = b.ReadFID()
 	t.OldName = b.ReadString()
 	t.NewDirectory = b.ReadFID()
@@ -753,7 +750,7 @@ func (t *Trenameat) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Trenameat) Encode(b *buffer) {
+func (t *trenameat) Encode(b *buffer) {
 	b.WriteFID(t.OldDirectory)
 	b.WriteString(t.OldName)
 	b.WriteFID(t.NewDirectory)
@@ -761,39 +758,39 @@ func (t *Trenameat) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Trenameat) Type() msgType {
+func (*trenameat) Type() msgType {
 	return msgTrenameat
 }
 
 // String implements fmt.Stringer.
-func (t *Trenameat) String() string {
+func (t *trenameat) String() string {
 	return fmt.Sprintf("TrenameAt{OldDirectoryFID: %d, OldName: %s, NewDirectoryFID: %d, NewName: %s}", t.OldDirectory, t.OldName, t.NewDirectory, t.NewName)
 }
 
-// Rrenameat is a rename response.
-type Rrenameat struct {
+// rrenameat is a rename response.
+type rrenameat struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rrenameat) Decode(b *buffer) {
+func (*rrenameat) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rrenameat) Encode(b *buffer) {
+func (*rrenameat) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rrenameat) Type() msgType {
+func (*rrenameat) Type() msgType {
 	return msgRrenameat
 }
 
 // String implements fmt.Stringer.
-func (r *Rrenameat) String() string {
+func (r *rrenameat) String() string {
 	return fmt.Sprintf("Rrenameat{}")
 }
 
-// Tunlinkat is an unlink request.
-type Tunlinkat struct {
+// tunlinkat is an unlink request.
+type tunlinkat struct {
 	// Directory is the originating directory.
 	Directory FID
 
@@ -805,56 +802,53 @@ type Tunlinkat struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tunlinkat) Decode(b *buffer) {
+func (t *tunlinkat) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Flags = b.Read32()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tunlinkat) Encode(b *buffer) {
+func (t *tunlinkat) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.Write32(t.Flags)
 }
 
 // Type implements message.Type.
-func (*Tunlinkat) Type() msgType {
+func (*tunlinkat) Type() msgType {
 	return msgTunlinkat
 }
 
 // String implements fmt.Stringer.
-func (t *Tunlinkat) String() string {
+func (t *tunlinkat) String() string {
 	return fmt.Sprintf("Tunlinkat{DirectoryFID: %d, Name: %s, Flags: 0x%X}", t.Directory, t.Name, t.Flags)
 }
 
-// Runlinkat is an unlink response.
-type Runlinkat struct {
+// runlinkat is an unlink response.
+type runlinkat struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Runlinkat) Decode(b *buffer) {
+func (*runlinkat) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Runlinkat) Encode(b *buffer) {
+func (*runlinkat) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Runlinkat) Type() msgType {
+func (*runlinkat) Type() msgType {
 	return msgRunlinkat
 }
 
 // String implements fmt.Stringer.
-func (r *Runlinkat) String() string {
+func (r *runlinkat) String() string {
 	return fmt.Sprintf("Runlinkat{}")
 }
 
-// Trename is a rename request.
-//
-// Note that this generally isn't used anymore, and ideally all rename calls
-// should Trenameat below.
-type Trename struct {
+// trename is a rename request.
+type trename struct {
 	// FID is the FID to rename.
 	FID FID
 
@@ -866,105 +860,105 @@ type Trename struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Trename) Decode(b *buffer) {
+func (t *trename) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
 // Encode implements encoder.Encode.
-func (t *Trename) Encode(b *buffer) {
+func (t *trename) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 }
 
 // Type implements message.Type.
-func (*Trename) Type() msgType {
+func (*trename) Type() msgType {
 	return msgTrename
 }
 
 // String implements fmt.Stringer.
-func (t *Trename) String() string {
+func (t *trename) String() string {
 	return fmt.Sprintf("Trename{FID: %d, DirectoryFID: %d, Name: %s}", t.FID, t.Directory, t.Name)
 }
 
-// Rrename is a rename response.
-type Rrename struct {
+// rrename is a rename response.
+type rrename struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rrename) Decode(b *buffer) {
+func (*rrename) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rrename) Encode(b *buffer) {
+func (*rrename) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rrename) Type() msgType {
+func (*rrename) Type() msgType {
 	return msgRrename
 }
 
 // String implements fmt.Stringer.
-func (r *Rrename) String() string {
+func (r *rrename) String() string {
 	return fmt.Sprintf("Rrename{}")
 }
 
-// Treadlink is a readlink request.
-type Treadlink struct {
+// treadlink is a readlink request.
+type treadlink struct {
 	// FID is the symlink.
 	FID FID
 }
 
 // Decode implements encoder.Decode.
-func (t *Treadlink) Decode(b *buffer) {
+func (t *treadlink) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Treadlink) Encode(b *buffer) {
+func (t *treadlink) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
 // Type implements message.Type.
-func (*Treadlink) Type() msgType {
+func (*treadlink) Type() msgType {
 	return msgTreadlink
 }
 
 // String implements fmt.Stringer.
-func (t *Treadlink) String() string {
+func (t *treadlink) String() string {
 	return fmt.Sprintf("Treadlink{FID: %d}", t.FID)
 }
 
-// Rreadlink is a readlink response.
-type Rreadlink struct {
+// rreadlink is a readlink response.
+type rreadlink struct {
 	// Target is the symlink target.
 	Target string
 }
 
 // Decode implements encoder.Decode.
-func (r *Rreadlink) Decode(b *buffer) {
+func (r *rreadlink) Decode(b *buffer) {
 	r.Target = b.ReadString()
 }
 
 // Encode implements encoder.Encode.
-func (r *Rreadlink) Encode(b *buffer) {
+func (r *rreadlink) Encode(b *buffer) {
 	b.WriteString(r.Target)
 }
 
 // Type implements message.Type.
-func (*Rreadlink) Type() msgType {
+func (*rreadlink) Type() msgType {
 	return msgRreadlink
 }
 
 // String implements fmt.Stringer.
-func (r *Rreadlink) String() string {
+func (r *rreadlink) String() string {
 	return fmt.Sprintf("Rreadlink{Target: %s}", r.Target)
 }
 
-// Tread is a read request.
-type Tread struct {
+// tread is a read request.
+type tread struct {
 	// FID is the FID to read.
 	FID FID
 
@@ -976,31 +970,31 @@ type Tread struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tread) Decode(b *buffer) {
+func (t *tread) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Offset = b.Read64()
 	t.Count = b.Read32()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tread) Encode(b *buffer) {
+func (t *tread) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.Write64(t.Offset)
 	b.Write32(t.Count)
 }
 
 // Type implements message.Type.
-func (*Tread) Type() msgType {
+func (*tread) Type() msgType {
 	return msgTread
 }
 
 // String implements fmt.Stringer.
-func (t *Tread) String() string {
+func (t *tread) String() string {
 	return fmt.Sprintf("Tread{FID: %d, Offset: %d, Count: %d}", t.FID, t.Offset, t.Count)
 }
 
-// Rread is the response for a Tread.
-type Rread struct {
+// rread is the response for a Tread.
+type rread struct {
 	// Data is the resulting data.
 	Data []byte
 }
@@ -1008,7 +1002,7 @@ type Rread struct {
 // Decode implements encoder.Decode.
 //
 // Data is automatically decoded via Payload.
-func (r *Rread) Decode(b *buffer) {
+func (r *rread) Decode(b *buffer) {
 	count := b.Read32()
 	if count != uint32(len(r.Data)) {
 		b.markOverrun()
@@ -1018,37 +1012,37 @@ func (r *Rread) Decode(b *buffer) {
 // Encode implements encoder.Encode.
 //
 // Data is automatically encoded via Payload.
-func (r *Rread) Encode(b *buffer) {
+func (r *rread) Encode(b *buffer) {
 	b.Write32(uint32(len(r.Data)))
 }
 
 // Type implements message.Type.
-func (*Rread) Type() msgType {
+func (*rread) Type() msgType {
 	return msgRread
 }
 
 // FixedSize implements payloader.FixedSize.
-func (*Rread) FixedSize() uint32 {
+func (*rread) FixedSize() uint32 {
 	return 4
 }
 
 // Payload implements payloader.Payload.
-func (r *Rread) Payload() []byte {
+func (r *rread) Payload() []byte {
 	return r.Data
 }
 
 // SetPayload implements payloader.SetPayload.
-func (r *Rread) SetPayload(p []byte) {
+func (r *rread) SetPayload(p []byte) {
 	r.Data = p
 }
 
 // String implements fmt.Stringer.
-func (r *Rread) String() string {
+func (r *rread) String() string {
 	return fmt.Sprintf("Rread{len(Data): %d}", len(r.Data))
 }
 
-// Twrite is a write request.
-type Twrite struct {
+// twrite is a write request.
+type twrite struct {
 	// FID is the FID to read.
 	FID FID
 
@@ -1060,7 +1054,7 @@ type Twrite struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Twrite) Decode(b *buffer) {
+func (t *twrite) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Offset = b.Read64()
 	count := b.Read32()
@@ -1072,65 +1066,65 @@ func (t *Twrite) Decode(b *buffer) {
 // Encode implements encoder.Encode.
 //
 // This uses the buffer payload to avoid a copy.
-func (t *Twrite) Encode(b *buffer) {
+func (t *twrite) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.Write64(t.Offset)
 	b.Write32(uint32(len(t.Data)))
 }
 
 // Type implements message.Type.
-func (*Twrite) Type() msgType {
+func (*twrite) Type() msgType {
 	return msgTwrite
 }
 
 // FixedSize implements payloader.FixedSize.
-func (*Twrite) FixedSize() uint32 {
+func (*twrite) FixedSize() uint32 {
 	return 16
 }
 
 // Payload implements payloader.Payload.
-func (t *Twrite) Payload() []byte {
+func (t *twrite) Payload() []byte {
 	return t.Data
 }
 
 // SetPayload implements payloader.SetPayload.
-func (t *Twrite) SetPayload(p []byte) {
+func (t *twrite) SetPayload(p []byte) {
 	t.Data = p
 }
 
 // String implements fmt.Stringer.
-func (t *Twrite) String() string {
+func (t *twrite) String() string {
 	return fmt.Sprintf("Twrite{FID: %v, Offset %d, len(Data): %d}", t.FID, t.Offset, len(t.Data))
 }
 
-// Rwrite is the response for a Twrite.
-type Rwrite struct {
+// rwrite is the response for a Twrite.
+type rwrite struct {
 	// Count indicates the number of bytes successfully written.
 	Count uint32
 }
 
 // Decode implements encoder.Decode.
-func (r *Rwrite) Decode(b *buffer) {
+func (r *rwrite) Decode(b *buffer) {
 	r.Count = b.Read32()
 }
 
 // Encode implements encoder.Encode.
-func (r *Rwrite) Encode(b *buffer) {
+func (r *rwrite) Encode(b *buffer) {
 	b.Write32(r.Count)
 }
 
 // Type implements message.Type.
-func (*Rwrite) Type() msgType {
+func (*rwrite) Type() msgType {
 	return msgRwrite
 }
 
 // String implements fmt.Stringer.
-func (r *Rwrite) String() string {
+func (r *rwrite) String() string {
 	return fmt.Sprintf("Rwrite{Count: %d}", r.Count)
 }
 
-// Tmknod is a mknod request.
-type Tmknod struct {
+// tmknod is a mknod request.
+type tmknod struct {
 	// Directory is the parent directory.
 	Directory FID
 
@@ -1151,7 +1145,7 @@ type Tmknod struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tmknod) Decode(b *buffer) {
+func (t *tmknod) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Mode = b.ReadFileMode()
@@ -1161,7 +1155,7 @@ func (t *Tmknod) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Tmknod) Encode(b *buffer) {
+func (t *tmknod) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.WriteFileMode(t.Mode)
@@ -1171,43 +1165,43 @@ func (t *Tmknod) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Tmknod) Type() msgType {
+func (*tmknod) Type() msgType {
 	return msgTmknod
 }
 
 // String implements fmt.Stringer.
-func (t *Tmknod) String() string {
+func (t *tmknod) String() string {
 	return fmt.Sprintf("Tmknod{DirectoryFID: %d, Name: %s, Mode: 0o%o, Major: %d, Minor: %d, GID: %d}", t.Directory, t.Name, t.Mode, t.Major, t.Minor, t.GID)
 }
 
-// Rmknod is a mknod response.
-type Rmknod struct {
+// rmknod is a mknod response.
+type rmknod struct {
 	// QID is the resulting QID.
 	QID QID
 }
 
 // Decode implements encoder.Decode.
-func (r *Rmknod) Decode(b *buffer) {
+func (r *rmknod) Decode(b *buffer) {
 	r.QID.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (r *Rmknod) Encode(b *buffer) {
+func (r *rmknod) Encode(b *buffer) {
 	r.QID.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Rmknod) Type() msgType {
+func (*rmknod) Type() msgType {
 	return msgRmknod
 }
 
 // String implements fmt.Stringer.
-func (r *Rmknod) String() string {
+func (r *rmknod) String() string {
 	return fmt.Sprintf("Rmknod{QID: %s}", r.QID)
 }
 
-// Tmkdir is a mkdir request.
-type Tmkdir struct {
+// tmkdir is a mkdir request.
+type tmkdir struct {
 	// Directory is the parent directory.
 	Directory FID
 
@@ -1222,7 +1216,7 @@ type Tmkdir struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tmkdir) Decode(b *buffer) {
+func (t *tmkdir) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
 	t.Permissions = b.ReadPermissions()
@@ -1230,7 +1224,7 @@ func (t *Tmkdir) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Tmkdir) Encode(b *buffer) {
+func (t *tmkdir) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
 	b.WritePermissions(t.Permissions)
@@ -1238,43 +1232,43 @@ func (t *Tmkdir) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Tmkdir) Type() msgType {
+func (*tmkdir) Type() msgType {
 	return msgTmkdir
 }
 
 // String implements fmt.Stringer.
-func (t *Tmkdir) String() string {
+func (t *tmkdir) String() string {
 	return fmt.Sprintf("Tmkdir{DirectoryFID: %d, Name: %s, Permissions: 0o%o, GID: %d}", t.Directory, t.Name, t.Permissions, t.GID)
 }
 
-// Rmkdir is a mkdir response.
-type Rmkdir struct {
+// rmkdir is a mkdir response.
+type rmkdir struct {
 	// QID is the resulting QID.
 	QID QID
 }
 
 // Decode implements encoder.Decode.
-func (r *Rmkdir) Decode(b *buffer) {
+func (r *rmkdir) Decode(b *buffer) {
 	r.QID.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (r *Rmkdir) Encode(b *buffer) {
+func (r *rmkdir) Encode(b *buffer) {
 	r.QID.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Rmkdir) Type() msgType {
+func (*rmkdir) Type() msgType {
 	return msgRmkdir
 }
 
 // String implements fmt.Stringer.
-func (r *Rmkdir) String() string {
+func (r *rmkdir) String() string {
 	return fmt.Sprintf("Rmkdir{QID: %s}", r.QID)
 }
 
-// Tgetattr is a getattr request.
-type Tgetattr struct {
+// tgetattr is a getattr request.
+type tgetattr struct {
 	// FID is the FID to get attributes for.
 	FID FID
 
@@ -1283,29 +1277,29 @@ type Tgetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tgetattr) Decode(b *buffer) {
+func (t *tgetattr) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.AttrMask.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (t *Tgetattr) Encode(b *buffer) {
+func (t *tgetattr) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	t.AttrMask.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Tgetattr) Type() msgType {
+func (*tgetattr) Type() msgType {
 	return msgTgetattr
 }
 
 // String implements fmt.Stringer.
-func (t *Tgetattr) String() string {
+func (t *tgetattr) String() string {
 	return fmt.Sprintf("Tgetattr{FID: %d, AttrMask: %s}", t.FID, t.AttrMask)
 }
 
-// Rgetattr is a getattr response.
-type Rgetattr struct {
+// rgetattr is a getattr response.
+type rgetattr struct {
 	// Valid indicates which fields are valid.
 	Valid AttrMask
 
@@ -1317,31 +1311,31 @@ type Rgetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rgetattr) Decode(b *buffer) {
+func (r *rgetattr) Decode(b *buffer) {
 	r.Valid.Decode(b)
 	r.QID.Decode(b)
 	r.Attr.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (r *Rgetattr) Encode(b *buffer) {
+func (r *rgetattr) Encode(b *buffer) {
 	r.Valid.Encode(b)
 	r.QID.Encode(b)
 	r.Attr.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Rgetattr) Type() msgType {
+func (*rgetattr) Type() msgType {
 	return msgRgetattr
 }
 
 // String implements fmt.Stringer.
-func (r *Rgetattr) String() string {
+func (r *rgetattr) String() string {
 	return fmt.Sprintf("Rgetattr{Valid: %v, QID: %s, Attr: %s}", r.Valid, r.QID, r.Attr)
 }
 
-// Tsetattr is a setattr request.
-type Tsetattr struct {
+// tsetattr is a setattr request.
+type tsetattr struct {
 	// FID is the FID to change.
 	FID FID
 
@@ -1353,54 +1347,54 @@ type Tsetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tsetattr) Decode(b *buffer) {
+func (t *tsetattr) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Valid.Decode(b)
 	t.SetAttr.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (t *Tsetattr) Encode(b *buffer) {
+func (t *tsetattr) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	t.Valid.Encode(b)
 	t.SetAttr.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Tsetattr) Type() msgType {
+func (*tsetattr) Type() msgType {
 	return msgTsetattr
 }
 
 // String implements fmt.Stringer.
-func (t *Tsetattr) String() string {
+func (t *tsetattr) String() string {
 	return fmt.Sprintf("Tsetattr{FID: %d, Valid: %v, SetAttr: %s}", t.FID, t.Valid, t.SetAttr)
 }
 
-// Rsetattr is a setattr response.
-type Rsetattr struct {
+// rsetattr is a setattr response.
+type rsetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rsetattr) Decode(b *buffer) {
+func (*rsetattr) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rsetattr) Encode(b *buffer) {
+func (*rsetattr) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rsetattr) Type() msgType {
+func (*rsetattr) Type() msgType {
 	return msgRsetattr
 }
 
 // String implements fmt.Stringer.
-func (r *Rsetattr) String() string {
+func (r *rsetattr) String() string {
 	return fmt.Sprintf("Rsetattr{}")
 }
 
-// Tallocate is an allocate request. This is an extension to 9P protocol, not
+// tallocate is an allocate request. This is an extension to 9P protocol, not
 // present in the 9P2000.L standard.
-type Tallocate struct {
+type tallocate struct {
 	FID    FID
 	Mode   AllocateMode
 	Offset uint64
@@ -1408,7 +1402,7 @@ type Tallocate struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Tallocate) Decode(b *buffer) {
+func (t *tallocate) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Mode.Decode(b)
 	t.Offset = b.Read64()
@@ -1416,7 +1410,7 @@ func (t *Tallocate) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Tallocate) Encode(b *buffer) {
+func (t *tallocate) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	t.Mode.Encode(b)
 	b.Write64(t.Offset)
@@ -1424,39 +1418,39 @@ func (t *Tallocate) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Tallocate) Type() msgType {
+func (*tallocate) Type() msgType {
 	return msgTallocate
 }
 
 // String implements fmt.Stringer.
-func (t *Tallocate) String() string {
+func (t *tallocate) String() string {
 	return fmt.Sprintf("Tallocate{FID: %d, Offset: %d, Length: %d}", t.FID, t.Offset, t.Length)
 }
 
-// Rallocate is an allocate response.
-type Rallocate struct {
+// rallocate is an allocate response.
+type rallocate struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rallocate) Decode(b *buffer) {
+func (*rallocate) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rallocate) Encode(b *buffer) {
+func (*rallocate) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rallocate) Type() msgType {
+func (*rallocate) Type() msgType {
 	return msgRallocate
 }
 
 // String implements fmt.Stringer.
-func (r *Rallocate) String() string {
+func (r *rallocate) String() string {
 	return fmt.Sprintf("Rallocate{}")
 }
 
-// Txattrwalk walks extended attributes.
-type Txattrwalk struct {
+// txattrwalk walks extended attributes.
+type txattrwalk struct {
 	// FID is the FID to check for attributes.
 	FID FID
 
@@ -1468,57 +1462,57 @@ type Txattrwalk struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Txattrwalk) Decode(b *buffer) {
+func (t *txattrwalk) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
 	t.Name = b.ReadString()
 }
 
 // Encode implements encoder.Encode.
-func (t *Txattrwalk) Encode(b *buffer) {
+func (t *txattrwalk) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.NewFID)
 	b.WriteString(t.Name)
 }
 
 // Type implements message.Type.
-func (*Txattrwalk) Type() msgType {
+func (*txattrwalk) Type() msgType {
 	return msgTxattrwalk
 }
 
 // String implements fmt.Stringer.
-func (t *Txattrwalk) String() string {
+func (t *txattrwalk) String() string {
 	return fmt.Sprintf("Txattrwalk{FID: %d, NewFID: %d, Name: %s}", t.FID, t.NewFID, t.Name)
 }
 
-// Rxattrwalk is a xattrwalk response.
-type Rxattrwalk struct {
+// rxattrwalk is a xattrwalk response.
+type rxattrwalk struct {
 	// Size is the size of the extended attribute.
 	Size uint64
 }
 
 // Decode implements encoder.Decode.
-func (r *Rxattrwalk) Decode(b *buffer) {
+func (r *rxattrwalk) Decode(b *buffer) {
 	r.Size = b.Read64()
 }
 
 // Encode implements encoder.Encode.
-func (r *Rxattrwalk) Encode(b *buffer) {
+func (r *rxattrwalk) Encode(b *buffer) {
 	b.Write64(r.Size)
 }
 
 // Type implements message.Type.
-func (*Rxattrwalk) Type() msgType {
+func (*rxattrwalk) Type() msgType {
 	return msgRxattrwalk
 }
 
 // String implements fmt.Stringer.
-func (r *Rxattrwalk) String() string {
+func (r *rxattrwalk) String() string {
 	return fmt.Sprintf("Rxattrwalk{Size: %d}", r.Size)
 }
 
-// Txattrcreate prepare to set extended attributes.
-type Txattrcreate struct {
+// txattrcreate prepare to set extended attributes.
+type txattrcreate struct {
 	// FID is input/output parameter, it identifies the file on which
 	// extended attributes will be set but after successful Rxattrcreate
 	// it is used to write the extended attribute value.
@@ -1536,7 +1530,7 @@ type Txattrcreate struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Txattrcreate) Decode(b *buffer) {
+func (t *txattrcreate) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.Name = b.ReadString()
 	t.AttrSize = b.Read64()
@@ -1544,7 +1538,7 @@ func (t *Txattrcreate) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Txattrcreate) Encode(b *buffer) {
+func (t *txattrcreate) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteString(t.Name)
 	b.Write64(t.AttrSize)
@@ -1552,39 +1546,39 @@ func (t *Txattrcreate) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Txattrcreate) Type() msgType {
+func (*txattrcreate) Type() msgType {
 	return msgTxattrcreate
 }
 
 // String implements fmt.Stringer.
-func (t *Txattrcreate) String() string {
+func (t *txattrcreate) String() string {
 	return fmt.Sprintf("Txattrcreate{FID: %d, Name: %s, AttrSize: %d, Flags: %d}", t.FID, t.Name, t.AttrSize, t.Flags)
 }
 
-// Rxattrcreate is a xattrcreate response.
-type Rxattrcreate struct {
+// rxattrcreate is a xattrcreate response.
+type rxattrcreate struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rxattrcreate) Decode(b *buffer) {
+func (r *rxattrcreate) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (r *Rxattrcreate) Encode(b *buffer) {
+func (r *rxattrcreate) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rxattrcreate) Type() msgType {
+func (*rxattrcreate) Type() msgType {
 	return msgRxattrcreate
 }
 
 // String implements fmt.Stringer.
-func (r *Rxattrcreate) String() string {
+func (r *rxattrcreate) String() string {
 	return fmt.Sprintf("Rxattrcreate{}")
 }
 
-// Treaddir is a readdir request.
-type Treaddir struct {
+// treaddir is a readdir request.
+type treaddir struct {
 	// Directory is the directory FID to read.
 	Directory FID
 
@@ -1596,31 +1590,31 @@ type Treaddir struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Treaddir) Decode(b *buffer) {
+func (t *treaddir) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Offset = b.Read64()
 	t.Count = b.Read32()
 }
 
 // Encode implements encoder.Encode.
-func (t *Treaddir) Encode(b *buffer) {
+func (t *treaddir) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.Write64(t.Offset)
 	b.Write32(t.Count)
 }
 
 // Type implements message.Type.
-func (*Treaddir) Type() msgType {
+func (*treaddir) Type() msgType {
 	return msgTreaddir
 }
 
 // String implements fmt.Stringer.
-func (t *Treaddir) String() string {
+func (t *treaddir) String() string {
 	return fmt.Sprintf("Treaddir{DirectoryFID: %d, Offset: %d, Count: %d}", t.Directory, t.Offset, t.Count)
 }
 
-// Rreaddir is a readdir response.
-type Rreaddir struct {
+// rreaddir is a readdir response.
+type rreaddir struct {
 	// Count is the byte limit.
 	//
 	// This should always be set from the Treaddir request.
@@ -1638,7 +1632,7 @@ type Rreaddir struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rreaddir) Decode(b *buffer) {
+func (r *rreaddir) Decode(b *buffer) {
 	r.Count = b.Read32()
 	entriesBuf := buffer{data: r.payload}
 	r.Entries = r.Entries[:0]
@@ -1654,7 +1648,7 @@ func (r *Rreaddir) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (r *Rreaddir) Encode(b *buffer) {
+func (r *rreaddir) Encode(b *buffer) {
 	entriesBuf := buffer{}
 	for _, d := range r.Entries {
 		d.Encode(&entriesBuf)
@@ -1672,180 +1666,180 @@ func (r *Rreaddir) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rreaddir) Type() msgType {
+func (*rreaddir) Type() msgType {
 	return msgRreaddir
 }
 
 // FixedSize implements payloader.FixedSize.
-func (*Rreaddir) FixedSize() uint32 {
+func (*rreaddir) FixedSize() uint32 {
 	return 4
 }
 
 // Payload implements payloader.Payload.
-func (r *Rreaddir) Payload() []byte {
+func (r *rreaddir) Payload() []byte {
 	return r.payload
 }
 
 // SetPayload implements payloader.SetPayload.
-func (r *Rreaddir) SetPayload(p []byte) {
+func (r *rreaddir) SetPayload(p []byte) {
 	r.payload = p
 }
 
 // String implements fmt.Stringer.
-func (r *Rreaddir) String() string {
+func (r *rreaddir) String() string {
 	return fmt.Sprintf("Rreaddir{Count: %d, Entries: %s}", r.Count, r.Entries)
 }
 
 // Tfsync is an fsync request.
-type Tfsync struct {
+type tfsync struct {
 	// FID is the fid to sync.
 	FID FID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tfsync) Decode(b *buffer) {
+func (t *tfsync) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tfsync) Encode(b *buffer) {
+func (t *tfsync) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
 // Type implements message.Type.
-func (*Tfsync) Type() msgType {
+func (*tfsync) Type() msgType {
 	return msgTfsync
 }
 
 // String implements fmt.Stringer.
-func (t *Tfsync) String() string {
+func (t *tfsync) String() string {
 	return fmt.Sprintf("Tfsync{FID: %d}", t.FID)
 }
 
-// Rfsync is an fsync response.
-type Rfsync struct {
+// rfsync is an fsync response.
+type rfsync struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rfsync) Decode(b *buffer) {
+func (*rfsync) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rfsync) Encode(b *buffer) {
+func (*rfsync) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rfsync) Type() msgType {
+func (*rfsync) Type() msgType {
 	return msgRfsync
 }
 
 // String implements fmt.Stringer.
-func (r *Rfsync) String() string {
+func (r *rfsync) String() string {
 	return fmt.Sprintf("Rfsync{}")
 }
 
-// Tstatfs is a stat request.
-type Tstatfs struct {
+// tstatfs is a stat request.
+type tstatfs struct {
 	// FID is the root.
 	FID FID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tstatfs) Decode(b *buffer) {
+func (t *tstatfs) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tstatfs) Encode(b *buffer) {
+func (t *tstatfs) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
 // Type implements message.Type.
-func (*Tstatfs) Type() msgType {
+func (*tstatfs) Type() msgType {
 	return msgTstatfs
 }
 
 // String implements fmt.Stringer.
-func (t *Tstatfs) String() string {
+func (t *tstatfs) String() string {
 	return fmt.Sprintf("Tstatfs{FID: %d}", t.FID)
 }
 
-// Rstatfs is the response for a Tstatfs.
-type Rstatfs struct {
+// rstatfs is the response for a Tstatfs.
+type rstatfs struct {
 	// FSStat is the stat result.
 	FSStat FSStat
 }
 
 // Decode implements encoder.Decode.
-func (r *Rstatfs) Decode(b *buffer) {
+func (r *rstatfs) Decode(b *buffer) {
 	r.FSStat.Decode(b)
 }
 
 // Encode implements encoder.Encode.
-func (r *Rstatfs) Encode(b *buffer) {
+func (r *rstatfs) Encode(b *buffer) {
 	r.FSStat.Encode(b)
 }
 
 // Type implements message.Type.
-func (*Rstatfs) Type() msgType {
+func (*rstatfs) Type() msgType {
 	return msgRstatfs
 }
 
 // String implements fmt.Stringer.
-func (r *Rstatfs) String() string {
+func (r *rstatfs) String() string {
 	return fmt.Sprintf("Rstatfs{FSStat: %v}", r.FSStat)
 }
 
-// Tflushf is a flush file request, not to be confused with Tflush.
-type Tflushf struct {
+// tflushf is a flush file request, not to be confused with tflush.
+type tflushf struct {
 	// FID is the FID to be flushed.
 	FID FID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tflushf) Decode(b *buffer) {
+func (t *tflushf) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tflushf) Encode(b *buffer) {
+func (t *tflushf) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 }
 
 // Type implements message.Type.
-func (*Tflushf) Type() msgType {
+func (*tflushf) Type() msgType {
 	return msgTflushf
 }
 
 // String implements fmt.Stringer.
-func (t *Tflushf) String() string {
+func (t *tflushf) String() string {
 	return fmt.Sprintf("Tflushf{FID: %d}", t.FID)
 }
 
-// Rflushf is a flush file response.
-type Rflushf struct {
+// rflushf is a flush file response.
+type rflushf struct {
 }
 
 // Decode implements encoder.Decode.
-func (*Rflushf) Decode(b *buffer) {
+func (*rflushf) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (*Rflushf) Encode(b *buffer) {
+func (*rflushf) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rflushf) Type() msgType {
+func (*rflushf) Type() msgType {
 	return msgRflushf
 }
 
 // String implements fmt.Stringer.
-func (*Rflushf) String() string {
+func (*rflushf) String() string {
 	return fmt.Sprintf("Rflushf{}")
 }
 
-// Twalkgetattr is a walk request.
-type Twalkgetattr struct {
+// twalkgetattr is a walk request.
+type twalkgetattr struct {
 	// FID is the FID to be walked.
 	FID FID
 
@@ -1857,7 +1851,7 @@ type Twalkgetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (t *Twalkgetattr) Decode(b *buffer) {
+func (t *twalkgetattr) Decode(b *buffer) {
 	t.FID = b.ReadFID()
 	t.NewFID = b.ReadFID()
 	n := b.Read16()
@@ -1868,7 +1862,7 @@ func (t *Twalkgetattr) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (t *Twalkgetattr) Encode(b *buffer) {
+func (t *twalkgetattr) Encode(b *buffer) {
 	b.WriteFID(t.FID)
 	b.WriteFID(t.NewFID)
 	b.Write16(uint16(len(t.Names)))
@@ -1878,17 +1872,17 @@ func (t *Twalkgetattr) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Twalkgetattr) Type() msgType {
+func (*twalkgetattr) Type() msgType {
 	return msgTwalkgetattr
 }
 
 // String implements fmt.Stringer.
-func (t *Twalkgetattr) String() string {
+func (t *twalkgetattr) String() string {
 	return fmt.Sprintf("Twalkgetattr{FID: %d, NewFID: %d, Names: %v}", t.FID, t.NewFID, t.Names)
 }
 
-// Rwalkgetattr is a walk response.
-type Rwalkgetattr struct {
+// rwalkgetattr is a walk response.
+type rwalkgetattr struct {
 	// Valid indicates which fields are valid in the Attr below.
 	Valid AttrMask
 
@@ -1900,7 +1894,7 @@ type Rwalkgetattr struct {
 }
 
 // Decode implements encoder.Decode.
-func (r *Rwalkgetattr) Decode(b *buffer) {
+func (r *rwalkgetattr) Decode(b *buffer) {
 	r.Valid.Decode(b)
 	r.Attr.Decode(b)
 	n := b.Read16()
@@ -1913,7 +1907,7 @@ func (r *Rwalkgetattr) Decode(b *buffer) {
 }
 
 // Encode implements encoder.Encode.
-func (r *Rwalkgetattr) Encode(b *buffer) {
+func (r *rwalkgetattr) Encode(b *buffer) {
 	r.Valid.Encode(b)
 	r.Attr.Encode(b)
 	b.Write16(uint16(len(r.QIDs)))
@@ -1923,193 +1917,193 @@ func (r *Rwalkgetattr) Encode(b *buffer) {
 }
 
 // Type implements message.Type.
-func (*Rwalkgetattr) Type() msgType {
+func (*rwalkgetattr) Type() msgType {
 	return msgRwalkgetattr
 }
 
 // String implements fmt.Stringer.
-func (r *Rwalkgetattr) String() string {
+func (r *rwalkgetattr) String() string {
 	return fmt.Sprintf("Rwalkgetattr{Valid: %s, Attr: %s, QIDs: %v}", r.Valid, r.Attr, r.QIDs)
 }
 
-// Tucreate is a Tlcreate message that includes a UID.
-type Tucreate struct {
-	Tlcreate
+// tucreate is a tlcreate message that includes a UID.
+type tucreate struct {
+	tlcreate
 
 	// UID is the UID to use as the effective UID in creation messages.
 	UID UID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tucreate) Decode(b *buffer) {
-	t.Tlcreate.Decode(b)
+func (t *tucreate) Decode(b *buffer) {
+	t.tlcreate.Decode(b)
 	t.UID = b.ReadUID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tucreate) Encode(b *buffer) {
-	t.Tlcreate.Encode(b)
+func (t *tucreate) Encode(b *buffer) {
+	t.tlcreate.Encode(b)
 	b.WriteUID(t.UID)
 }
 
 // Type implements message.Type.
-func (t *Tucreate) Type() msgType {
+func (t *tucreate) Type() msgType {
 	return msgTucreate
 }
 
 // String implements fmt.Stringer.
-func (t *Tucreate) String() string {
-	return fmt.Sprintf("Tucreate{Tlcreate: %v, UID: %d}", &t.Tlcreate, t.UID)
+func (t *tucreate) String() string {
+	return fmt.Sprintf("Tucreate{Tlcreate: %v, UID: %d}", &t.tlcreate, t.UID)
 }
 
-// Rucreate is a file creation response.
-type Rucreate struct {
-	Rlcreate
+// rucreate is a file creation response.
+type rucreate struct {
+	rlcreate
 }
 
 // Type implements message.Type.
-func (*Rucreate) Type() msgType {
+func (*rucreate) Type() msgType {
 	return msgRucreate
 }
 
 // String implements fmt.Stringer.
-func (r *Rucreate) String() string {
-	return fmt.Sprintf("Rucreate{%v}", &r.Rlcreate)
+func (r *rucreate) String() string {
+	return fmt.Sprintf("Rucreate{%v}", &r.rlcreate)
 }
 
-// Tumkdir is a Tmkdir message that includes a UID.
-type Tumkdir struct {
-	Tmkdir
+// tumkdir is a Tmkdir message that includes a UID.
+type tumkdir struct {
+	tmkdir
 
 	// UID is the UID to use as the effective UID in creation messages.
 	UID UID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tumkdir) Decode(b *buffer) {
-	t.Tmkdir.Decode(b)
+func (t *tumkdir) Decode(b *buffer) {
+	t.tmkdir.Decode(b)
 	t.UID = b.ReadUID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tumkdir) Encode(b *buffer) {
-	t.Tmkdir.Encode(b)
+func (t *tumkdir) Encode(b *buffer) {
+	t.tmkdir.Encode(b)
 	b.WriteUID(t.UID)
 }
 
 // Type implements message.Type.
-func (t *Tumkdir) Type() msgType {
+func (t *tumkdir) Type() msgType {
 	return msgTumkdir
 }
 
 // String implements fmt.Stringer.
-func (t *Tumkdir) String() string {
-	return fmt.Sprintf("Tumkdir{Tmkdir: %v, UID: %d}", &t.Tmkdir, t.UID)
+func (t *tumkdir) String() string {
+	return fmt.Sprintf("Tumkdir{Tmkdir: %v, UID: %d}", &t.tmkdir, t.UID)
 }
 
-// Rumkdir is a umkdir response.
-type Rumkdir struct {
-	Rmkdir
+// rumkdir is a umkdir response.
+type rumkdir struct {
+	rmkdir
 }
 
 // Type implements message.Type.
-func (*Rumkdir) Type() msgType {
+func (*rumkdir) Type() msgType {
 	return msgRumkdir
 }
 
 // String implements fmt.Stringer.
-func (r *Rumkdir) String() string {
-	return fmt.Sprintf("Rumkdir{%v}", &r.Rmkdir)
+func (r *rumkdir) String() string {
+	return fmt.Sprintf("Rumkdir{%v}", &r.rmkdir)
 }
 
-// Tumknod is a Tmknod message that includes a UID.
-type Tumknod struct {
-	Tmknod
+// tumknod is a Tmknod message that includes a UID.
+type tumknod struct {
+	tmknod
 
 	// UID is the UID to use as the effective UID in creation messages.
 	UID UID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tumknod) Decode(b *buffer) {
-	t.Tmknod.Decode(b)
+func (t *tumknod) Decode(b *buffer) {
+	t.tmknod.Decode(b)
 	t.UID = b.ReadUID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tumknod) Encode(b *buffer) {
-	t.Tmknod.Encode(b)
+func (t *tumknod) Encode(b *buffer) {
+	t.tmknod.Encode(b)
 	b.WriteUID(t.UID)
 }
 
 // Type implements message.Type.
-func (t *Tumknod) Type() msgType {
+func (t *tumknod) Type() msgType {
 	return msgTumknod
 }
 
 // String implements fmt.Stringer.
-func (t *Tumknod) String() string {
-	return fmt.Sprintf("Tumknod{Tmknod: %v, UID: %d}", &t.Tmknod, t.UID)
+func (t *tumknod) String() string {
+	return fmt.Sprintf("Tumknod{Tmknod: %v, UID: %d}", &t.tmknod, t.UID)
 }
 
-// Rumknod is a umknod response.
-type Rumknod struct {
-	Rmknod
+// rumknod is a umknod response.
+type rumknod struct {
+	rmknod
 }
 
 // Type implements message.Type.
-func (*Rumknod) Type() msgType {
+func (*rumknod) Type() msgType {
 	return msgRumknod
 }
 
 // String implements fmt.Stringer.
-func (r *Rumknod) String() string {
-	return fmt.Sprintf("Rumknod{%v}", &r.Rmknod)
+func (r *rumknod) String() string {
+	return fmt.Sprintf("Rumknod{%v}", &r.rmknod)
 }
 
-// Tusymlink is a Tsymlink message that includes a UID.
-type Tusymlink struct {
-	Tsymlink
+// tusymlink is a Tsymlink message that includes a UID.
+type tusymlink struct {
+	tsymlink
 
 	// UID is the UID to use as the effective UID in creation messages.
 	UID UID
 }
 
 // Decode implements encoder.Decode.
-func (t *Tusymlink) Decode(b *buffer) {
-	t.Tsymlink.Decode(b)
+func (t *tusymlink) Decode(b *buffer) {
+	t.tsymlink.Decode(b)
 	t.UID = b.ReadUID()
 }
 
 // Encode implements encoder.Encode.
-func (t *Tusymlink) Encode(b *buffer) {
-	t.Tsymlink.Encode(b)
+func (t *tusymlink) Encode(b *buffer) {
+	t.tsymlink.Encode(b)
 	b.WriteUID(t.UID)
 }
 
 // Type implements message.Type.
-func (t *Tusymlink) Type() msgType {
+func (t *tusymlink) Type() msgType {
 	return msgTusymlink
 }
 
 // String implements fmt.Stringer.
-func (t *Tusymlink) String() string {
-	return fmt.Sprintf("Tusymlink{Tsymlink: %v, UID: %d}", &t.Tsymlink, t.UID)
+func (t *tusymlink) String() string {
+	return fmt.Sprintf("Tusymlink{Tsymlink: %v, UID: %d}", &t.tsymlink, t.UID)
 }
 
-// Rusymlink is a usymlink response.
-type Rusymlink struct {
-	Rsymlink
+// rusymlink is a usymlink response.
+type rusymlink struct {
+	rsymlink
 }
 
 // Type implements message.Type.
-func (*Rusymlink) Type() msgType {
+func (*rusymlink) Type() msgType {
 	return msgRusymlink
 }
 
 // String implements fmt.Stringer.
-func (r *Rusymlink) String() string {
-	return fmt.Sprintf("Rusymlink{%v}", &r.Rsymlink)
+func (r *rusymlink) String() string {
+	return fmt.Sprintf("Rusymlink{%v}", &r.rsymlink)
 }
 
 const maxCacheSize = 3
@@ -2195,71 +2189,71 @@ func calculateSize(m message) uint32 {
 }
 
 func init() {
-	msgRegistry.register(msgRlerror, func() message { return &Rlerror{} })
-	msgRegistry.register(msgTstatfs, func() message { return &Tstatfs{} })
-	msgRegistry.register(msgRstatfs, func() message { return &Rstatfs{} })
-	msgRegistry.register(msgTlopen, func() message { return &Tlopen{} })
-	msgRegistry.register(msgRlopen, func() message { return &Rlopen{} })
-	msgRegistry.register(msgTlcreate, func() message { return &Tlcreate{} })
-	msgRegistry.register(msgRlcreate, func() message { return &Rlcreate{} })
-	msgRegistry.register(msgTsymlink, func() message { return &Tsymlink{} })
-	msgRegistry.register(msgRsymlink, func() message { return &Rsymlink{} })
-	msgRegistry.register(msgTmknod, func() message { return &Tmknod{} })
-	msgRegistry.register(msgRmknod, func() message { return &Rmknod{} })
-	msgRegistry.register(msgTrename, func() message { return &Trename{} })
-	msgRegistry.register(msgRrename, func() message { return &Rrename{} })
-	msgRegistry.register(msgTreadlink, func() message { return &Treadlink{} })
-	msgRegistry.register(msgRreadlink, func() message { return &Rreadlink{} })
-	msgRegistry.register(msgTgetattr, func() message { return &Tgetattr{} })
-	msgRegistry.register(msgRgetattr, func() message { return &Rgetattr{} })
-	msgRegistry.register(msgTsetattr, func() message { return &Tsetattr{} })
-	msgRegistry.register(msgRsetattr, func() message { return &Rsetattr{} })
-	msgRegistry.register(msgTxattrwalk, func() message { return &Txattrwalk{} })
-	msgRegistry.register(msgRxattrwalk, func() message { return &Rxattrwalk{} })
-	msgRegistry.register(msgTxattrcreate, func() message { return &Txattrcreate{} })
-	msgRegistry.register(msgRxattrcreate, func() message { return &Rxattrcreate{} })
-	msgRegistry.register(msgTreaddir, func() message { return &Treaddir{} })
-	msgRegistry.register(msgRreaddir, func() message { return &Rreaddir{} })
-	msgRegistry.register(msgTfsync, func() message { return &Tfsync{} })
-	msgRegistry.register(msgRfsync, func() message { return &Rfsync{} })
-	msgRegistry.register(msgTlink, func() message { return &Tlink{} })
-	msgRegistry.register(msgRlink, func() message { return &Rlink{} })
-	msgRegistry.register(msgTmkdir, func() message { return &Tmkdir{} })
-	msgRegistry.register(msgRmkdir, func() message { return &Rmkdir{} })
-	msgRegistry.register(msgTrenameat, func() message { return &Trenameat{} })
-	msgRegistry.register(msgRrenameat, func() message { return &Rrenameat{} })
-	msgRegistry.register(msgTunlinkat, func() message { return &Tunlinkat{} })
-	msgRegistry.register(msgRunlinkat, func() message { return &Runlinkat{} })
-	msgRegistry.register(msgTversion, func() message { return &Tversion{} })
-	msgRegistry.register(msgRversion, func() message { return &Rversion{} })
-	msgRegistry.register(msgTauth, func() message { return &Tauth{} })
-	msgRegistry.register(msgRauth, func() message { return &Rauth{} })
-	msgRegistry.register(msgTattach, func() message { return &Tattach{} })
-	msgRegistry.register(msgRattach, func() message { return &Rattach{} })
-	msgRegistry.register(msgTflush, func() message { return &Tflush{} })
-	msgRegistry.register(msgRflush, func() message { return &Rflush{} })
-	msgRegistry.register(msgTwalk, func() message { return &Twalk{} })
-	msgRegistry.register(msgRwalk, func() message { return &Rwalk{} })
-	msgRegistry.register(msgTread, func() message { return &Tread{} })
-	msgRegistry.register(msgRread, func() message { return &Rread{} })
-	msgRegistry.register(msgTwrite, func() message { return &Twrite{} })
-	msgRegistry.register(msgRwrite, func() message { return &Rwrite{} })
-	msgRegistry.register(msgTclunk, func() message { return &Tclunk{} })
-	msgRegistry.register(msgRclunk, func() message { return &Rclunk{} })
-	msgRegistry.register(msgTremove, func() message { return &Tremove{} })
-	msgRegistry.register(msgRremove, func() message { return &Rremove{} })
-	msgRegistry.register(msgTflushf, func() message { return &Tflushf{} })
-	msgRegistry.register(msgRflushf, func() message { return &Rflushf{} })
-	msgRegistry.register(msgTwalkgetattr, func() message { return &Twalkgetattr{} })
-	msgRegistry.register(msgRwalkgetattr, func() message { return &Rwalkgetattr{} })
-	msgRegistry.register(msgTucreate, func() message { return &Tucreate{} })
-	msgRegistry.register(msgRucreate, func() message { return &Rucreate{} })
-	msgRegistry.register(msgTumkdir, func() message { return &Tumkdir{} })
-	msgRegistry.register(msgRumkdir, func() message { return &Rumkdir{} })
-	msgRegistry.register(msgTumknod, func() message { return &Tumknod{} })
-	msgRegistry.register(msgRumknod, func() message { return &Rumknod{} })
-	msgRegistry.register(msgTusymlink, func() message { return &Tusymlink{} })
-	msgRegistry.register(msgRusymlink, func() message { return &Rusymlink{} })
-	msgRegistry.register(msgTallocate, func() message { return &Tallocate{} })
-	msgRegistry.register(msgRallocate, func() message { return &Rallocate{} })
+	msgRegistry.register(msgRlerror, func() message { return &rlerror{} })
+	msgRegistry.register(msgTstatfs, func() message { return &tstatfs{} })
+	msgRegistry.register(msgRstatfs, func() message { return &rstatfs{} })
+	msgRegistry.register(msgTlopen, func() message { return &tlopen{} })
+	msgRegistry.register(msgRlopen, func() message { return &rlopen{} })
+	msgRegistry.register(msgTlcreate, func() message { return &tlcreate{} })
+	msgRegistry.register(msgRlcreate, func() message { return &rlcreate{} })
+	msgRegistry.register(msgTsymlink, func() message { return &tsymlink{} })
+	msgRegistry.register(msgRsymlink, func() message { return &rsymlink{} })
+	msgRegistry.register(msgTmknod, func() message { return &tmknod{} })
+	msgRegistry.register(msgRmknod, func() message { return &rmknod{} })
+	msgRegistry.register(msgTrename, func() message { return &trename{} })
+	msgRegistry.register(msgRrename, func() message { return &rrename{} })
+	msgRegistry.register(msgTreadlink, func() message { return &treadlink{} })
+	msgRegistry.register(msgRreadlink, func() message { return &rreadlink{} })
+	msgRegistry.register(msgTgetattr, func() message { return &tgetattr{} })
+	msgRegistry.register(msgRgetattr, func() message { return &rgetattr{} })
+	msgRegistry.register(msgTsetattr, func() message { return &tsetattr{} })
+	msgRegistry.register(msgRsetattr, func() message { return &rsetattr{} })
+	msgRegistry.register(msgTxattrwalk, func() message { return &txattrwalk{} })
+	msgRegistry.register(msgRxattrwalk, func() message { return &rxattrwalk{} })
+	msgRegistry.register(msgTxattrcreate, func() message { return &txattrcreate{} })
+	msgRegistry.register(msgRxattrcreate, func() message { return &rxattrcreate{} })
+	msgRegistry.register(msgTreaddir, func() message { return &treaddir{} })
+	msgRegistry.register(msgRreaddir, func() message { return &rreaddir{} })
+	msgRegistry.register(msgTfsync, func() message { return &tfsync{} })
+	msgRegistry.register(msgRfsync, func() message { return &rfsync{} })
+	msgRegistry.register(msgTlink, func() message { return &tlink{} })
+	msgRegistry.register(msgRlink, func() message { return &rlink{} })
+	msgRegistry.register(msgTmkdir, func() message { return &tmkdir{} })
+	msgRegistry.register(msgRmkdir, func() message { return &rmkdir{} })
+	msgRegistry.register(msgTrenameat, func() message { return &trenameat{} })
+	msgRegistry.register(msgRrenameat, func() message { return &rrenameat{} })
+	msgRegistry.register(msgTunlinkat, func() message { return &tunlinkat{} })
+	msgRegistry.register(msgRunlinkat, func() message { return &runlinkat{} })
+	msgRegistry.register(msgTversion, func() message { return &tversion{} })
+	msgRegistry.register(msgRversion, func() message { return &rversion{} })
+	msgRegistry.register(msgTauth, func() message { return &tauth{} })
+	msgRegistry.register(msgRauth, func() message { return &rauth{} })
+	msgRegistry.register(msgTattach, func() message { return &tattach{} })
+	msgRegistry.register(msgRattach, func() message { return &rattach{} })
+	msgRegistry.register(msgTflush, func() message { return &tflush{} })
+	msgRegistry.register(msgRflush, func() message { return &rflush{} })
+	msgRegistry.register(msgTwalk, func() message { return &twalk{} })
+	msgRegistry.register(msgRwalk, func() message { return &rwalk{} })
+	msgRegistry.register(msgTread, func() message { return &tread{} })
+	msgRegistry.register(msgRread, func() message { return &rread{} })
+	msgRegistry.register(msgTwrite, func() message { return &twrite{} })
+	msgRegistry.register(msgRwrite, func() message { return &rwrite{} })
+	msgRegistry.register(msgTclunk, func() message { return &tclunk{} })
+	msgRegistry.register(msgRclunk, func() message { return &rclunk{} })
+	msgRegistry.register(msgTremove, func() message { return &tremove{} })
+	msgRegistry.register(msgRremove, func() message { return &rremove{} })
+	msgRegistry.register(msgTflushf, func() message { return &tflushf{} })
+	msgRegistry.register(msgRflushf, func() message { return &rflushf{} })
+	msgRegistry.register(msgTwalkgetattr, func() message { return &twalkgetattr{} })
+	msgRegistry.register(msgRwalkgetattr, func() message { return &rwalkgetattr{} })
+	msgRegistry.register(msgTucreate, func() message { return &tucreate{} })
+	msgRegistry.register(msgRucreate, func() message { return &rucreate{} })
+	msgRegistry.register(msgTumkdir, func() message { return &tumkdir{} })
+	msgRegistry.register(msgRumkdir, func() message { return &rumkdir{} })
+	msgRegistry.register(msgTumknod, func() message { return &tumknod{} })
+	msgRegistry.register(msgRumknod, func() message { return &rumknod{} })
+	msgRegistry.register(msgTusymlink, func() message { return &tusymlink{} })
+	msgRegistry.register(msgRusymlink, func() message { return &rusymlink{} })
+	msgRegistry.register(msgTallocate, func() message { return &tallocate{} })
+	msgRegistry.register(msgRallocate, func() message { return &rallocate{} })
 }

@@ -101,43 +101,43 @@ func TestEncodeDecode(t *testing.T) {
 			Type:   3,
 			Name:   "a",
 		},
-		&Rlerror{
+		&rlerror{
 			Error: 1,
 		},
-		&Tstatfs{
+		&tstatfs{
 			FID: 1,
 		},
-		&Rstatfs{
+		&rstatfs{
 			FSStat: FSStat{Type: 1},
 		},
-		&Tlopen{
+		&tlopen{
 			FID:   1,
 			Flags: WriteOnly,
 		},
-		&Rlopen{
+		&rlopen{
 			QID:    QID{Type: 1},
 			IoUnit: 2,
 		},
-		&Tlcreate{
+		&tlcreate{
 			FID:         1,
 			Name:        "a",
 			OpenFlags:   2,
 			Permissions: 3,
 			GID:         4,
 		},
-		&Rlcreate{
-			Rlopen{QID: QID{Type: 1}},
+		&rlcreate{
+			rlopen{QID: QID{Type: 1}},
 		},
-		&Tsymlink{
+		&tsymlink{
 			Directory: 1,
 			Name:      "a",
 			Target:    "b",
 			GID:       2,
 		},
-		&Rsymlink{
+		&rsymlink{
 			QID: QID{Type: 1},
 		},
-		&Tmknod{
+		&tmknod{
 			Directory: 1,
 			Name:      "a",
 			Mode:      2,
@@ -145,169 +145,169 @@ func TestEncodeDecode(t *testing.T) {
 			Minor:     4,
 			GID:       5,
 		},
-		&Rmknod{
+		&rmknod{
 			QID: QID{Type: 1},
 		},
-		&Trename{
+		&trename{
 			FID:       1,
 			Directory: 2,
 			Name:      "a",
 		},
-		&Rrename{},
-		&Treadlink{
+		&rrename{},
+		&treadlink{
 			FID: 1,
 		},
-		&Rreadlink{
+		&rreadlink{
 			Target: "a",
 		},
-		&Tgetattr{
+		&tgetattr{
 			FID:      1,
 			AttrMask: AttrMask{Mode: true},
 		},
-		&Rgetattr{
+		&rgetattr{
 			Valid: AttrMask{Mode: true},
 			QID:   QID{Type: 1},
 			Attr:  Attr{Mode: Write},
 		},
-		&Tsetattr{
+		&tsetattr{
 			FID:     1,
 			Valid:   SetAttrMask{Permissions: true},
 			SetAttr: SetAttr{Permissions: Write},
 		},
-		&Rsetattr{},
-		&Txattrwalk{
+		&rsetattr{},
+		&txattrwalk{
 			FID:    1,
 			NewFID: 2,
 			Name:   "a",
 		},
-		&Rxattrwalk{
+		&rxattrwalk{
 			Size: 1,
 		},
-		&Txattrcreate{
+		&txattrcreate{
 			FID:      1,
 			Name:     "a",
 			AttrSize: 2,
 			Flags:    3,
 		},
-		&Rxattrcreate{},
-		&Treaddir{
+		&rxattrcreate{},
+		&treaddir{
 			Directory: 1,
 			Offset:    2,
 			Count:     3,
 		},
-		&Rreaddir{
+		&rreaddir{
 			// Count must be sufficient to encode a dirent.
 			Count:   0x18,
 			Entries: []Dirent{{QID: QID{Type: 2}}},
 		},
-		&Tfsync{
+		&tfsync{
 			FID: 1,
 		},
-		&Rfsync{},
-		&Tlink{
+		&rfsync{},
+		&tlink{
 			Directory: 1,
 			Target:    2,
 			Name:      "a",
 		},
-		&Rlink{},
-		&Tmkdir{
+		&rlink{},
+		&tmkdir{
 			Directory:   1,
 			Name:        "a",
 			Permissions: 2,
 			GID:         3,
 		},
-		&Rmkdir{
+		&rmkdir{
 			QID: QID{Type: 1},
 		},
-		&Trenameat{
+		&trenameat{
 			OldDirectory: 1,
 			OldName:      "a",
 			NewDirectory: 2,
 			NewName:      "b",
 		},
-		&Rrenameat{},
-		&Tunlinkat{
+		&rrenameat{},
+		&tunlinkat{
 			Directory: 1,
 			Name:      "a",
 			Flags:     2,
 		},
-		&Runlinkat{},
-		&Tversion{
+		&runlinkat{},
+		&tversion{
 			MSize:   1,
 			Version: "a",
 		},
-		&Rversion{
+		&rversion{
 			MSize:   1,
 			Version: "a",
 		},
-		&Tauth{
+		&tauth{
 			AuthenticationFID: 1,
 			UserName:          "a",
 			AttachName:        "b",
 			UID:               2,
 		},
-		&Rauth{
+		&rauth{
 			QID: QID{Type: 1},
 		},
-		&Tattach{
+		&tattach{
 			FID:  1,
-			Auth: Tauth{AuthenticationFID: 2},
+			Auth: tauth{AuthenticationFID: 2},
 		},
-		&Rattach{
+		&rattach{
 			QID: QID{Type: 1},
 		},
-		&Tflush{
+		&tflush{
 			OldTag: 1,
 		},
-		&Rflush{},
-		&Twalk{
+		&rflush{},
+		&twalk{
 			FID:    1,
 			NewFID: 2,
 			Names:  []string{"a"},
 		},
-		&Rwalk{
+		&rwalk{
 			QIDs: []QID{{Type: 1}},
 		},
-		&Tread{
+		&tread{
 			FID:    1,
 			Offset: 2,
 			Count:  3,
 		},
-		&Rread{
+		&rread{
 			Data: []byte{'a'},
 		},
-		&Twrite{
+		&twrite{
 			FID:    1,
 			Offset: 2,
 			Data:   []byte{'a'},
 		},
-		&Rwrite{
+		&rwrite{
 			Count: 1,
 		},
-		&Tclunk{
+		&tclunk{
 			FID: 1,
 		},
-		&Rclunk{},
-		&Tremove{
+		&rclunk{},
+		&tremove{
 			FID: 1,
 		},
-		&Rremove{},
-		&Tflushf{
+		&rremove{},
+		&tflushf{
 			FID: 1,
 		},
-		&Rflushf{},
-		&Twalkgetattr{
+		&rflushf{},
+		&twalkgetattr{
 			FID:    1,
 			NewFID: 2,
 			Names:  []string{"a"},
 		},
-		&Rwalkgetattr{
+		&rwalkgetattr{
 			QIDs:  []QID{{Type: 1}},
 			Valid: AttrMask{Mode: true},
 			Attr:  Attr{Mode: Write},
 		},
-		&Tucreate{
-			Tlcreate: Tlcreate{
+		&tucreate{
+			tlcreate: tlcreate{
 				FID:         1,
 				Name:        "a",
 				OpenFlags:   2,
@@ -316,11 +316,11 @@ func TestEncodeDecode(t *testing.T) {
 			},
 			UID: 5,
 		},
-		&Rucreate{
-			Rlcreate{Rlopen{QID: QID{Type: 1}}},
+		&rucreate{
+			rlcreate{rlopen{QID: QID{Type: 1}}},
 		},
-		&Tumkdir{
-			Tmkdir: Tmkdir{
+		&tumkdir{
+			tmkdir: tmkdir{
 				Directory:   1,
 				Name:        "a",
 				Permissions: 2,
@@ -328,11 +328,11 @@ func TestEncodeDecode(t *testing.T) {
 			},
 			UID: 4,
 		},
-		&Rumkdir{
-			Rmkdir{QID: QID{Type: 1}},
+		&rumkdir{
+			rmkdir{QID: QID{Type: 1}},
 		},
-		&Tusymlink{
-			Tsymlink: Tsymlink{
+		&tusymlink{
+			tsymlink: tsymlink{
 				Directory: 1,
 				Name:      "a",
 				Target:    "b",
@@ -340,11 +340,11 @@ func TestEncodeDecode(t *testing.T) {
 			},
 			UID: 3,
 		},
-		&Rusymlink{
-			Rsymlink{QID: QID{Type: 1}},
+		&rusymlink{
+			rsymlink{QID: QID{Type: 1}},
 		},
-		&Tumknod{
-			Tmknod: Tmknod{
+		&tumknod{
+			tmknod: tmknod{
 				Directory: 1,
 				Name:      "a",
 				Mode:      2,
@@ -354,8 +354,8 @@ func TestEncodeDecode(t *testing.T) {
 			},
 			UID: 6,
 		},
-		&Rumknod{
-			Rmknod{QID: QID{Type: 1}},
+		&rumknod{
+			rmknod{QID: QID{Type: 1}},
 		},
 	}
 
@@ -418,7 +418,7 @@ func TestRegisterDuplicate(t *testing.T) {
 	}()
 
 	// Register a duplicate.
-	msgRegistry.register(msgRlerror, func() message { return &Rlerror{} })
+	msgRegistry.register(msgRlerror, func() message { return &rlerror{} })
 }
 
 func TestMsgCache(t *testing.T) {
@@ -451,7 +451,7 @@ func TestMsgCache(t *testing.T) {
 
 	// Check that cache doesn't grow beyond max size.
 	for i := 0; i < maxCacheSize+1; i++ {
-		msgRegistry.put(&Rlerror{})
+		msgRegistry.put(&rlerror{})
 	}
 	if got, want := len(msgRegistry.factories[msgRlerror].cache), maxCacheSize; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)

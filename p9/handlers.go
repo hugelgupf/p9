@@ -54,8 +54,8 @@ func ExtractErrno(err error) syscall.Errno {
 }
 
 // newErr returns a new error message from an error.
-func newErr(err error) *Rlerror {
-	return &Rlerror{Error: uint32(ExtractErrno(err))}
+func newErr(err error) *rlerror {
+	return &rlerror{Error: uint32(ExtractErrno(err))}
 }
 
 // handler is implemented for server-handled messages.
@@ -71,7 +71,7 @@ type handler interface {
 }
 
 // handle implements handler.handle.
-func (t *Tversion) handle(cs *connState) message {
+func (t *tversion) handle(cs *connState) message {
 	if t.MSize == 0 {
 		return newErr(syscall.EINVAL)
 	}
@@ -91,16 +91,16 @@ func (t *Tversion) handle(cs *connState) message {
 	// From Tversion(9P): "The server may respond with the client’s version
 	// string, or a version string identifying an earlier defined protocol version".
 	atomic.StoreUint32(&cs.version, requested)
-	return &Rversion{
+	return &rversion{
 		MSize:   t.MSize,
 		Version: t.Version,
 	}
 }
 
 // handle implements handler.handle.
-func (t *Tflush) handle(cs *connState) message {
+func (t *tflush) handle(cs *connState) message {
 	cs.WaitTag(t.OldTag)
-	return &Rflush{}
+	return &rflush{}
 }
 
 // checkSafeName validates the name and returns nil or returns an error.
@@ -112,15 +112,15 @@ func checkSafeName(name string) error {
 }
 
 // handle implements handler.handle.
-func (t *Tclunk) handle(cs *connState) message {
+func (t *tclunk) handle(cs *connState) message {
 	if !cs.DeleteFID(t.FID) {
 		return newErr(syscall.EBADF)
 	}
-	return &Rclunk{}
+	return &rclunk{}
 }
 
 // handle implements handler.handle.
-func (t *Tremove) handle(cs *connState) message {
+func (t *tremove) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -175,18 +175,18 @@ func (t *Tremove) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rremove{}
+	return &rremove{}
 }
 
 // handle implements handler.handle.
 //
 // We don't support authentication, so this just returns ENOSYS.
-func (t *Tauth) handle(cs *connState) message {
+func (t *tauth) handle(cs *connState) message {
 	return newErr(syscall.ENOSYS)
 }
 
 // handle implements handler.handle.
-func (t *Tattach) handle(cs *connState) message {
+func (t *tattach) handle(cs *connState) message {
 	// Ensure no authentication FID is provided.
 	if t.Auth.AuthenticationFID != NoFID {
 		return newErr(syscall.EINVAL)
@@ -229,7 +229,7 @@ func (t *Tattach) handle(cs *connState) message {
 	// Attach the root?
 	if len(t.Auth.AttachName) == 0 {
 		cs.InsertFID(t.FID, root)
-		return &Rattach{QID: qid}
+		return &rattach{QID: qid}
 	}
 
 	// We want the same traversal checks to apply on attach, so always
@@ -243,7 +243,7 @@ func (t *Tattach) handle(cs *connState) message {
 
 	// Insert the FID.
 	cs.InsertFID(t.FID, newRef)
-	return &Rattach{QID: qid}
+	return &rattach{QID: qid}
 }
 
 // CanOpen returns whether this file open can be opened, read and written to.
@@ -254,7 +254,7 @@ func CanOpen(mode FileMode) bool {
 }
 
 // handle implements handler.handle.
-func (t *Tlopen) handle(cs *connState) message {
+func (t *tlopen) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -302,10 +302,10 @@ func (t *Tlopen) handle(cs *connState) message {
 	ref.opened = true
 	ref.openFlags = t.Flags
 
-	return &Rlopen{QID: qid, IoUnit: ioUnit}
+	return &rlopen{QID: qid, IoUnit: ioUnit}
 }
 
-func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
+func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
@@ -360,11 +360,11 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 	// Replace the FID reference.
 	cs.InsertFID(t.FID, newRef)
 
-	return &Rlcreate{Rlopen: Rlopen{QID: qid, IoUnit: ioUnit}}, nil
+	return &rlcreate{rlopen: rlopen{QID: qid, IoUnit: ioUnit}}, nil
 }
 
 // handle implements handler.handle.
-func (t *Tlcreate) handle(cs *connState) message {
+func (t *tlcreate) handle(cs *connState) message {
 	rlcreate, err := t.do(cs, NoUID)
 	if err != nil {
 		return newErr(err)
@@ -373,7 +373,7 @@ func (t *Tlcreate) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
-func (t *Tsymlink) handle(cs *connState) message {
+func (t *tsymlink) handle(cs *connState) message {
 	rsymlink, err := t.do(cs, NoUID)
 	if err != nil {
 		return newErr(err)
@@ -381,7 +381,7 @@ func (t *Tsymlink) handle(cs *connState) message {
 	return rsymlink
 }
 
-func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
+func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
@@ -413,11 +413,11 @@ func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
 		return nil, err
 	}
 
-	return &Rsymlink{QID: qid}, nil
+	return &rsymlink{QID: qid}, nil
 }
 
 // handle implements handler.handle.
-func (t *Tlink) handle(cs *connState) message {
+func (t *tlink) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return newErr(err)
@@ -454,11 +454,11 @@ func (t *Tlink) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rlink{}
+	return &rlink{}
 }
 
 // handle implements handler.handle.
-func (t *Trenameat) handle(cs *connState) message {
+func (t *trenameat) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.OldName); err != nil {
 		return newErr(err)
@@ -510,11 +510,11 @@ func (t *Trenameat) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rrenameat{}
+	return &rrenameat{}
 }
 
 // handle implements handler.handle.
-func (t *Tunlinkat) handle(cs *connState) message {
+func (t *tunlinkat) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return newErr(err)
@@ -564,11 +564,11 @@ func (t *Tunlinkat) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Runlinkat{}
+	return &runlinkat{}
 }
 
 // handle implements handler.handle.
-func (t *Trename) handle(cs *connState) message {
+func (t *trename) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return newErr(err)
@@ -628,11 +628,11 @@ func (t *Trename) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rrename{}
+	return &rrename{}
 }
 
 // handle implements handler.handle.
-func (t *Treadlink) handle(cs *connState) message {
+func (t *treadlink) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -656,11 +656,11 @@ func (t *Treadlink) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rreadlink{target}
+	return &rreadlink{target}
 }
 
 // handle implements handler.handle.
-func (t *Tread) handle(cs *connState) message {
+func (t *tread) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -695,11 +695,11 @@ func (t *Tread) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rread{Data: data[:n]}
+	return &rread{Data: data[:n]}
 }
 
 // handle implements handler.handle.
-func (t *Twrite) handle(cs *connState) message {
+func (t *twrite) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -726,11 +726,11 @@ func (t *Twrite) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rwrite{Count: uint32(n)}
+	return &rwrite{Count: uint32(n)}
 }
 
 // handle implements handler.handle.
-func (t *Tmknod) handle(cs *connState) message {
+func (t *tmknod) handle(cs *connState) message {
 	rmknod, err := t.do(cs, NoUID)
 	if err != nil {
 		return newErr(err)
@@ -738,7 +738,7 @@ func (t *Tmknod) handle(cs *connState) message {
 	return rmknod
 }
 
-func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
+func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
@@ -770,11 +770,11 @@ func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
 		return nil, err
 	}
 
-	return &Rmknod{QID: qid}, nil
+	return &rmknod{QID: qid}, nil
 }
 
 // handle implements handler.handle.
-func (t *Tmkdir) handle(cs *connState) message {
+func (t *tmkdir) handle(cs *connState) message {
 	rmkdir, err := t.do(cs, NoUID)
 	if err != nil {
 		return newErr(err)
@@ -782,7 +782,7 @@ func (t *Tmkdir) handle(cs *connState) message {
 	return rmkdir
 }
 
-func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
+func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
 		return nil, err
@@ -814,11 +814,11 @@ func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
 		return nil, err
 	}
 
-	return &Rmkdir{QID: qid}, nil
+	return &rmkdir{QID: qid}, nil
 }
 
 // handle implements handler.handle.
-func (t *Tgetattr) handle(cs *connState) message {
+func (t *tgetattr) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -843,11 +843,11 @@ func (t *Tgetattr) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rgetattr{QID: qid, Valid: valid, Attr: attr}
+	return &rgetattr{QID: qid, Valid: valid, Attr: attr}
 }
 
 // handle implements handler.handle.
-func (t *Tsetattr) handle(cs *connState) message {
+func (t *tsetattr) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -870,11 +870,11 @@ func (t *Tsetattr) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rsetattr{}
+	return &rsetattr{}
 }
 
 // handle implements handler.handle.
-func (t *Tallocate) handle(cs *connState) message {
+func (t *tallocate) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -904,11 +904,11 @@ func (t *Tallocate) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rallocate{}
+	return &rallocate{}
 }
 
 // handle implements handler.handle.
-func (t *Txattrwalk) handle(cs *connState) message {
+func (t *txattrwalk) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -921,7 +921,7 @@ func (t *Txattrwalk) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
-func (t *Txattrcreate) handle(cs *connState) message {
+func (t *txattrcreate) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -934,7 +934,7 @@ func (t *Txattrcreate) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
-func (t *Treaddir) handle(cs *connState) message {
+func (t *treaddir) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
@@ -964,11 +964,11 @@ func (t *Treaddir) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rreaddir{Count: t.Count, Entries: entries}
+	return &rreaddir{Count: t.Count, Entries: entries}
 }
 
 // handle implements handler.handle.
-func (t *Tfsync) handle(cs *connState) message {
+func (t *tfsync) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -988,11 +988,11 @@ func (t *Tfsync) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rfsync{}
+	return &rfsync{}
 }
 
 // handle implements handler.handle.
-func (t *Tstatfs) handle(cs *connState) message {
+func (t *tstatfs) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -1005,11 +1005,11 @@ func (t *Tstatfs) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rstatfs{st}
+	return &rstatfs{st}
 }
 
 // handle implements handler.handle.
-func (t *Tflushf) handle(cs *connState) message {
+func (t *tflushf) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
 		return newErr(syscall.EBADF)
@@ -1020,7 +1020,7 @@ func (t *Tflushf) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rflushf{}
+	return &rflushf{}
 }
 
 // walkOne walks zero or one path elements.
@@ -1183,7 +1183,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 }
 
 // handle implements handler.handle.
-func (t *Twalk) handle(cs *connState) message {
+func (t *twalk) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -1200,11 +1200,11 @@ func (t *Twalk) handle(cs *connState) message {
 
 	// Install the new FID.
 	cs.InsertFID(t.NewFID, newRef)
-	return &Rwalk{QIDs: qids}
+	return &rwalk{QIDs: qids}
 }
 
 // handle implements handler.handle.
-func (t *Twalkgetattr) handle(cs *connState) message {
+func (t *twalkgetattr) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -1221,41 +1221,41 @@ func (t *Twalkgetattr) handle(cs *connState) message {
 
 	// Install the new FID.
 	cs.InsertFID(t.NewFID, newRef)
-	return &Rwalkgetattr{QIDs: qids, Valid: valid, Attr: attr}
+	return &rwalkgetattr{QIDs: qids, Valid: valid, Attr: attr}
 }
 
 // handle implements handler.handle.
-func (t *Tucreate) handle(cs *connState) message {
-	rlcreate, err := t.Tlcreate.do(cs, t.UID)
+func (t *tucreate) handle(cs *connState) message {
+	rlcreate, err := t.tlcreate.do(cs, t.UID)
 	if err != nil {
 		return newErr(err)
 	}
-	return &Rucreate{*rlcreate}
+	return &rucreate{*rlcreate}
 }
 
 // handle implements handler.handle.
-func (t *Tumkdir) handle(cs *connState) message {
-	rmkdir, err := t.Tmkdir.do(cs, t.UID)
+func (t *tumkdir) handle(cs *connState) message {
+	rmkdir, err := t.tmkdir.do(cs, t.UID)
 	if err != nil {
 		return newErr(err)
 	}
-	return &Rumkdir{*rmkdir}
+	return &rumkdir{*rmkdir}
 }
 
 // handle implements handler.handle.
-func (t *Tusymlink) handle(cs *connState) message {
-	rsymlink, err := t.Tsymlink.do(cs, t.UID)
+func (t *tusymlink) handle(cs *connState) message {
+	rsymlink, err := t.tsymlink.do(cs, t.UID)
 	if err != nil {
 		return newErr(err)
 	}
-	return &Rusymlink{*rsymlink}
+	return &rusymlink{*rsymlink}
 }
 
 // handle implements handler.handle.
-func (t *Tumknod) handle(cs *connState) message {
-	rmknod, err := t.Tmknod.do(cs, t.UID)
+func (t *tumknod) handle(cs *connState) message {
+	rmknod, err := t.tmknod.do(cs, t.UID)
 	if err != nil {
 		return newErr(err)
 	}
-	return &Rumknod{*rmknod}
+	return &rumknod{*rmknod}
 }

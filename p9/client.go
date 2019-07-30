@@ -137,8 +137,8 @@ func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, er
 		return nil, ErrBadVersionString
 	}
 	for {
-		rversion := Rversion{}
-		err := c.sendRecv(&Tversion{Version: versionString(requested), MSize: messageSize}, &rversion)
+		rversion := rversion{}
+		err := c.sendRecv(&tversion{Version: versionString(requested), MSize: messageSize}, &rversion)
 
 		// The server told us to try again with a lower version.
 		if err == syscall.EAGAIN {
@@ -186,7 +186,7 @@ func (c *Client) handleOne() {
 		// Is it an error? We specifically allow this to
 		// go through, and then we deserialize below.
 		if t == msgRlerror {
-			return &Rlerror{}, nil
+			return &rlerror{}, nil
 		}
 
 		// Does it match expectations?
@@ -284,7 +284,7 @@ func (c *Client) sendRecv(t message, r message) error {
 	//
 	// For convenience, we transform these directly
 	// into errors. Handlers need not handle this case.
-	if rlerr, ok := resp.r.(*Rlerror); ok {
+	if rlerr, ok := resp.r.(*rlerror); ok {
 		return syscall.Errno(rlerr.Error)
 	}
 

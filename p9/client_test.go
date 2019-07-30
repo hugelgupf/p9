@@ -41,22 +41,22 @@ func TestVersion(t *testing.T) {
 	}
 
 	// Check a bogus version string.
-	if err := c.sendRecv(&Tversion{Version: "notokay", MSize: 1024 * 1024}, &Rversion{}); err != syscall.EINVAL {
+	if err := c.sendRecv(&tversion{Version: "notokay", MSize: 1024 * 1024}, &rversion{}); err != syscall.EINVAL {
 		t.Errorf("got %v expected %v", err, syscall.EINVAL)
 	}
 
 	// Check a bogus version number.
-	if err := c.sendRecv(&Tversion{Version: "9P1000.L", MSize: 1024 * 1024}, &Rversion{}); err != syscall.EINVAL {
+	if err := c.sendRecv(&tversion{Version: "9P1000.L", MSize: 1024 * 1024}, &rversion{}); err != syscall.EINVAL {
 		t.Errorf("got %v expected %v", err, syscall.EINVAL)
 	}
 
 	// Check a too high version number.
-	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion + 1), MSize: 1024 * 1024}, &Rversion{}); err != syscall.EAGAIN {
+	if err := c.sendRecv(&tversion{Version: versionString(highestSupportedVersion + 1), MSize: 1024 * 1024}, &rversion{}); err != syscall.EAGAIN {
 		t.Errorf("got %v expected %v", err, syscall.EAGAIN)
 	}
 
 	// Check an invalid MSize.
-	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion), MSize: 0}, &Rversion{}); err != syscall.EINVAL {
+	if err := c.sendRecv(&tversion{Version: versionString(highestSupportedVersion), MSize: 0}, &rversion{}); err != syscall.EINVAL {
 		t.Errorf("got %v expected %v", err, syscall.EINVAL)
 	}
 }

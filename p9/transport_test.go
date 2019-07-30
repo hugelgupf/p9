@@ -34,7 +34,7 @@ func TestSendRecv(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, Tag(1), &Tlopen{}); err != nil {
+	if err := send(client, Tag(1), &tlopen{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
@@ -45,7 +45,7 @@ func TestSendRecv(t *testing.T) {
 	if tag != Tag(1) {
 		t.Fatalf("got tag %v expected 1", tag)
 	}
-	if _, ok := m.(*Tlopen); !ok {
+	if _, ok := m.(*tlopen); !ok {
 		t.Fatalf("got message %v expected *Tlopen", m)
 	}
 }
@@ -126,7 +126,7 @@ func DISABLEDTestSendClosed(t *testing.T) {
 	server.Close()
 	defer client.Close()
 
-	err = send(client, Tag(1), &Tlopen{})
+	err = send(client, Tag(1), &tlopen{})
 	if err == nil {
 		t.Fatalf("send got err nil expected non-nil")
 	}
@@ -154,17 +154,17 @@ func BenchmarkSendRecv(b *testing.B) {
 			if tag != Tag(1) {
 				b.Fatalf("got tag %v expected 1", tag)
 			}
-			if _, ok := m.(*Rflush); !ok {
+			if _, ok := m.(*rflush); !ok {
 				b.Fatalf("got message %T expected *Rflush", m)
 			}
-			if err := send(server, Tag(2), &Rflush{}); err != nil {
+			if err := send(server, Tag(2), &rflush{}); err != nil {
 				b.Fatalf("send got err %v expected nil", err)
 			}
 		}
 	}()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := send(client, Tag(1), &Rflush{}); err != nil {
+		if err := send(client, Tag(1), &rflush{}); err != nil {
 			b.Fatalf("send got err %v expected nil", err)
 		}
 		tag, m, err := recv(client, maximumLength, msgRegistry.get)
@@ -174,7 +174,7 @@ func BenchmarkSendRecv(b *testing.B) {
 		if tag != Tag(2) {
 			b.Fatalf("got tag %v expected 2", tag)
 		}
-		if _, ok := m.(*Rflush); !ok {
+		if _, ok := m.(*rflush); !ok {
 			b.Fatalf("got message %v expected *Rflush", m)
 		}
 	}
