@@ -248,69 +248,6 @@ func Connect(addr string, packet bool) (*Socket, error) {
 	return NewSocket(fd)
 }
 
-// ControlMessage wraps around a byte array and provides functions for parsing
-// as a Unix Domain Socket control message.
-type ControlMessage []byte
-
-// EnableFDs enables receiving FDs via control message.
-//
-// This guarantees only a MINIMUM number of FDs received. You may receive MORE
-// than this due to the way FDs are packed. To be specific, the number of
-// receivable buffers will be rounded up to the nearest even number.
-//
-// This must be called prior to ReadVec if you want to receive FDs.
-func (c *ControlMessage) EnableFDs(count int) {
-	*c = make([]byte, syscall.CmsgSpace(count*4))
-}
-
-// ExtractFDs returns the list of FDs in the control message.
-//
-// Either this or CloseFDs should be used after EnableFDs.
-func (c *ControlMessage) ExtractFDs() ([]int, error) {
-	msgs, err := syscall.ParseSocketControlMessage(*c)
-	if err != nil {
-		return nil, err
-	}
-	var fds []int
-	for _, msg := range msgs {
-		thisFds, err := syscall.ParseUnixRights(&msg)
-		if err != nil {
-			// Different control message.
-			return nil, err
-		}
-		for _, fd := range thisFds {
-			if fd >= 0 {
-				fds = append(fds, fd)
-			}
-		}
-	}
-	return fds, nil
-}
-
-// CloseFDs closes the list of FDs in the control message.
-//
-// Either this or ExtractFDs should be used after EnableFDs.
-func (c *ControlMessage) CloseFDs() {
-	fds, _ := c.ExtractFDs()
-	for _, fd := range fds {
-		if fd >= 0 {
-			syscall.Close(fd)
-		}
-	}
-}
-
-// PackFDs packs the given list of FDs in the control message.
-//
-// This must be used prior to WriteVec.
-func (c *ControlMessage) PackFDs(fds ...int) {
-	*c = ControlMessage(syscall.UnixRights(fds...))
-}
-
-// UnpackFDs clears the control message.
-func (c *ControlMessage) UnpackFDs() {
-	*c = nil
-}
-
 // SocketWriter wraps an individual send operation.
 //
 // The normal entrypoint is WriteVec.
@@ -319,8 +256,6 @@ type SocketWriter struct {
 	to       []byte
 	blocking bool
 	race     *int32
-
-	ControlMessage
 }
 
 // Writer returns a writer for this socket.
@@ -428,8 +363,6 @@ type SocketReader struct {
 	source   []byte
 	blocking bool
 	race     *int32
-
-	ControlMessage
 }
 
 // Reader returns a reader for this socket.
