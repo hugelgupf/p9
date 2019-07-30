@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.dev/gvisor/pkg/gate"
+	"github.com/hugelgupf/p9/gate"
 )
 
 // backlog is used for the listen request.
