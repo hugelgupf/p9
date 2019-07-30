@@ -13,6 +13,10 @@
 // limitations under the License.
 
 // Package p9 is a 9P2000.L implementation.
+//
+// Servers implement Attacher and File interfaces.
+//
+// Clients can use Client.
 package p9
 
 import (
