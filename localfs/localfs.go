@@ -12,16 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary local_server provides a local 9P2000.L server for the p9 package.
-//
-// To use, first start the server:
-//     local_server /tmp/my_bind_addr
-//
-// Then, connect using the Linux 9P filesystem:
-//     mount -t 9p -o trans=unix /tmp/my_bind_addr /mnt
-//
-// This package also serves as an examplar.
-package main
+package localfs
 
 import (
 	"log"
@@ -31,19 +22,28 @@ import (
 
 	"github.com/hugelgupf/p9/fd"
 	"github.com/hugelgupf/p9/p9"
-	"github.com/hugelgupf/p9/unet"
 )
 
-// local wraps a local file.
-type local struct {
+// Local is a p9.Attacher.
+type Local struct {
 	p9.DefaultWalkGetAttr
 
 	path string
 	file *os.File
 }
 
+// Attach implements p9.Attacher.Attach.
+func (l *Local) Attach() (p9.File, error) {
+	return &Local{path: "/"}, nil
+}
+
+var (
+	_ p9.File     = &Local{}
+	_ p9.Attacher = &Local{}
+)
+
 // info constructs a QID for this file.
-func (l *local) info() (p9.QID, os.FileInfo, error) {
+func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	var (
 		qid p9.QID
 		fi  os.FileInfo
@@ -69,17 +69,12 @@ func (l *local) info() (p9.QID, os.FileInfo, error) {
 	return qid, fi, nil
 }
 
-// Attach implements p9.Attacher.Attach.
-func (l *local) Attach() (p9.File, error) {
-	return &local{path: "/"}, nil
-}
-
 // Walk implements p9.File.Walk.
-func (l *local) Walk(names []string) ([]p9.QID, p9.File, error) {
+func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	var qids []p9.QID
-	last := &local{path: l.path}
+	last := &Local{path: l.path}
 	for _, name := range names {
-		c := &local{path: path.Join(last.path, name)}
+		c := &Local{path: path.Join(last.path, name)}
 		qid, _, err := c.info()
 		if err != nil {
 			return nil, nil, err
@@ -93,19 +88,19 @@ func (l *local) Walk(names []string) ([]p9.QID, p9.File, error) {
 // StatFS implements p9.File.StatFS.
 //
 // Not implemented.
-func (l *local) StatFS() (p9.FSStat, error) {
+func (l *Local) StatFS() (p9.FSStat, error) {
 	return p9.FSStat{}, syscall.ENOSYS
 }
 
 // FSync implements p9.File.FSync.
-func (l *local) FSync() error {
+func (l *Local) FSync() error {
 	return l.file.Sync()
 }
 
 // GetAttr implements p9.File.GetAttr.
 //
 // Not fully implemented.
-func (l *local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
+func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 	qid, fi, err := l.info()
 	if err != nil {
 		return qid, p9.AttrMask{}, p9.Attr{}, err
@@ -147,26 +142,26 @@ func (l *local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 // SetAttr implements p9.File.SetAttr.
 //
 // Not implemented.
-func (l *local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
+func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return syscall.ENOSYS
 }
 
 // Remove implements p9.File.Remove.
 //
 // Not implemented.
-func (l *local) Remove() error {
+func (l *Local) Remove() error {
 	return syscall.ENOSYS
 }
 
 // Rename implements p9.File.Rename.
 //
 // Not implemented.
-func (l *local) Rename(directory p9.File, name string) error {
+func (l *Local) Rename(directory p9.File, name string) error {
 	return syscall.ENOSYS
 }
 
 // Close implements p9.File.Close.
-func (l *local) Close() error {
+func (l *Local) Close() error {
 	if l.file != nil {
 		return l.file.Close()
 	}
@@ -174,7 +169,7 @@ func (l *local) Close() error {
 }
 
 // Open implements p9.File.Open.
-func (l *local) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
+func (l *Local) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	qid, _, err := l.info()
 	if err != nil {
 		return nil, qid, 0, err
@@ -187,28 +182,28 @@ func (l *local) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	}
 	l.file = f
 
-	// Note: we don't send the local file for this server.
+	// Note: we don't send the Local file for this server.
 	return nil, qid, 4096, nil
 }
 
 // Read implements p9.File.Read.
-func (l *local) ReadAt(p []byte, offset uint64) (int, error) {
+func (l *Local) ReadAt(p []byte, offset uint64) (int, error) {
 	return l.file.ReadAt(p, int64(offset))
 }
 
 // Write implements p9.File.Write.
-func (l *local) WriteAt(p []byte, offset uint64) (int, error) {
+func (l *Local) WriteAt(p []byte, offset uint64) (int, error) {
 	return l.file.WriteAt(p, int64(offset))
 }
 
 // Create implements p9.File.Create.
-func (l *local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
+func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
 	f, err := os.OpenFile(l.path, int(mode)|syscall.O_CREAT|syscall.O_EXCL, os.FileMode(permissions))
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, err
 	}
 
-	l2 := &local{path: path.Join(l.path, name), file: f}
+	l2 := &Local{path: path.Join(l.path, name), file: f}
 	qid, _, err := l2.info()
 	if err != nil {
 		l2.Close()
@@ -221,7 +216,7 @@ func (l *local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 // Mkdir implements p9.File.Mkdir.
 //
 // Not properly implemented.
-func (l *local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	if err := os.Mkdir(path.Join(l.path, name), os.FileMode(permissions)); err != nil {
 		return p9.QID{}, err
 	}
@@ -233,7 +228,7 @@ func (l *local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) 
 // Symlink implements p9.File.Symlink.
 //
 // Not properly implemented.
-func (l *local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	if err := os.Symlink(oldname, path.Join(l.path, newname)); err != nil {
 		return p9.QID{}, err
 	}
@@ -245,33 +240,33 @@ func (l *local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 // Link implements p9.File.Link.
 //
 // Not properly implemented.
-func (l *local) Link(target p9.File, newname string) error {
-	return os.Link(target.(*local).path, path.Join(l.path, newname))
+func (l *Local) Link(target p9.File, newname string) error {
+	return os.Link(target.(*Local).path, path.Join(l.path, newname))
 }
 
 // Mknod implements p9.File.Mknod.
 //
 // Not implemented.
-func (l *local) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *Local) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	return p9.QID{}, syscall.ENOSYS
 }
 
 // RenameAt implements p9.File.RenameAt.
 //
 // Not implemented.
-func (l *local) RenameAt(oldname string, newdir p9.File, newname string) error {
+func (l *Local) RenameAt(oldname string, newdir p9.File, newname string) error {
 	return syscall.ENOSYS
 }
 
 // UnlinkAt implements p9.File.UnlinkAt.
 //
 // Not implemented.
-func (l *local) UnlinkAt(name string, flags uint32) error {
+func (l *Local) UnlinkAt(name string, flags uint32) error {
 	return syscall.ENOSYS
 }
 
 // Readdir implements p9.File.Readdir.
-func (l *local) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
+func (l *Local) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	// We only do *all* dirents in single shot.
 	const maxDirentBuffer = 1024 * 1024
 	buf := make([]byte, maxDirentBuffer)
@@ -285,7 +280,7 @@ func (l *local) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	_, newCount, newNames := syscall.ParseDirent(buf[:n], int(offset)+int(count), nil)
 	var dirents []p9.Dirent
 	for i := int(offset); i >= 0 && i < newCount; i++ {
-		entry := local{path: path.Join(l.path, newNames[i])}
+		entry := Local{path: path.Join(l.path, newNames[i])}
 		qid, _, err := entry.info()
 		if err != nil {
 			continue
@@ -304,48 +299,26 @@ func (l *local) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 // Readlink implements p9.File.Readlink.
 //
 // Not properly implemented.
-func (l *local) Readlink() (string, error) {
+func (l *Local) Readlink() (string, error) {
 	return os.Readlink(l.path)
 }
 
 // Flush implements p9.File.Flush.
-func (l *local) Flush() error {
+func (l *Local) Flush() error {
 	return nil
 }
 
 // Connect implements p9.File.Connect.
-func (l *local) Connect(p9.ConnectFlags) (*fd.FD, error) {
+func (l *Local) Connect(p9.ConnectFlags) (*fd.FD, error) {
 	return nil, syscall.ECONNREFUSED
 }
 
 // Renamed implements p9.File.Renamed.
-func (l *local) Renamed(parent p9.File, newName string) {
-	l.path = path.Join(parent.(*local).path, newName)
+func (l *Local) Renamed(parent p9.File, newName string) {
+	l.path = path.Join(parent.(*Local).path, newName)
 }
 
 // Allocate implements p9.File.Allocate.
-func (l *local) Allocate(mode p9.AllocateMode, offset, length uint64) error {
+func (l *Local) Allocate(mode p9.AllocateMode, offset, length uint64) error {
 	return syscall.Fallocate(int(l.file.Fd()), mode.ToLinux(), int64(offset), int64(length))
 }
-
-func main() {
-	if len(os.Args) != 2 {
-		log.Printf("usage: %s <bind-addr>", os.Args[0])
-		os.Exit(1)
-	}
-
-	// Bind and listen on the socket.
-	serverSocket, err := unet.BindAndListen(os.Args[1], false)
-	if err != nil {
-		log.Printf("err binding: %v", err)
-		os.Exit(1)
-	}
-
-	// Run the server.
-	s := p9.NewServer(&local{})
-	s.Serve(serverSocket)
-}
-
-var (
-	_ p9.File = &local{}
-)
