@@ -26,6 +26,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Debug can be assigned to log.Printf to print messages received and sent.
+var Debug = func(fmt string, v ...interface{}) {}
+
 // OpenFlags is the mode passed to Open and Create operations.
 //
 // These correspond to bits sent over the wire.

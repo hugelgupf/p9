@@ -17,12 +17,11 @@ package p9
 import (
 	"io"
 	"log"
+	"net"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"syscall"
-
-	"github.com/hugelgupf/p9/unet"
 )
 
 // Server is a 9p2000.L server.
@@ -62,7 +61,7 @@ type connState struct {
 	sendMu sync.Mutex
 
 	// conn is the connection.
-	conn *unet.Socket
+	conn net.Conn
 
 	// fids is the set of active FIDs.
 	//
@@ -538,7 +537,7 @@ func (cs *connState) service() error {
 }
 
 // Handle handles a single connection.
-func (s *Server) Handle(conn *unet.Socket) error {
+func (s *Server) Handle(conn net.Conn) error {
 	cs := &connState{
 		server:   s,
 		conn:     conn,
@@ -555,7 +554,7 @@ func (s *Server) Handle(conn *unet.Socket) error {
 // Serve handles requests from the bound socket.
 //
 // The passed serverSocket _must_ be created in packet mode.
-func (s *Server) Serve(serverSocket *unet.ServerSocket) error {
+func (s *Server) Serve(serverSocket net.Listener) error {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
@@ -569,7 +568,7 @@ func (s *Server) Serve(serverSocket *unet.ServerSocket) error {
 		}
 
 		wg.Add(1)
-		go func(conn *unet.Socket) { // S/R-SAFE: Irrelevant.
+		go func(conn net.Conn) { // S/R-SAFE: Irrelevant.
 			s.Handle(conn)
 			wg.Done()
 		}(conn)

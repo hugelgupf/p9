@@ -18,10 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"sync"
 	"syscall"
-
-	"github.com/hugelgupf/p9/unet"
 )
 
 // ErrOutOfTags indicates no tags are available.
@@ -69,7 +68,7 @@ var responsePool = sync.Pool{
 // Client is at least a 9P2000.L client.
 type Client struct {
 	// socket is the connected socket.
-	socket *unet.Socket
+	socket net.Conn
 
 	// tagPool is the collection of available tags.
 	tagPool pool
@@ -108,7 +107,7 @@ type Client struct {
 // the server to assert that messageSize is ok to use.
 //
 // You should not use the same socket for multiple clients.
-func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client, error) {
+func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, error) {
 	// Need at least one byte of payload.
 	if messageSize <= msgRegistry.largestFixedSize {
 		return nil, &ErrMessageTooLarge{
@@ -273,12 +272,12 @@ func (c *Client) sendRecv(t message, r message) error {
 	err := send(c.socket, Tag(tag), t)
 	c.sendMu.Unlock()
 	if err != nil {
-		return err
+		return fmt.Errorf("send: %v", err)
 	}
 
 	// Co-ordinate with other receivers.
 	if err := c.waitAndRecv(resp.done); err != nil {
-		return err
+		return fmt.Errorf("wait: %v", err)
 	}
 
 	// Is it an error message?

@@ -23,24 +23,22 @@ package main
 
 import (
 	"log"
+	"net"
 	"os"
 
 	"github.com/hugelgupf/p9/localfs"
 	"github.com/hugelgupf/p9/p9"
-	"github.com/hugelgupf/p9/unet"
 )
 
 func main() {
 	if len(os.Args) != 2 {
-		log.Printf("usage: %s <bind-addr>", os.Args[0])
-		os.Exit(1)
+		log.Fatalf("usage: %s <bind-addr>", os.Args[0])
 	}
 
 	// Bind and listen on the socket.
-	serverSocket, err := unet.BindAndListen(os.Args[1], false)
+	serverSocket, err := net.Listen("tcp", os.Args[1])
 	if err != nil {
-		log.Printf("err binding: %v", err)
-		os.Exit(1)
+		log.Fatalf("err binding: %v", err)
 	}
 
 	// Run the server.

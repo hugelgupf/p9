@@ -19,9 +19,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"sync"
+	"syscall"
 
-	"github.com/hugelgupf/p9/unet"
+	"github.com/hugelgupf/p9/vecnet"
 )
 
 // ErrSocket is returned in cases of a socket issue.
@@ -30,6 +32,10 @@ import (
 type ErrSocket struct {
 	// error is the socket error.
 	error
+}
+
+func (e ErrSocket) Error() string {
+	return fmt.Sprintf("socket error: %v", e.error)
 }
 
 // ErrMessageTooLarge indicates the size was larger than reasonable.
@@ -65,16 +71,18 @@ var dataPool = sync.Pool{
 }
 
 // send sends the given message over the socket.
-func send(s *unet.Socket, tag Tag, m message) error {
+func send(conn net.Conn, tag Tag, m message) error {
 	data := dataPool.Get().([]byte)
 	dataBuf := buffer{data: data[:0]}
+
+	Debug("send [conn %p] [Tag %06d] %s", conn, tag, m)
 
 	// Encode the message. The buffer will grow automatically.
 	m.Encode(&dataBuf)
 
 	// Get our vectors to send.
 	var hdr [headerLength]byte
-	vecs := make([][]byte, 0, 3)
+	vecs := make(net.Buffers, 0, 3)
 	vecs = append(vecs, hdr[:])
 	if len(dataBuf.data) > 0 {
 		vecs = append(vecs, dataBuf.data)
@@ -96,26 +104,8 @@ func send(s *unet.Socket, tag Tag, m message) error {
 	headerBuf.WriteMsgType(m.Type())
 	headerBuf.WriteTag(tag)
 
-	// Pack any files if necessary.
-	w := s.Writer(true)
-
-	for n := 0; n < int(totalLength); {
-		cur, err := w.WriteVec(vecs)
-		if err != nil {
-			return ErrSocket{err}
-		}
-		n += cur
-
-		// Consume iovecs.
-		for consumed := 0; consumed < cur; {
-			if len(vecs[0]) <= cur-consumed {
-				consumed += len(vecs[0])
-				vecs = vecs[1:]
-			} else {
-				vecs[0] = vecs[0][cur-consumed:]
-				break
-			}
-		}
+	if _, err := vecs.WriteTo(conn); err != nil {
+		return ErrSocket{err}
 	}
 
 	// All set.
@@ -137,23 +127,12 @@ type lookupTagAndType func(tag Tag, t MsgType) (message, error)
 // On a socket error, the special error type ErrSocket is returned.
 //
 // The tag value NoTag will always be returned if err is non-nil.
-func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, error) {
+func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (Tag, message, error) {
 	// Read a header.
 	var hdr [headerLength]byte
-	r := s.Reader(true)
 
-	n, err := r.ReadVec([][]byte{hdr[:]})
-	if err != nil && (n == 0 || err != io.EOF) {
+	if _, err := io.ReadAtLeast(conn, hdr[:], int(headerLength)); err != nil {
 		return NoTag, nil, ErrSocket{err}
-	}
-
-	// Continuing reading for a short header.
-	for n < int(headerLength) {
-		cur, err := r.ReadVec([][]byte{hdr[n:]})
-		if err != nil && (cur == 0 || err != io.EOF) {
-			return NoTag, nil, ErrSocket{err}
-		}
-		n += cur
 	}
 
 	// Decode the header.
@@ -178,7 +157,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	if err != nil {
 		// Throw away the contents of this message.
 		if remaining > 0 {
-			io.Copy(ioutil.Discard, &io.LimitedReader{R: s, N: int64(remaining)})
+			io.Copy(ioutil.Discard, io.LimitReader(conn, int64(remaining)))
 		}
 		return tag, nil, err
 	}
@@ -190,7 +169,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	//
 	// This requires some special care to ensure that the vectors all line
 	// up the way they should. We do this to minimize copying data around.
-	var vecs [][]byte
+	var vecs vecnet.Buffers
 	if payloader, ok := m.(payloader); ok {
 		fixedSize := payloader.FixedSize()
 
@@ -198,7 +177,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 		if fixedSize > remaining {
 			// This is not a valid message.
 			if remaining > 0 {
-				io.Copy(ioutil.Discard, &io.LimitedReader{R: s, N: int64(remaining)})
+				io.Copy(ioutil.Discard, io.LimitReader(conn, int64(remaining)))
 			}
 			return NoTag, nil, ErrNoValidMessage
 		}
@@ -249,27 +228,8 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	}
 
 	if len(vecs) > 0 {
-		// Read the rest of the message.
-		//
-		// No need to handle a control message.
-		r := s.Reader(true)
-		for n := 0; n < int(remaining); {
-			cur, err := r.ReadVec(vecs)
-			if err != nil && (cur == 0 || err != io.EOF) {
-				return NoTag, nil, ErrSocket{err}
-			}
-			n += cur
-
-			// Consume iovecs.
-			for consumed := 0; consumed < cur; {
-				if len(vecs[0]) <= cur-consumed {
-					consumed += len(vecs[0])
-					vecs = vecs[1:]
-				} else {
-					vecs[0] = vecs[0][cur-consumed:]
-					break
-				}
-			}
+		if _, err := vecs.ReadFrom(conn.(syscall.Conn)); err != nil {
+			return NoTag, nil, ErrSocket{err}
 		}
 	}
 
@@ -279,6 +239,8 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 		// No need to drain the socket.
 		return NoTag, nil, ErrNoValidMessage
 	}
+
+	Debug("recv [conn %p] [Tag %06d] %s", conn, tag, m)
 
 	// All set.
 	return tag, m, nil
