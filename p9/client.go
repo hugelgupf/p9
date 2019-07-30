@@ -190,8 +190,8 @@ func (c *Client) handleOne() {
 		}
 
 		// Does it match expectations?
-		if t != resp.r.Type() {
-			return nil, &ErrBadResponse{Got: t, Want: resp.r.Type()}
+		if t != resp.r.typ() {
+			return nil, &ErrBadResponse{Got: t, Want: resp.r.typ()}
 		}
 
 		// Return the response.

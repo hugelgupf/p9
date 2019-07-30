@@ -55,7 +55,7 @@ type badDecode struct{}
 
 func (*badDecode) decode(b *buffer) { b.markOverrun() }
 func (*badDecode) encode(b *buffer) {}
-func (*badDecode) Type() msgType    { return msgTypeBadDecode }
+func (*badDecode) typ() msgType     { return msgTypeBadDecode }
 func (*badDecode) String() string   { return "badDecode{}" }
 
 func TestRecvOverrun(t *testing.T) {
@@ -80,7 +80,7 @@ type unregistered struct{}
 
 func (*unregistered) decode(b *buffer) {}
 func (*unregistered) encode(b *buffer) {}
-func (*unregistered) Type() msgType    { return msgTypeUnregistered }
+func (*unregistered) typ() msgType     { return msgTypeUnregistered }
 func (*unregistered) String() string   { return "unregistered{}" }
 
 func TestRecvInvalidType(t *testing.T) {

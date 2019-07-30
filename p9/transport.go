@@ -101,7 +101,7 @@ func send(conn net.Conn, tag Tag, m message) error {
 	// Construct the header.
 	headerBuf := buffer{data: hdr[:0]}
 	headerBuf.Write32(totalLength)
-	headerBuf.WriteMsgType(m.Type())
+	headerBuf.WriteMsgType(m.typ())
 	headerBuf.WriteTag(tag)
 
 	if _, err := vecs.WriteTo(conn); err != nil {
