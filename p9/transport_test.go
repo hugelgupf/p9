@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	MsgTypeBadEncode = iota + 252
-	MsgTypeBadDecode
-	MsgTypeUnregistered
+	msgTypeBadEncode = iota + 252
+	msgTypeBadDecode
+	msgTypeUnregistered
 )
 
 func TestSendRecv(t *testing.T) {
@@ -55,7 +55,7 @@ type badDecode struct{}
 
 func (*badDecode) Decode(b *buffer) { b.markOverrun() }
 func (*badDecode) Encode(b *buffer) {}
-func (*badDecode) Type() MsgType    { return MsgTypeBadDecode }
+func (*badDecode) Type() msgType    { return msgTypeBadDecode }
 func (*badDecode) String() string   { return "badDecode{}" }
 
 func TestRecvOverrun(t *testing.T) {
@@ -80,7 +80,7 @@ type unregistered struct{}
 
 func (*unregistered) Decode(b *buffer) {}
 func (*unregistered) Encode(b *buffer) {}
-func (*unregistered) Type() MsgType    { return MsgTypeUnregistered }
+func (*unregistered) Type() msgType    { return msgTypeUnregistered }
 func (*unregistered) String() string   { return "unregistered{}" }
 
 func TestRecvInvalidType(t *testing.T) {
@@ -181,5 +181,5 @@ func BenchmarkSendRecv(b *testing.B) {
 }
 
 func init() {
-	msgRegistry.register(MsgTypeBadDecode, func() message { return &badDecode{} })
+	msgRegistry.register(msgTypeBadDecode, func() message { return &badDecode{} })
 }

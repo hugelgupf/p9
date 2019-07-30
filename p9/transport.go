@@ -118,7 +118,7 @@ func send(conn net.Conn, tag Tag, m message) error {
 // This is called by recv after decoding the header. Any error returned will be
 // propagating back to the caller. You may use messageByType directly as a
 // lookupTagAndType function (by design).
-type lookupTagAndType func(tag Tag, t MsgType) (message, error)
+type lookupTagAndType func(tag Tag, t msgType) (message, error)
 
 // recv decodes a message from the socket.
 //

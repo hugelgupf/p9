@@ -163,9 +163,9 @@ func (b *buffer) ReadConnectFlags() ConnectFlags {
 	return ConnectFlags(b.Read32())
 }
 
-// ReadMsgType writes a MsgType.
-func (b *buffer) ReadMsgType() MsgType {
-	return MsgType(b.Read8())
+// ReadMsgType writes a msgType.
+func (b *buffer) ReadMsgType() msgType {
+	return msgType(b.Read8())
 }
 
 // ReadString deserializes a string.
@@ -250,7 +250,7 @@ func (b *buffer) WriteConnectFlags(flags ConnectFlags) {
 }
 
 // WriteMsgType writes a MsgType.
-func (b *buffer) WriteMsgType(t MsgType) {
+func (b *buffer) WriteMsgType(t msgType) {
 	b.Write8(uint8(t))
 }
 

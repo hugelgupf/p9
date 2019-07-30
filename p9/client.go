@@ -40,8 +40,8 @@ var ErrBadVersionString = errors.New("bad version string")
 
 // ErrBadResponse indicates the response didn't match the request.
 type ErrBadResponse struct {
-	Got  MsgType
-	Want MsgType
+	Got  msgType
+	Want msgType
 }
 
 // Error returns a highly descriptive error.
@@ -172,7 +172,7 @@ func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, er
 // This should only be called with the token from recvr. Note that the received
 // tag will automatically be cleared from pending.
 func (c *Client) handleOne() {
-	tag, r, err := recv(c.socket, c.messageSize, func(tag Tag, t MsgType) (message, error) {
+	tag, r, err := recv(c.socket, c.messageSize, func(tag Tag, t msgType) (message, error) {
 		c.pendingMu.Lock()
 		resp := c.pending[tag]
 		c.pendingMu.Unlock()
@@ -185,7 +185,7 @@ func (c *Client) handleOne() {
 
 		// Is it an error? We specifically allow this to
 		// go through, and then we deserialize below.
-		if t == MsgRlerror {
+		if t == msgRlerror {
 			return &Rlerror{}, nil
 		}
 

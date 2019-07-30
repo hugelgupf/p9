@@ -402,7 +402,7 @@ func TestMessageStrings(t *testing.T) {
 				}()
 				m := entry.create()
 				_ = fmt.Sprintf("%v", m)
-				err := ErrInvalidMsgType{MsgType(typ)}
+				err := ErrInvalidMsgType{msgType(typ)}
 				_ = err.Error()
 			})
 		}
@@ -418,32 +418,32 @@ func TestRegisterDuplicate(t *testing.T) {
 	}()
 
 	// Register a duplicate.
-	msgRegistry.register(MsgRlerror, func() message { return &Rlerror{} })
+	msgRegistry.register(msgRlerror, func() message { return &Rlerror{} })
 }
 
 func TestMsgCache(t *testing.T) {
 	// Cache starts empty.
-	if got, want := len(msgRegistry.factories[MsgRlerror].cache), 0; got != want {
+	if got, want := len(msgRegistry.factories[msgRlerror].cache), 0; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 
 	// Message can be created with an empty cache.
-	msg, err := msgRegistry.get(0, MsgRlerror)
+	msg, err := msgRegistry.get(0, msgRlerror)
 	if err != nil {
 		t.Errorf("msgRegistry.get(): %v", err)
 	}
-	if got, want := len(msgRegistry.factories[MsgRlerror].cache), 0; got != want {
+	if got, want := len(msgRegistry.factories[msgRlerror].cache), 0; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 
 	// Check that message is added to the cache when returned.
 	msgRegistry.put(msg)
-	if got, want := len(msgRegistry.factories[MsgRlerror].cache), 1; got != want {
+	if got, want := len(msgRegistry.factories[msgRlerror].cache), 1; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 
 	// Check that returned message is reused.
-	if got, err := msgRegistry.get(0, MsgRlerror); err != nil {
+	if got, err := msgRegistry.get(0, msgRlerror); err != nil {
 		t.Errorf("msgRegistry.get(): %v", err)
 	} else if msg != got {
 		t.Errorf("Message not reused, got: %d, want: %d", got, msg)
@@ -453,7 +453,7 @@ func TestMsgCache(t *testing.T) {
 	for i := 0; i < maxCacheSize+1; i++ {
 		msgRegistry.put(&Rlerror{})
 	}
-	if got, want := len(msgRegistry.factories[MsgRlerror].cache), maxCacheSize; got != want {
+	if got, want := len(msgRegistry.factories[msgRlerror].cache), maxCacheSize; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 }
