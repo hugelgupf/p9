@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"net"
 	"sync"
-	"syscall"
 
 	"github.com/hugelgupf/p9/vecnet"
 )
@@ -228,7 +227,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, e
 	}
 
 	if len(vecs) > 0 {
-		if _, err := vecs.ReadFrom(conn.(syscall.Conn)); err != nil {
+		if _, err := vecs.ReadFrom(conn); err != nil {
 			return noTag, nil, ErrSocket{err}
 		}
 	}

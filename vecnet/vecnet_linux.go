@@ -12,16 +12,48 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package vecnet provides access to recvmsg syscalls on net.Conns.
 package vecnet
 
 import (
 	"io"
-	"net"
 	"runtime"
 	"syscall"
 	"unsafe"
 )
+
+var readFromBuffers = readFromBuffersLinux
+
+func readFromBuffersLinux(bufs Buffers, conn syscall.Conn) (int64, error) {
+	rc, err := conn.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+
+	length := int64(0)
+	for _, buf := range bufs {
+		length += int64(len(buf))
+	}
+
+	for n := int64(0); n < length; {
+		cur, err := recvmsg(bufs, rc)
+		if err != nil && (cur == 0 || err != io.EOF) {
+			return n, err
+		}
+		n += int64(cur)
+
+		// Consume iovecs to retry.
+		for consumed := 0; consumed < cur; {
+			if len(bufs[0]) <= cur-consumed {
+				consumed += len(bufs[0])
+				bufs = bufs[1:]
+			} else {
+				bufs[0] = bufs[0][cur-consumed:]
+				break
+			}
+		}
+	}
+	return length, nil
+}
 
 // buildIovec builds an iovec slice from the given []byte slice.
 //
@@ -38,49 +70,6 @@ func buildIovec(bufs Buffers, iovecs []syscall.Iovec) ([]syscall.Iovec, int) {
 		}
 	}
 	return iovecs, length
-}
-
-// Buffers points to zero or more buffers to read into.
-//
-// On connections that support it, ReadFrom is optimized into the batch read
-// operation recvmsg.
-type Buffers net.Buffers
-
-// ReadFrom reads into the pre-allocated bufs. Returns bytes read.
-//
-// The pre-allocatted space used by ReadFrom is based upon slice lengths.
-//
-// TODO: swap syscall.Conn for an io.Reader, similar to net.Buffers.WriteTo.
-func (bufs Buffers) ReadFrom(conn syscall.Conn) (int, error) {
-	rc, err := conn.SyscallConn()
-	if err != nil {
-		return 0, err
-	}
-
-	length := 0
-	for _, buf := range bufs {
-		length += len(buf)
-	}
-
-	for n := 0; n < int(length); {
-		cur, err := recvmsg(bufs, rc)
-		if err != nil && (cur == 0 || err != io.EOF) {
-			return n, err
-		}
-		n += cur
-
-		// Consume iovecs.
-		for consumed := 0; consumed < cur; {
-			if len(bufs[0]) <= cur-consumed {
-				consumed += len(bufs[0])
-				bufs = bufs[1:]
-			} else {
-				bufs[0] = bufs[0][cur-consumed:]
-				break
-			}
-		}
-	}
-	return length, nil
 }
 
 func recvmsg(bufs Buffers, rc syscall.RawConn) (int, error) {
