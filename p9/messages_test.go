@@ -197,7 +197,7 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		&rreaddir{
 			// Count must be sufficient to encode a dirent.
-			Count:   0x18,
+			Count:   0x40,
 			Entries: []Dirent{{QID: QID{Type: 2}}},
 		},
 		&tfsync{
@@ -456,4 +456,53 @@ func TestMsgCache(t *testing.T) {
 	if got, want := len(msgRegistry.factories[msgRlerror].cache), maxCacheSize; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
+}
+
+// TestIntegralReaddirResult ensures that readdir encodes integral numbers of
+// directory entries per the 9p standard.
+//
+// "For directories, read returns an integral number of directory
+// entries exactly as in stat (see stat(5)), one for each
+// member of the directory."
+//
+// If you don't do this, for directories that encode to more than msize bytes,
+// linux kernel clients see a partially encoded dirent, which will cause
+// them to return an EIO and that is incredibly confusing in user mode.
+// Of course, if you only return an integral number of entries, you will
+// almost always return a response less than msize. In correct 9p clients,
+// a read of a directory that returns non-zero count is an invitation to
+// read more.
+// Because somebody in the Linux world got Klever, they interpret a short
+// read as EOF on the directory, and don't come back for more.
+// They hence misinterpret a less-than-msize read of a directory and,
+// as a result, do not completely read the directory. But one thing at a
+// time. First fix the server side. This fixes half the problems we see
+// using this package to serve Linux. The other half requires that we un-break
+// the Linux kernel. That looks harder at present due to the complex
+// way they changed directory reading (which used to work, by the way).
+func TestIntegralReaddirResult(t *testing.T) {
+	const msize = 8168
+	var r = &rreaddir{
+		Count: msize,
+		Entries: []Dirent{
+			// This will fit.
+			{Name: string(make([]byte, msize/2))},
+		},
+	}
+	// Encode the one we know will fit and get that length.
+	var b buffer
+	r.encode(&b)
+	l1 := r.Count
+	if l1 == msize {
+		t.Errorf("encoding readdir less than msize: got length %d, want less than that", l1)
+	}
+	// Add a second entry, then encode; the sizes should match.
+	r.Count = msize
+	r.Entries = append(r.Entries, Dirent{Name: string(make([]byte, 4096))})
+	r.encode(&b)
+	l2 := r.Count
+	if l1 != l2 {
+		t.Fatalf("rreadir is not integral size: got %d, want %d", l2, l1)
+	}
+
 }
