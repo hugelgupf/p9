@@ -42,12 +42,12 @@ func main() {
 		p9.Debug = log.Printf
 	}
 
-	if len(os.Args) != 2 {
+	if len(flag.Args()) != 1 {
 		log.Fatalf("usage: %s <bind-addr>", os.Args[0])
 	}
 
 	// Bind and listen on the socket.
-	serverSocket, err := net.Listen("tcp", os.Args[1])
+	serverSocket, err := net.Listen("tcp", flag.Args()[0])
 	if err != nil {
 		log.Fatalf("err binding: %v", err)
 	}
