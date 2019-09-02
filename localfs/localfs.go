@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"github.com/hugelgupf/p9/p9"
+	"github.com/hugelgupf/p9/sys"
 	"github.com/hugelgupf/p9/unimplfs"
 )
 
@@ -85,7 +86,13 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	qid.Type = p9.ModeFromOS(fi.Mode()).QIDType()
 
 	// Save the path from the Ino.
-	qid.Path = fi.Sys().(*syscall.Stat_t).Ino
+	ninePath, err := localToQid(l.path, fi)
+	if err != nil {
+		return qid, nil, err
+	}
+
+	qid.Path = ninePath
+
 	return qid, fi, nil
 }
 
@@ -129,8 +136,9 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		return qid, p9.AttrMask{}, p9.Attr{}, err
 	}
 
-	stat := fi.Sys().(*syscall.Stat_t)
-	attr := p9.Attr{
+	stat := sys.InfoToStat(fi)
+
+	attr := &p9.Attr{
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),
 		GID:              p9.GID(stat.Gid),
@@ -146,20 +154,8 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		CTimeSeconds:     uint64(stat.Ctim.Sec),
 		CTimeNanoSeconds: uint64(stat.Ctim.Nsec),
 	}
-	valid := p9.AttrMask{
-		Mode:   true,
-		UID:    true,
-		GID:    true,
-		NLink:  true,
-		RDev:   true,
-		Size:   true,
-		Blocks: true,
-		ATime:  true,
-		MTime:  true,
-		CTime:  true,
-	}
 
-	return qid, valid, attr, nil
+	return qid, req, *attr, nil
 }
 
 // Close implements p9.File.Close.
@@ -244,37 +240,6 @@ func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 // Not properly implemented.
 func (l *Local) Link(target p9.File, newname string) error {
 	return os.Link(target.(*Local).path, path.Join(l.path, newname))
-}
-
-// Readdir implements p9.File.Readdir.
-func (l *Local) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
-	// We only do *all* dirents in single shot.
-	const maxDirentBuffer = 1024 * 1024
-	buf := make([]byte, maxDirentBuffer)
-	n, err := syscall.ReadDirent(int(l.file.Fd()), buf)
-	if err != nil {
-		// Return zero entries.
-		return nil, nil
-	}
-
-	// Parse the entries; note that we read up to offset+count here.
-	_, newCount, newNames := syscall.ParseDirent(buf[:n], int(offset)+int(count), nil)
-	var dirents []p9.Dirent
-	for i := int(offset); i >= 0 && i < newCount; i++ {
-		entry := Local{path: path.Join(l.path, newNames[i])}
-		qid, _, err := entry.info()
-		if err != nil {
-			continue
-		}
-		dirents = append(dirents, p9.Dirent{
-			QID:    qid,
-			Type:   qid.Type,
-			Name:   newNames[i],
-			Offset: uint64(i + 1),
-		})
-	}
-
-	return dirents, nil
 }
 
 // Readlink implements p9.File.Readlink.

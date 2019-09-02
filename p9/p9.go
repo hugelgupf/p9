@@ -25,7 +25,8 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
-	"syscall"
+
+	"github.com/hugelgupf/p9/sys"
 )
 
 // Debug can be assigned to log.Printf to print messages received and sent.
@@ -793,7 +794,7 @@ func (a *Attr) decode(b *buffer) {
 }
 
 // StatToAttr converts a Linux syscall stat structure to an Attr.
-func StatToAttr(s *syscall.Stat_t, req AttrMask) (Attr, AttrMask) {
+func StatToAttr(s *sys.Stat_t, req AttrMask) (Attr, AttrMask) {
 	attr := Attr{
 		UID: NoUID,
 		GID: NoGID,

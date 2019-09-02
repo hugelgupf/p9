@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+
+	"github.com/hugelgupf/p9/sys"
 )
 
 // ExtractErrno extracts a syscall.Errno from a error, best effort.
@@ -877,7 +879,7 @@ func (t *txattrwalk) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	// We don't support extended attributes.
-	return newErr(syscall.ENODATA)
+	return newErr(sys.ENODATA)
 }
 
 // handle implements handler.handle.
