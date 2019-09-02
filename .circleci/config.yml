@@ -1,16 +1,32 @@
 version: 2
-jobs:
-  build:
-    docker:
-      - image: circleci/golang:1.12
 
+templates:
+  golang-template: &golang-template
+    docker:
+      - image: uroottest/test-image-amd64:v3.2.8
     working_directory: /go/src/github.com/hugelgupf/p9
     environment:
+      - GOPATH: "/go"
       - CGO_ENABLED: 0
+      # Double all timeouts for QEMU VM tests since they run without KVM.
+      - UROOT_QEMU_TIMEOUT_X: 2
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build
+
+jobs:
+  build:
+    <<: *golang-template
     steps:
       - checkout
-      - run: go get -v -t -d ./...
-      - run: go test -v ./...
+      - run: go env
+      - run: go get -v -t -d github.com/u-root/u-root
+      - run: go get -v -d ./...
+      - run: GO111MODULE=on go mod vendor
+      - run: go test -timeout 15m -v ./...
       - run: |
           go get github.com/mitchellh/gox
 
