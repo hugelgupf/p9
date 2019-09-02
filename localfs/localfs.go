@@ -199,12 +199,13 @@ func (l *Local) WriteAt(p []byte, offset uint64) (int, error) {
 
 // Create implements p9.File.Create.
 func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
-	f, err := os.OpenFile(l.path, int(mode)|syscall.O_CREAT|syscall.O_EXCL, os.FileMode(permissions))
+	newName := path.Join(l.path, name)
+	f, err := os.OpenFile(newName, int(mode)|syscall.O_CREAT|syscall.O_EXCL, os.FileMode(permissions))
 	if err != nil {
 		return nil, p9.QID{}, 0, err
 	}
 
-	l2 := &Local{path: path.Join(l.path, name), file: f}
+	l2 := &Local{path: newName, file: f}
 	qid, _, err := l2.info()
 	if err != nil {
 		l2.Close()
