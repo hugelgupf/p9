@@ -18,7 +18,6 @@ package localfs
 import (
 	"os"
 	"path"
-	"syscall"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/p9"
@@ -48,6 +47,7 @@ func Attacher(root string) p9.Attacher {
 
 // Attach implements p9.Attacher.Attach.
 func (a *attacher) Attach() (p9.File, error) {
+	umask(0)
 	return &Local{path: a.root}, nil
 }
 
@@ -137,7 +137,6 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 	}
 
 	stat := sys.InfoToStat(fi)
-
 	attr := &p9.Attr{
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),
@@ -154,7 +153,6 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		CTimeSeconds:     uint64(stat.Ctim.Sec),
 		CTimeNanoSeconds: uint64(stat.Ctim.Nsec),
 	}
-
 	return qid, req, *attr, nil
 }
 
@@ -196,7 +194,7 @@ func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
 // Create implements p9.File.Create.
 func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
 	newName := path.Join(l.path, name)
-	f, err := os.OpenFile(newName, int(mode)|syscall.O_CREAT|syscall.O_EXCL, os.FileMode(permissions))
+	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
 	if err != nil {
 		return nil, p9.QID{}, 0, err
 	}
@@ -207,7 +205,6 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 		l2.Close()
 		return nil, p9.QID{}, 0, err
 	}
-
 	return l2, qid, 4096, nil
 }
 
