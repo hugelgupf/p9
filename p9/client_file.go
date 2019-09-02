@@ -100,7 +100,7 @@ func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, At
 		if err != nil {
 			return nil, nil, AttrMask{}, Attr{}, err
 		}
-		_, valid, attr, err := file.GetAttr(AttrMaskAll())
+		_, valid, attr, err := file.GetAttr(AttrMaskAll)
 		if err != nil {
 			file.Close()
 			return nil, nil, AttrMask{}, Attr{}, err
