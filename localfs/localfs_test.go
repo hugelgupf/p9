@@ -15,11 +15,19 @@
 package localfs
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/hugelgupf/p9/filetest"
 )
 
 func TestLocalFS(t *testing.T) {
-	filetest.TestFile(t, RootAttacher())
+	tempDir, err := ioutil.TempDir("", "localfs-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	filetest.TestFile(t, Attacher(tempDir))
 }
