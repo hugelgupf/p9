@@ -16,7 +16,6 @@
 package localfs
 
 import (
-	"log"
 	"os"
 	"path"
 	"syscall"
@@ -79,7 +78,6 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 		fi, err = os.Lstat(l.path)
 	}
 	if err != nil {
-		log.Printf("error stating %#v: %v", l, err)
 		return qid, nil, err
 	}
 
