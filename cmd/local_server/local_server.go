@@ -15,13 +15,14 @@
 // Binary local_server provides a local 9P2000.L server for the p9 package.
 //
 // To use, first start the server:
-//     local_server /tmp/my_bind_addr
+//     local_server 127.0.0.1:3333
 //
 // Then, connect using the Linux 9P filesystem:
-//     mount -t 9p -o trans=unix /tmp/my_bind_addr /mnt
+//     mount -t 9p -o trans=tcp,port=3333 127.0.0.1 /mnt
 package main
 
 import (
+	"flag"
 	"log"
 	"net"
 	"os"
@@ -30,7 +31,16 @@ import (
 	"github.com/hugelgupf/p9/p9"
 )
 
+var (
+	verbose = flag.Bool("v", false, "verbose logging")
+)
+
 func main() {
+	flag.Parse()
+	if *verbose {
+		p9.Debug = log.Printf
+	}
+
 	if len(os.Args) != 2 {
 		log.Fatalf("usage: %s <bind-addr>", os.Args[0])
 	}
