@@ -50,11 +50,12 @@ const (
 
 	// OpenFlagsModeMask is a mask of valid OpenFlags mode bits.
 	OpenFlagsModeMask OpenFlags = 3
-
-	// OpenFlagsIgnoreMask is a list of OpenFlags mode bits that are ignored for Tlopen.
-	// Note that syscall.O_LARGEFILE is set to zero, use value from Linux fcntl.h.
-	OpenFlagsIgnoreMask OpenFlags = syscall.O_DIRECTORY | syscall.O_NOATIME | 0100000
 )
+
+// Mode returns only the open mode (read-only, read-write, or write-only).
+func (o OpenFlags) Mode() OpenFlags {
+	return o & OpenFlagsModeMask
+}
 
 // OSFlags converts a p9.OpenFlags to an int compatible with open(2).
 func (o OpenFlags) OSFlags() int {
@@ -72,10 +73,8 @@ func (o OpenFlags) String() string {
 		return "ReadWrite"
 	case OpenFlagsModeMask:
 		return "OpenFlagsModeMask"
-	case OpenFlagsIgnoreMask:
-		return "OpenFlagsIgnoreMask"
 	default:
-		return "UNDEFINED"
+		return fmt.Sprintf("unknown (%#x)", uint32(o))
 	}
 }
 

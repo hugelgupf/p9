@@ -270,14 +270,8 @@ func (t *tlopen) handle(cs *connState) message {
 		return newErr(syscall.EINVAL)
 	}
 
-	// Are flags valid?
-	flags := t.Flags &^ OpenFlagsIgnoreMask
-	if flags&^OpenFlagsModeMask != 0 {
-		return newErr(syscall.EINVAL)
-	}
-
 	// Is this an attempt to open a directory as writable? Don't accept.
-	if ref.mode.IsDir() && flags != ReadOnly {
+	if ref.mode.IsDir() && t.Flags.Mode() != ReadOnly {
 		return newErr(syscall.EINVAL)
 	}
 
@@ -1128,7 +1122,10 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 		}); err != nil {
 			return nil, nil, AttrMask{}, Attr{}, err
 		}
+
 		// Do not return the new QID.
+		//
+		// TODO: why?
 		return nil, newRef, valid, attr, nil
 	}
 
