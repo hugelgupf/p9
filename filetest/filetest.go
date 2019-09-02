@@ -16,30 +16,55 @@
 package filetest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/hugelgupf/p9/p9"
 )
 
 // TestFile tests attach for all expected p9.Attacher and p9.File behaviors.
+//
+// TestFile expects attach to attach to an empty, writable directory.
 func TestFile(t *testing.T, attach p9.Attacher) {
 	root, err := attach.Attach()
 	if err != nil {
 		t.Fatalf("Failed to attach to %v: %v", attach, err)
 	}
 
+	t.Run("create", func(t *testing.T) { testCreate(t, root) })
 	t.Run("walk", func(t *testing.T) { testWalk(t, root) })
 }
 
-func testWalk(t *testing.T, f p9.File) {
-	qids, got, err := f.Walk(nil)
+func testCreate(t *testing.T, root p9.File) {
+	_, f1, err := root.Walk(nil)
 	if err != nil {
-		t.Errorf("Walk to self of %v = %v, want %v", f, err, nil)
+		t.Fatal(err)
 	}
-	if len(qids) != 1 {
-		t.Errorf("Walk to self of %v = %d QIDs, want 1", f, len(qids))
+
+	_, _, _, err = f1.Create("file2", p9.ReadWrite, 0777, p9.NoUID, p9.NoGID)
+	if err != nil {
+		t.Errorf("Create(file2) = %v, want nil", err)
 	}
-	testSameFile(t, f, got)
+
+	_, _, _, err = f1.Create("file2", p9.ReadWrite, 0777, p9.NoUID, p9.NoGID)
+	if err == nil {
+		t.Errorf("Create(file2) (2nd time) = %v, want EEXIST", err)
+	}
+}
+
+func testWalk(t *testing.T, root p9.File) {
+	for _, names := range [][]string{nil, []string{}} {
+		t.Run(fmt.Sprintf("self-%#v", names), func(t *testing.T) {
+			qids, got, err := root.Walk(names)
+			if err != nil {
+				t.Errorf("Walk(%v, %#v) = %v, want %v", root, names, err, nil)
+			}
+			if len(qids) != 1 {
+				t.Errorf("Walk(%v, %#v) = %d QIDs, want 1", root, names, len(qids))
+			}
+			testSameFile(t, root, got)
+		})
+	}
 }
 
 func testSameFile(t *testing.T, f1, f2 p9.File) {
