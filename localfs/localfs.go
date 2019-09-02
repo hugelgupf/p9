@@ -74,6 +74,16 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	var qids []p9.QID
 	last := &Local{path: l.path}
+
+	// A walk with no names is a copy of self.
+	if len(names) == 0 {
+		qid, _, err := l.info()
+		if err != nil {
+			return nil, nil, err
+		}
+		return []p9.QID{qid}, last, nil
+	}
+
 	for _, name := range names {
 		c := &Local{path: path.Join(last.path, name)}
 		qid, _, err := c.info()
