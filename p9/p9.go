@@ -580,24 +580,22 @@ func (a AttrMask) Empty() bool {
 	return !a.Mode && !a.NLink && !a.UID && !a.GID && !a.RDev && !a.ATime && !a.MTime && !a.CTime && !a.INo && !a.Size && !a.Blocks && !a.BTime && !a.Gen && !a.DataVersion
 }
 
-// AttrMaskAll returns an AttrMask with all fields masked.
-func AttrMaskAll() AttrMask {
-	return AttrMask{
-		Mode:        true,
-		NLink:       true,
-		UID:         true,
-		GID:         true,
-		RDev:        true,
-		ATime:       true,
-		MTime:       true,
-		CTime:       true,
-		INo:         true,
-		Size:        true,
-		Blocks:      true,
-		BTime:       true,
-		Gen:         true,
-		DataVersion: true,
-	}
+// AttrMaskAll is an AttrMask with all fields masked.
+var AttrMaskAll = AttrMask{
+	Mode:        true,
+	NLink:       true,
+	UID:         true,
+	GID:         true,
+	RDev:        true,
+	ATime:       true,
+	MTime:       true,
+	CTime:       true,
+	INo:         true,
+	Size:        true,
+	Blocks:      true,
+	BTime:       true,
+	Gen:         true,
+	DataVersion: true,
 }
 
 // String implements fmt.Stringer.

@@ -205,7 +205,7 @@ func (t *tattach) handle(cs *connState) message {
 	if err != nil {
 		return newErr(err)
 	}
-	qid, valid, attr, err := sf.GetAttr(AttrMaskAll())
+	qid, valid, attr, err := sf.GetAttr(AttrMaskAll)
 	if err != nil {
 		sf.Close() // Drop file.
 		return newErr(err)
@@ -1047,7 +1047,7 @@ func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, 
 			break
 		}
 		if getattr {
-			_, valid, attr, err = sf.GetAttr(AttrMaskAll())
+			_, valid, attr, err = sf.GetAttr(AttrMaskAll)
 			if err != nil {
 				// Don't leak the file.
 				sf.Close()
