@@ -33,6 +33,7 @@ import (
 
 var (
 	verbose = flag.Bool("v", false, "verbose logging")
+	root    = flag.String("root", "/", "root dir of file system to expose")
 )
 
 func main() {
@@ -52,6 +53,6 @@ func main() {
 	}
 
 	// Run the server.
-	s := p9.NewServer(&localfs.Local{})
+	s := p9.NewServer(localfs.Attacher(*root))
 	s.Serve(serverSocket)
 }
