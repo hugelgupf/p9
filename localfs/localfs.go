@@ -24,7 +24,33 @@ import (
 	"github.com/hugelgupf/p9/unimplfs"
 )
 
-// Local is a p9.Attacher.
+type attacher struct {
+	root string
+}
+
+var (
+	_ p9.Attacher = &attacher{}
+)
+
+// RootAttacher attaches at the host file system's root.
+func RootAttacher() p9.Attacher {
+	return &attacher{root: "/"}
+}
+
+// Attacher returns an attacher that exposes files under root.
+func Attacher(root string) p9.Attacher {
+	if len(root) == 0 {
+		root = "/"
+	}
+	return &attacher{root: root}
+}
+
+// Attach implements p9.Attacher.Attach.
+func (a *attacher) Attach() (p9.File, error) {
+	return &Local{path: a.root}, nil
+}
+
+// Local is a p9.File.
 type Local struct {
 	p9.DefaultWalkGetAttr
 	unimplfs.NoopFile
@@ -33,14 +59,8 @@ type Local struct {
 	file *os.File
 }
 
-// Attach implements p9.Attacher.Attach.
-func (l *Local) Attach() (p9.File, error) {
-	return &Local{path: "/"}, nil
-}
-
 var (
-	_ p9.File     = &Local{}
-	_ p9.Attacher = &Local{}
+	_ p9.File = &Local{}
 )
 
 // info constructs a QID for this file.
