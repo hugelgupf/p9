@@ -143,8 +143,3 @@ func (NoopFile) Flush() error {
 
 // Renamed implements p9.File.Renamed.
 func (NoopFile) Renamed(parent p9.File, newName string) {}
-
-// Allocate implements p9.File.Allocate.
-func (NoopFile) Allocate(mode p9.AllocateMode, offset, length uint64) error {
-	return syscall.ENOSYS
-}

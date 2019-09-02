@@ -868,40 +868,6 @@ func (t *tsetattr) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
-func (t *tallocate) handle(cs *connState) message {
-	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
-	if !ok {
-		return newErr(syscall.EBADF)
-	}
-	defer ref.DecRef()
-
-	if err := ref.safelyWrite(func() error {
-		// Has it been opened already?
-		openFlags, opened := ref.OpenFlags()
-		if !opened {
-			return syscall.EINVAL
-		}
-
-		// Can it be written? Check permissions.
-		if openFlags&OpenFlagsModeMask == ReadOnly {
-			return syscall.EBADF
-		}
-
-		// We don't allow allocate on files that have been deleted.
-		if ref.isDeleted() {
-			return syscall.EINVAL
-		}
-
-		return ref.file.Allocate(t.Mode, t.Offset, t.Length)
-	}); err != nil {
-		return newErr(err)
-	}
-
-	return &rallocate{}
-}
-
-// handle implements handler.handle.
 func (t *txattrwalk) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.LookupFID(t.fid)

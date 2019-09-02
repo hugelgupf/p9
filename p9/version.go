@@ -128,8 +128,3 @@ func versionSupportsTucreation(v uint32) bool {
 func VersionSupportsMultiUser(v uint32) bool {
 	return v >= 6
 }
-
-// versionSupportsTallocate returns true if version v supports Allocate().
-func versionSupportsTallocate(v uint32) bool {
-	return v >= 7
-}

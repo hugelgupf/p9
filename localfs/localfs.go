@@ -293,8 +293,3 @@ func (l *Local) Flush() error {
 func (l *Local) Renamed(parent p9.File, newName string) {
 	l.path = path.Join(parent.(*Local).path, newName)
 }
-
-// Allocate implements p9.File.Allocate.
-func (l *Local) Allocate(mode p9.AllocateMode, offset, length uint64) error {
-	return syscall.Fallocate(int(l.file.Fd()), mode.ToLinux(), int64(offset), int64(length))
-}
