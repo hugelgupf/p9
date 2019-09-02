@@ -6,6 +6,10 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func umask(_ int) int {
+	return 0
+}
+
 func localToQid(path string, info os.FileInfo) (uint64, error) {
 	pathPtr, err := windows.UTF16PtrFromString(path)
 	if err != nil {

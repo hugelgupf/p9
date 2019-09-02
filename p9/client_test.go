@@ -32,13 +32,13 @@ func TestVersion(t *testing.T) {
 	defer clientSocket.Close()
 
 	// Create a new server and client.
-	s := NewServer(nil, WithServerLogger(ulogtest.Logger{t}))
+	s := NewServer(nil, WithServerLogger(ulogtest.Logger{TB: t}))
 	go s.Handle(serverSocket, serverSocket)
 
 	// NewClient does a Tversion exchange, so this is our test for success.
 	c, err := NewClient(clientSocket,
 		WithMessageSize(1024*1024 /* 1M message size */),
-		WithClientLogger(ulogtest.Logger{t}),
+		WithClientLogger(ulogtest.Logger{TB: t}),
 	)
 	if err != nil {
 		t.Fatalf("got %v, expected nil", err)

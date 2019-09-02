@@ -35,7 +35,7 @@ func TestSendRecv(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	l := ulogtest.Logger{t}
+	l := ulogtest.Logger{TB: t}
 	if err := send(l, client, tag(1), &tlopen{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
@@ -68,7 +68,7 @@ func TestRecvOverrun(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	l := ulogtest.Logger{t}
+	l := ulogtest.Logger{TB: t}
 	if err := send(l, client, tag(1), &badDecode{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
@@ -94,7 +94,7 @@ func TestRecvInvalidType(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	l := ulogtest.Logger{t}
+	l := ulogtest.Logger{TB: t}
 	if err := send(l, client, tag(1), &unregistered{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
@@ -113,7 +113,7 @@ func TestRecvClosed(t *testing.T) {
 	defer server.Close()
 	client.Close()
 
-	l := ulogtest.Logger{t}
+	l := ulogtest.Logger{TB: t}
 	_, _, err = recv(l, server, maximumLength, msgRegistry.get)
 	if err == nil {
 		t.Fatalf("got err nil expected non-nil")
@@ -131,7 +131,7 @@ func DISABLEDTestSendClosed(t *testing.T) {
 	server.Close()
 	defer client.Close()
 
-	l := ulogtest.Logger{t}
+	l := ulogtest.Logger{TB: t}
 	err = send(l, client, tag(1), &tlopen{})
 	if err == nil {
 		t.Fatalf("send got err nil expected non-nil")
@@ -149,7 +149,7 @@ func BenchmarkSendRecv(b *testing.B) {
 	defer server.Close()
 	defer client.Close()
 
-	l := ulogtest.Logger{b}
+	l := ulogtest.Logger{TB: b}
 	// Exchange Rflush messages since these contain no data and therefore incur
 	// no additional marshaling overhead.
 	go func() {
