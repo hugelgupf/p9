@@ -292,8 +292,7 @@ type msgType uint8
 
 // msgType declarations.
 const (
-	msgTlerror      msgType = 6
-	msgRlerror              = 7
+	msgRlerror      msgType = 7
 	msgTstatfs              = 8
 	msgRstatfs              = 9
 	msgTlopen               = 12
@@ -358,8 +357,6 @@ const (
 	msgRumknod              = 133
 	msgTusymlink            = 134
 	msgRusymlink            = 135
-	msgTlconnect            = 136
-	msgRlconnect            = 137
 )
 
 // QIDType represents the file type for QIDs.
