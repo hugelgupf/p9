@@ -70,11 +70,11 @@ var dataPool = sync.Pool{
 }
 
 // send sends the given message over the socket.
-func send(conn net.Conn, tag tag, m message) error {
+func send(w io.Writer, tag tag, m message) error {
 	data := dataPool.Get().([]byte)
 	dataBuf := buffer{data: data[:0]}
 
-	Debug("send [conn %p] [Tag %06d] %s", conn, tag, m)
+	Debug("send [w %p] [Tag %06d] %s", w, tag, m)
 
 	// Encode the message. The buffer will grow automatically.
 	m.encode(&dataBuf)
@@ -103,7 +103,7 @@ func send(conn net.Conn, tag tag, m message) error {
 	headerBuf.WriteMsgType(m.typ())
 	headerBuf.WriteTag(tag)
 
-	if _, err := vecs.WriteTo(conn); err != nil {
+	if _, err := vecs.WriteTo(w); err != nil {
 		return ErrSocket{err}
 	}
 
@@ -126,11 +126,11 @@ type lookupTagAndType func(tag tag, t msgType) (message, error)
 // On a socket error, the special error type ErrSocket is returned.
 //
 // The tag value NoTag will always be returned if err is non-nil.
-func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, error) {
+func recv(r io.Reader, msize uint32, lookup lookupTagAndType) (tag, message, error) {
 	// Read a header.
 	var hdr [headerLength]byte
 
-	if _, err := io.ReadAtLeast(conn, hdr[:], int(headerLength)); err != nil {
+	if _, err := io.ReadAtLeast(r, hdr[:], int(headerLength)); err != nil {
 		return noTag, nil, ErrSocket{err}
 	}
 
@@ -156,7 +156,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, e
 	if err != nil {
 		// Throw away the contents of this message.
 		if remaining > 0 {
-			_, _ = io.Copy(ioutil.Discard, io.LimitReader(conn, int64(remaining)))
+			_, _ = io.Copy(ioutil.Discard, io.LimitReader(r, int64(remaining)))
 		}
 		return tag, nil, err
 	}
@@ -176,7 +176,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, e
 		if fixedSize > remaining {
 			// This is not a valid message.
 			if remaining > 0 {
-				_, _ = io.Copy(ioutil.Discard, io.LimitReader(conn, int64(remaining)))
+				_, _ = io.Copy(ioutil.Discard, io.LimitReader(r, int64(remaining)))
 			}
 			return noTag, nil, ErrNoValidMessage
 		}
@@ -227,7 +227,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, e
 	}
 
 	if len(vecs) > 0 {
-		if _, err := vecs.ReadFrom(conn); err != nil {
+		if _, err := vecs.ReadFrom(r); err != nil {
 			return noTag, nil, ErrSocket{err}
 		}
 	}
@@ -239,7 +239,7 @@ func recv(conn net.Conn, msize uint32, lookup lookupTagAndType) (tag, message, e
 		return noTag, nil, ErrNoValidMessage
 	}
 
-	Debug("recv [conn %p] [Tag %06d] %s", conn, tag, m)
+	Debug("recv [conn %p] [Tag %06d] %s", r, tag, m)
 
 	// All set.
 	return tag, m, nil
