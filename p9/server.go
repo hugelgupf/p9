@@ -60,8 +60,9 @@ type connState struct {
 	// sendMu is the send lock.
 	sendMu sync.Mutex
 
-	// conn is the connection.
-	conn net.Conn
+	// t reads T messages and r write R messages
+	t io.ReadCloser
+	r io.WriteCloser
 
 	// fids is the set of active fids.
 	//
@@ -397,7 +398,7 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Receive a message.
-	tag, m, err := recv(cs.conn, messageSize, msgRegistry.get)
+	tag, m, err := recv(cs.t, messageSize, msgRegistry.get)
 	if errSocket, ok := err.(ErrSocket); ok {
 		// Connection problem; stop serving.
 		cs.recvDone <- errSocket.error
@@ -412,7 +413,7 @@ func (cs *connState) handleRequest() {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
 		cs.sendMu.Lock()
-		err := send(cs.conn, tag, newErr(err))
+		err := send(cs.r, tag, newErr(err))
 		cs.sendMu.Unlock()
 		cs.sendDone <- err
 		return
@@ -448,7 +449,7 @@ func (cs *connState) handleRequest() {
 
 		// Send back the result.
 		cs.sendMu.Lock()
-		err = send(cs.conn, tag, r)
+		err = send(cs.r, tag, r)
 		cs.sendMu.Unlock()
 		cs.sendDone <- err
 	}()
@@ -483,7 +484,8 @@ func (cs *connState) stop() {
 	}
 
 	// Ensure the connection is closed.
-	cs.conn.Close()
+	cs.r.Close()
+	cs.t.Close()
 }
 
 // service services requests concurrently.
@@ -537,10 +539,11 @@ func (cs *connState) service() error {
 }
 
 // Handle handles a single connection.
-func (s *Server) Handle(conn net.Conn) error {
+func (s *Server) Handle(t io.ReadCloser, r io.WriteCloser) error {
 	cs := &connState{
 		server:   s,
-		conn:     conn,
+		t:        t,
+		r:        r,
 		fids:     make(map[fid]*fidRef),
 		tags:     make(map[tag]chan struct{}),
 		recvOkay: make(chan bool),
@@ -569,7 +572,7 @@ func (s *Server) Serve(serverSocket net.Listener) error {
 
 		wg.Add(1)
 		go func(conn net.Conn) { // S/R-SAFE: Irrelevant.
-			s.Handle(conn)
+			s.Handle(conn, conn)
 			wg.Done()
 		}(conn)
 	}

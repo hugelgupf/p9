@@ -32,7 +32,7 @@ func TestVersion(t *testing.T) {
 
 	// Create a new server and client.
 	s := NewServer(nil)
-	go s.Handle(serverSocket)
+	go s.Handle(serverSocket, serverSocket)
 
 	// NewClient does a Tversion exchange, so this is our test for success.
 	c, err := NewClient(clientSocket, 1024*1024 /* 1M message size */, HighestVersionString())
