@@ -34,6 +34,7 @@ import (
 var (
 	verbose = flag.Bool("v", false, "verbose logging")
 	root    = flag.String("root", "/", "root dir of file system to expose")
+	unix    = flag.Bool("unix", false, "use unix domain socket instead of TCP")
 )
 
 func main() {
@@ -42,12 +43,19 @@ func main() {
 		p9.Debug = log.Printf
 	}
 
+	var network string
+	if *unix {
+		network = "unix"
+	} else {
+		network = "tcp"
+	}
+
 	if len(flag.Args()) != 1 {
 		log.Fatalf("usage: %s <bind-addr>", os.Args[0])
 	}
 
 	// Bind and listen on the socket.
-	serverSocket, err := net.Listen("tcp", flag.Args()[0])
+	serverSocket, err := net.Listen(network, flag.Args()[0])
 	if err != nil {
 		log.Fatalf("err binding: %v", err)
 	}
