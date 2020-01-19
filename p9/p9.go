@@ -32,6 +32,11 @@ import (
 // Debug can be assigned to log.Printf to print messages received and sent.
 var Debug = func(fmt string, v ...interface{}) {}
 
+const (
+	// DefaultMessageSize is a sensible default.
+	DefaultMessageSize uint32 = 64 << 10
+)
+
 // OpenFlags is the mode passed to Open and Create operations.
 //
 // These correspond to bits sent over the wire.

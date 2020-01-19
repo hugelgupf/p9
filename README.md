@@ -4,9 +4,54 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/hugelgupf/p9)](https://goreportcard.com/report/github.com/hugelgupf/p9)
 [![GoDoc](https://godoc.org/github.com/hugelgupf/p9?status.svg)](https://godoc.org/github.com/hugelgupf/p9)
 
-p9 is a 9P2000.L client and server originally written for gVisor. gVisor is
-built using bazel, so p9 is not guaranteed to be directly importable by other Go
-code. This package exists to make it reusable in the Go world.
+p9 is a Golang 9P2000.L client and server originally written for gVisor. p9
+supports Windows, BSD, and Linux on most Go-available architectures.
 
-p9 also has some performance improvements to 9P2000.L specific to just *this*
-client and server.
+### Server Example
+
+For how to start a server given a `p9.Attacher` implementation, see
+[cmd/p9ufs](cmd/p9ufs/p9ufs.go).
+
+For how to implement a `p9.Attacher` and `p9.File`, see as an example
+[staticfs](staticfs/staticfs.go), a simple static file system.
+
+A test suite for server-side `p9.Attacher` and `p9.File` implementations is
+being built at [filetest](filetest/filetest.go).
+
+### Client Example
+
+```go
+import (
+    "log"
+    "net"
+
+    "github.com/hugelgupf/p9/p9"
+)
+
+func main() {
+  conn, err := net.Dial("tcp", "localhost:8000")
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  // conn can be any net.Conn.
+  client, err := p9.NewClient(conn, p9.DefaultMessageSize, p9.HighestVersionString())
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  // root will be a p9.File and supports all those operations.
+  root, err := client.Attach("/")
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  // For example:
+  _, _, attrs, err := root.GetAttr(p9.AttrMaskAll)
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  log.Printf("Attrs of /: %v", attrs)
+}
+```
