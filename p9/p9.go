@@ -706,13 +706,27 @@ func (a *AttrMask) encode(b *buffer) {
 	b.Write64(mask)
 }
 
+// NLink is the number of links to this fs object.
+//
+// While this type has no utilities, it is useful in order to force linux+amd64
+// only developers to cast to NLink for the NLink field, which will make their
+// code compatible with other GOARCH and GOOS values.
+type NLink uint64
+
+// Dev is the device number of an fs object.
+//
+// While this type has no utilities, it is useful in order to force linux+amd64
+// only developers to cast to Dev for the Dev field, which will make their
+// code compatible with other GOARCH and GOOS values.
+type Dev uint64
+
 // Attr is a set of attributes for getattr.
 type Attr struct {
 	Mode             FileMode
 	UID              UID
 	GID              GID
-	NLink            uint64
-	RDev             uint64
+	NLink            NLink
+	RDev             Dev
 	Size             uint64
 	BlockSize        uint64
 	Blocks           uint64
@@ -739,8 +753,8 @@ func (a *Attr) encode(b *buffer) {
 	b.WriteFileMode(a.Mode)
 	b.WriteUID(a.UID)
 	b.WriteGID(a.GID)
-	b.Write64(a.NLink)
-	b.Write64(a.RDev)
+	b.Write64(uint64(a.NLink))
+	b.Write64(uint64(a.RDev))
 	b.Write64(a.Size)
 	b.Write64(a.BlockSize)
 	b.Write64(a.Blocks)
@@ -761,8 +775,8 @@ func (a *Attr) decode(b *buffer) {
 	a.Mode = b.ReadFileMode()
 	a.UID = b.ReadUID()
 	a.GID = b.ReadGID()
-	a.NLink = b.Read64()
-	a.RDev = b.Read64()
+	a.NLink = NLink(b.Read64())
+	a.RDev = Dev(b.Read64())
 	a.Size = b.Read64()
 	a.BlockSize = b.Read64()
 	a.Blocks = b.Read64()
