@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package unimplfs provides an p9.File template that returns ENOSYS for all
-// methods.
+// Package unimplfs provides template p9.Files.
 //
-// This can be used to leave some methods unimplemented in incomplete p9.File
-// implementations.
+// NoopFile can be used to leave some methods unimplemented in incomplete
+// p9.File implementations.
+//
+// NilCloser, ReadOnlyFile, NotDirectoryFile, and NotSymlinkFile can be used as
+// templates for commonly implemented file types. They are careful not to
+// conflict with each others' methods, so they can be embedded together.
 package unimplfs
 
 import (
@@ -24,9 +27,18 @@ import (
 	"github.com/hugelgupf/p9/sys/linux"
 )
 
+// NilCloser returns nil for Close.
+type NilCloser struct{}
+
+// Close implements p9.File.Close.
+func (NilCloser) Close() error {
+	return nil
+}
+
 // NoopFile is a p9.File that returns ENOSYS for every method.
 type NoopFile struct {
 	p9.DefaultWalkGetAttr
+	NilCloser
 }
 
 var (
@@ -45,9 +57,14 @@ func (NoopFile) StatFS() (p9.FSStat, error) {
 	return p9.FSStat{}, linux.ENOSYS
 }
 
-// FSync implements p9.File.FSync.
-func (NoopFile) FSync() error {
-	return linux.ENOSYS
+// Open implements p9.File.Open.
+func (NoopFile) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
+	return p9.QID{}, 0, linux.ENOSYS
+}
+
+// ReadAt implements p9.File.ReadAt.
+func (NoopFile) ReadAt(p []byte, offset int64) (int, error) {
+	return 0, linux.ENOSYS
 }
 
 // GetAttr implements p9.File.GetAttr.
@@ -70,19 +87,9 @@ func (NoopFile) Rename(directory p9.File, name string) error {
 	return linux.ENOSYS
 }
 
-// Close implements p9.File.Close.
-func (NoopFile) Close() error {
-	return nil
-}
-
-// Open implements p9.File.Open.
-func (NoopFile) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	return p9.QID{}, 0, linux.ENOSYS
-}
-
-// ReadAt implements p9.File.Read.
-func (NoopFile) ReadAt(p []byte, offset int64) (int, error) {
-	return 0, linux.ENOSYS
+// FSync implements p9.File.FSync.
+func (NoopFile) FSync() error {
+	return linux.ENOSYS
 }
 
 // WriteAt implements p9.File.WriteAt.
