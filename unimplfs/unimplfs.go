@@ -126,7 +126,7 @@ func (NoopFile) UnlinkAt(name string, flags uint32) error {
 }
 
 // Readdir implements p9.File.Readdir.
-func (NoopFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
+func (NoopFile) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	return nil, linux.ENOSYS
 }
 

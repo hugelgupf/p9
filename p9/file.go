@@ -196,7 +196,7 @@ type File interface {
 	// This may return io.EOF in addition to linux.Errno values.
 	//
 	// On the server, Readdir has a read concurrency guarantee.
-	Readdir(offset uint64, count uint32) ([]Dirent, error)
+	Readdir(offset uint64, count uint32) (Dirents, error)
 
 	// Readlink reads the link target.
 	//

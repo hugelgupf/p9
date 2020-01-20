@@ -8,7 +8,7 @@ import (
 )
 
 // Readdir implements p9.File.Readdir.
-func (l *Local) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
+func (l *Local) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	var (
 		p9Ents = make([]p9.Dirent, 0)
 		cursor = uint64(0)
