@@ -1,0 +1,219 @@
+// Copyright 2018 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package staticfs
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/hugelgupf/p9/p9"
+	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/unimplfs"
+)
+
+// Option is a configurator for New.
+type Option func(*attacher) error
+
+// WithFile includes the file named name with file contents content in the file system.
+func WithFile(name, content string) Option {
+	return func(a *attacher) error {
+		if strings.Contains(name, "/") {
+			return fmt.Errorf("directories are not supported by simplefs")
+		}
+		if _, ok := a.files[name]; ok {
+			return fmt.Errorf("file named %q already exists", name)
+		}
+		a.files[name] = content
+		a.names = append(a.names, name)
+		sort.Strings(a.names)
+		return nil
+	}
+}
+
+// New creates a new read-only static file system defined by the files passed
+// with opts.
+//
+// staticfs only supports one directory with regular files.
+func New(opts ...Option) (p9.Attacher, error) {
+	a := &attacher{
+		files: make(map[string]string),
+		qids:  &p9.QIDGenerator{},
+	}
+	for _, o := range opts {
+		if err := o(a); err != nil {
+			return nil, err
+		}
+	}
+	return a, nil
+}
+
+type attacher struct {
+	// files maps filenames to file contents.
+	files map[string]string
+
+	// names is a sorted list of the keys of files.
+	names []string
+
+	qids *p9.QIDGenerator
+}
+
+// Attach implements p9.Attacher.Attach.
+func (a *attacher) Attach() (p9.File, error) {
+	return &dir{
+		a:   a,
+		qid: a.qids.Get(p9.TypeDir),
+	}, nil
+}
+
+var stat = p9.FSStat{
+	Type:      0x01021997, /* V9FS_MAGIC */
+	BlockSize: 4096,       /* whatever */
+}
+
+// dir is the root directory.
+type dir struct {
+	p9.DefaultWalkGetAttr
+	unimplfs.NoopFile
+
+	qid p9.QID
+	a   *attacher
+}
+
+// StatFS implements p9.File.StatFS.
+func (dir) StatFS() (p9.FSStat, error) {
+	return stat, nil
+}
+
+// Open implements p9.File.Open.
+func (d *dir) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
+	if mode == p9.ReadOnly {
+		return d.qid, 4096, nil
+	}
+	return p9.QID{}, 0, linux.EROFS
+}
+
+// Walk implements p9.File.Walk.
+func (d *dir) Walk(names []string) ([]p9.QID, p9.File, error) {
+	switch len(names) {
+	case 0:
+		return []p9.QID{d.qid}, d, nil
+
+	case 1:
+		content, ok := d.a.files[names[0]]
+		if !ok {
+			return nil, nil, linux.ENOENT
+		}
+		qid := d.a.qids.Get(p9.TypeRegular)
+		return []p9.QID{qid}, ReadOnlyFile(content, qid), nil
+	default:
+		return nil, nil, linux.ENOENT
+	}
+}
+
+// GetAttr implements p9.File.GetAttr.
+func (d *dir) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
+	return d.qid, req, p9.Attr{
+		Mode:  p9.ModeDirectory | 0666,
+		UID:   0,
+		GID:   0,
+		NLink: 2,
+	}, nil
+}
+
+func min(a, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Readdir implements p9.File.Readdir.
+func (d *dir) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
+	if offset >= uint64(len(d.a.names)) {
+		return nil, nil
+	}
+
+	var dirents []p9.Dirent
+	end := int(min(offset+uint64(count), uint64(len(d.a.names))))
+	for i, name := range d.a.names[offset:end] {
+		dirents = append(dirents, p9.Dirent{
+			QID:    d.a.qids.Get(p9.TypeRegular),
+			Type:   p9.TypeRegular,
+			Offset: offset + uint64(i),
+			Name:   name,
+		})
+	}
+	return dirents, nil
+}
+
+// ReadOnlyFile returns a read-only p9.File.
+func ReadOnlyFile(content string, qid p9.QID) p9.File {
+	return &file{
+		Reader: strings.NewReader(content),
+		qid:    qid,
+	}
+}
+
+// file is a read-only file.
+type file struct {
+	p9.DefaultWalkGetAttr
+	unimplfs.ReadOnlyFile
+	unimplfs.NilCloser
+	unimplfs.NotDirectoryFile
+	unimplfs.NotSymlinkFile
+
+	*strings.Reader
+
+	qid p9.QID
+}
+
+// StatFS implements p9.File.StatFS.
+func (file) StatFS() (p9.FSStat, error) {
+	return stat, nil
+}
+
+// Walk implements p9.File.Walk.
+func (f *file) Walk(names []string) ([]p9.QID, p9.File, error) {
+	if len(names) == 0 {
+		return []p9.QID{f.qid}, f, nil
+	}
+	return nil, nil, linux.ENOTDIR
+}
+
+// Open implements p9.File.Open.
+func (f *file) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
+	if mode == p9.ReadOnly {
+		return f.qid, 4096, nil
+	}
+	return p9.QID{}, 0, linux.EROFS
+}
+
+// GetAttr implements p9.File.GetAttr.
+func (f *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
+	return f.qid, req, p9.Attr{
+		Mode:      p9.ModeRegular | 0666,
+		UID:       0,
+		GID:       0,
+		NLink:     0,
+		Size:      uint64(f.Reader.Size()),
+		BlockSize: 4096, /* whatever? */
+	}, nil
+}
+
+// Renamed implements p9.File.Renamed.
+//
+// We never return our own name, so we don't have to do anything.
+func (file) Renamed(parent p9.File, newName string) {}
