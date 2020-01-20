@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package filetest implements p9.File acceptance tests.
-package filetest
+// Package test implements p9.File acceptance tests.
+package test
 
 import (
 	"fmt"

@@ -19,9 +19,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/p9"
 	"github.com/hugelgupf/p9/sys/linux"
-	"github.com/hugelgupf/p9/unimplfs"
 )
 
 // Option is a configurator for New.
@@ -92,11 +92,11 @@ func (statfs) StatFS() (p9.FSStat, error) {
 type dir struct {
 	statfs
 	p9.DefaultWalkGetAttr
-	unimplfs.NotSymlinkFile
-	unimplfs.ReadOnlyDir
-	unimplfs.IsDir
-	unimplfs.NilCloser
-	unimplfs.NoopRenamed
+	templatefs.NotSymlinkFile
+	templatefs.ReadOnlyDir
+	templatefs.IsDir
+	templatefs.NilCloser
+	templatefs.NoopRenamed
 
 	qid p9.QID
 	a   *attacher
@@ -176,11 +176,11 @@ func ReadOnlyFile(content string, qid p9.QID) p9.File {
 type file struct {
 	statfs
 	p9.DefaultWalkGetAttr
-	unimplfs.ReadOnlyFile
-	unimplfs.NilCloser
-	unimplfs.NotDirectoryFile
-	unimplfs.NotSymlinkFile
-	unimplfs.NoopRenamed
+	templatefs.ReadOnlyFile
+	templatefs.NilCloser
+	templatefs.NotDirectoryFile
+	templatefs.NotSymlinkFile
+	templatefs.NoopRenamed
 
 	*strings.Reader
 

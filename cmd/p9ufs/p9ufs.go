@@ -27,7 +27,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/hugelgupf/p9/localfs"
+	"github.com/hugelgupf/p9/fsimpl/localfs"
 	"github.com/hugelgupf/p9/p9"
 )
 

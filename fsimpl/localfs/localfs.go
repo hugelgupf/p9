@@ -20,9 +20,9 @@ import (
 	"path"
 	"syscall"
 
+	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/p9"
 	"github.com/hugelgupf/p9/sys"
-	"github.com/hugelgupf/p9/unimplfs"
 )
 
 type attacher struct {
@@ -54,7 +54,7 @@ func (a *attacher) Attach() (p9.File, error) {
 // Local is a p9.File.
 type Local struct {
 	p9.DefaultWalkGetAttr
-	unimplfs.NoopFile
+	templatefs.NoopFile
 
 	path string
 	file *os.File
