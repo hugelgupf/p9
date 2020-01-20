@@ -501,7 +501,7 @@ func (c *clientFile) UnlinkAt(name string, flags uint32) error {
 }
 
 // Readdir implements File.Readdir.
-func (c *clientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
+func (c *clientFile) Readdir(offset uint64, count uint32) (Dirents, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return nil, linux.EBADF
 	}

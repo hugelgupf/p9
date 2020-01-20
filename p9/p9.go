@@ -1017,7 +1017,20 @@ func (a *Attr) Apply(mask SetAttrMask, attr SetAttr) {
 	}
 }
 
-// Dirent is used for readdir.
+// Dirents is a collection of directory entries.
+type Dirents []Dirent
+
+// Find returns a Dirent with the given name if it exists, or nil.
+func (d Dirents) Find(name string) *Dirent {
+	for _, dir := range d {
+		if dir.Name == name {
+			return &dir
+		}
+	}
+	return nil
+}
+
+// Dirent represents a directory entry in File.Readdir.
 type Dirent struct {
 	// QID is the entry QID.
 	QID QID
