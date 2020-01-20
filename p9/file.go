@@ -200,17 +200,6 @@ type File interface {
 	// On the server, Readlink has a read concurrency guarantee.
 	Readlink() (string, error)
 
-	// Flush is called prior to Close.
-	//
-	// Whereas Close drops all references to the file, Flush cleans up the
-	// file state. Behavior is implementation-specific.
-	//
-	// Flush is not related to flush(9p). Flush is an extension to 9P2000.L,
-	// see version.go.
-	//
-	// On the server, Flush has a read concurrency guarantee.
-	Flush() error
-
 	// Renamed is called when this node is renamed.
 	//
 	// This may not fail. The file will hold a reference to its parent

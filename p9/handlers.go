@@ -970,21 +970,6 @@ func (t *tstatfs) handle(cs *connState) message {
 	return &rstatfs{st}
 }
 
-// handle implements handler.handle.
-func (t *tflushf) handle(cs *connState) message {
-	ref, ok := cs.LookupFID(t.fid)
-	if !ok {
-		return newErr(syscall.EBADF)
-	}
-	defer ref.DecRef()
-
-	if err := ref.safelyRead(ref.file.Flush); err != nil {
-		return newErr(err)
-	}
-
-	return &rflushf{}
-}
-
 // walkOne walks zero or one path elements.
 //
 // The slice passed as qids is append and returned.

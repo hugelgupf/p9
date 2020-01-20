@@ -136,10 +136,5 @@ func (NoopFile) Readlink() (string, error) {
 	return "", syscall.ENOSYS
 }
 
-// Flush implements p9.File.Flush.
-func (NoopFile) Flush() error {
-	return nil
-}
-
 // Renamed implements p9.File.Renamed.
 func (NoopFile) Renamed(parent p9.File, newName string) {}

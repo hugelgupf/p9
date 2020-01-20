@@ -249,11 +249,6 @@ func (l *Local) Readlink() (string, error) {
 	return os.Readlink(l.path)
 }
 
-// Flush implements p9.File.Flush.
-func (l *Local) Flush() error {
-	return nil
-}
-
 // Renamed implements p9.File.Renamed.
 func (l *Local) Renamed(parent p9.File, newName string) {
 	l.path = path.Join(parent.(*Local).path, newName)
