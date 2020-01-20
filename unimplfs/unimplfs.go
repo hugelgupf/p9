@@ -80,13 +80,13 @@ func (NoopFile) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	return p9.QID{}, 0, linux.ENOSYS
 }
 
-// Read implements p9.File.Read.
-func (NoopFile) ReadAt(p []byte, offset uint64) (int, error) {
+// ReadAt implements p9.File.Read.
+func (NoopFile) ReadAt(p []byte, offset int64) (int, error) {
 	return 0, linux.ENOSYS
 }
 
-// Write implements p9.File.Write.
-func (NoopFile) WriteAt(p []byte, offset uint64) (int, error) {
+// WriteAt implements p9.File.WriteAt.
+func (NoopFile) WriteAt(p []byte, offset int64) (int, error) {
 	return 0, linux.ENOSYS
 }
 

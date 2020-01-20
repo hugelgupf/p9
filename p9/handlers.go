@@ -655,7 +655,7 @@ func (t *tread) handle(cs *connState) message {
 			return linux.EPERM
 		}
 
-		n, err = ref.file.ReadAt(data, t.Offset)
+		n, err = ref.file.ReadAt(data, int64(t.Offset))
 		return err
 	}); err != nil && err != io.EOF {
 		return newErr(err)
@@ -686,7 +686,7 @@ func (t *twrite) handle(cs *connState) message {
 			return linux.EPERM
 		}
 
-		n, err = ref.file.WriteAt(t.Data, t.Offset)
+		n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
 		return err
 	}); err != nil {
 		return newErr(err)
