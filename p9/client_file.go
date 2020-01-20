@@ -583,18 +583,5 @@ func (c *clientFile) Readlink() (string, error) {
 	return rreadlink.Target, nil
 }
 
-// Flush implements File.Flush.
-func (c *clientFile) Flush() error {
-	if atomic.LoadUint32(&c.closed) != 0 {
-		return syscall.EBADF
-	}
-
-	if !VersionSupportsTflushf(c.client.version) {
-		return nil
-	}
-
-	return c.client.sendRecv(&tflushf{fid: c.fid}, &rflushf{})
-}
-
 // Renamed implements File.Renamed.
 func (c *clientFile) Renamed(newDir File, newName string) {}

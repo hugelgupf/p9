@@ -1731,54 +1731,6 @@ func (r *rstatfs) String() string {
 	return fmt.Sprintf("Rstatfs{FSStat: %v}", r.FSStat)
 }
 
-// tflushf is a flush file request, not to be confused with tflush.
-type tflushf struct {
-	// fid is the fid to be flushed.
-	fid fid
-}
-
-// decode implements encoder.decode.
-func (t *tflushf) decode(b *buffer) {
-	t.fid = b.ReadFID()
-}
-
-// encode implements encoder.encode.
-func (t *tflushf) encode(b *buffer) {
-	b.WriteFID(t.fid)
-}
-
-// Type implements message.Type.
-func (*tflushf) typ() msgType {
-	return msgTflushf
-}
-
-// String implements fmt.Stringer.
-func (t *tflushf) String() string {
-	return fmt.Sprintf("Tflushf{FID: %d}", t.fid)
-}
-
-// rflushf is a flush file response.
-type rflushf struct {
-}
-
-// decode implements encoder.decode.
-func (*rflushf) decode(b *buffer) {
-}
-
-// encode implements encoder.encode.
-func (*rflushf) encode(b *buffer) {
-}
-
-// Type implements message.Type.
-func (*rflushf) typ() msgType {
-	return msgRflushf
-}
-
-// String implements fmt.Stringer.
-func (*rflushf) String() string {
-	return fmt.Sprintf("Rflushf{}")
-}
-
 // twalkgetattr is a walk request.
 type twalkgetattr struct {
 	// fid is the fid to be walked.
@@ -2183,8 +2135,6 @@ func init() {
 	msgRegistry.register(msgRclunk, func() message { return &rclunk{} })
 	msgRegistry.register(msgTremove, func() message { return &tremove{} })
 	msgRegistry.register(msgRremove, func() message { return &rremove{} })
-	msgRegistry.register(msgTflushf, func() message { return &tflushf{} })
-	msgRegistry.register(msgRflushf, func() message { return &rflushf{} })
 	msgRegistry.register(msgTwalkgetattr, func() message { return &twalkgetattr{} })
 	msgRegistry.register(msgRwalkgetattr, func() message { return &rwalkgetattr{} })
 	msgRegistry.register(msgTucreate, func() message { return &tucreate{} })

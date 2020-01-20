@@ -100,13 +100,6 @@ func versionString(version uint32) string {
 	return fmt.Sprintf("9P2000.L.Google.%d", version)
 }
 
-// VersionSupportsTflushf returns true if version v supports the Tflushf message.
-// This predicate must be checked by clients before attempting to make a Tflushf
-// request.  If this predicate returns false, then clients may safely no-op.
-func VersionSupportsTflushf(v uint32) bool {
-	return v >= 1
-}
-
 // versionSupportsTwalkgetattr returns true if version v supports the
 // Twalkgetattr message. This predicate must be checked by clients before
 // attempting to make a Twalkgetattr request.

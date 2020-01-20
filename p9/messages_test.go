@@ -292,10 +292,6 @@ func TestEncodeDecode(t *testing.T) {
 			fid: 1,
 		},
 		&rremove{},
-		&tflushf{
-			fid: 1,
-		},
-		&rflushf{},
 		&twalkgetattr{
 			fid:    1,
 			newFID: 2,
