@@ -20,7 +20,8 @@ import (
 	"log"
 	"net"
 	"sync"
-	"syscall"
+
+	"github.com/hugelgupf/p9/sys/linux"
 )
 
 // ErrOutOfTags indicates no tags are available.
@@ -141,7 +142,7 @@ func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, er
 		err := c.sendRecv(&tversion{Version: versionString(requested), MSize: messageSize}, &rversion)
 
 		// The server told us to try again with a lower version.
-		if err == syscall.EAGAIN {
+		if err == linux.EAGAIN {
 			if requested == lowestSupportedVersion {
 				return nil, ErrVersionsExhausted
 			}
@@ -285,7 +286,7 @@ func (c *Client) sendRecv(tm message, rm message) error {
 	// For convenience, we transform these directly
 	// into errors. Handlers need not handle this case.
 	if rlerr, ok := resp.r.(*rlerror); ok {
-		return syscall.Errno(rlerr.Error)
+		return linux.Errno(rlerr.Error)
 	}
 
 	// At this point, we know it matches.
