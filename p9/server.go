@@ -21,7 +21,8 @@ import (
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
-	"syscall"
+
+	"github.com/hugelgupf/p9/sys/linux"
 )
 
 // Server is a 9p2000.L server.
@@ -439,7 +440,7 @@ func (cs *connState) handleRequest() {
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
-			r = newErr(syscall.EFAULT)
+			r = newErr(linux.EFAULT)
 		}
 
 		// Clear the tag before sending. That's because as soon as this
@@ -458,7 +459,7 @@ func (cs *connState) handleRequest() {
 		r = handler.handle(cs)
 	} else {
 		// Produce an ENOSYS error.
-		r = newErr(syscall.ENOSYS)
+		r = newErr(linux.ENOSYS)
 	}
 	msgRegistry.put(m)
 	m = nil // 'm' should not be touched after this point.
