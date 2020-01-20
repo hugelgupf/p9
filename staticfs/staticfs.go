@@ -90,12 +90,13 @@ func (statfs) StatFS() (p9.FSStat, error) {
 
 // dir is the root directory.
 type dir struct {
+	statfs
 	p9.DefaultWalkGetAttr
 	unimplfs.NotSymlinkFile
 	unimplfs.ReadOnlyDir
 	unimplfs.IsDir
 	unimplfs.NilCloser
-	statfs
+	unimplfs.NoopRenamed
 
 	qid p9.QID
 	a   *attacher
@@ -179,6 +180,7 @@ type file struct {
 	unimplfs.NilCloser
 	unimplfs.NotDirectoryFile
 	unimplfs.NotSymlinkFile
+	unimplfs.NoopRenamed
 
 	*strings.Reader
 
@@ -212,8 +214,3 @@ func (f *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		BlockSize: 4096, /* whatever? */
 	}, nil
 }
-
-// Renamed implements p9.File.Renamed.
-//
-// We never return our own name, so we don't have to do anything.
-func (file) Renamed(parent p9.File, newName string) {}

@@ -35,10 +35,17 @@ func (NilCloser) Close() error {
 	return nil
 }
 
+// NoopRenamed does nothing when the file is renamed.
+type NoopRenamed struct{}
+
+// Renamed implements p9.File.Renamed.
+func (NoopRenamed) Renamed(parent p9.File, newName string) {}
+
 // NoopFile is a p9.File that returns ENOSYS for every method.
 type NoopFile struct {
 	p9.DefaultWalkGetAttr
 	NilCloser
+	NoopRenamed
 }
 
 var (
@@ -141,6 +148,3 @@ func (NoopFile) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 func (NoopFile) Readlink() (string, error) {
 	return "", linux.ENOSYS
 }
-
-// Renamed implements p9.File.Renamed.
-func (NoopFile) Renamed(parent p9.File, newName string) {}
