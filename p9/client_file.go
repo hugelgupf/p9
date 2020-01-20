@@ -232,7 +232,7 @@ func (c *clientFile) Open(flags OpenFlags) (QID, uint32, error) {
 
 // chunk applies fn to p in chunkSize-sized chunks until fn returns a partial result, p is
 // exhausted, or an error is encountered (which may be io.EOF).
-func chunk(chunkSize uint32, fn func([]byte, uint64) (int, error), p []byte, offset uint64) (int, error) {
+func chunk(chunkSize uint32, fn func([]byte, int64) (int, error), p []byte, offset int64) (int, error) {
 	// Some p9.Clients depend on executing fn on zero-byte buffers. Handle this
 	// as a special case (normally it is fine to short-circuit and return (0, nil)).
 	if len(p) == 0 {
@@ -257,7 +257,7 @@ func chunk(chunkSize uint32, fn func([]byte, uint64) (int, error), p []byte, off
 			n, err = fn(p[total:total+int(chunkSize)], offset)
 		}
 		total += n
-		offset += uint64(n)
+		offset += int64(n)
 
 		// Return whatever we have processed if we encounter an error. This error
 		// could be io.EOF.
@@ -278,17 +278,17 @@ func chunk(chunkSize uint32, fn func([]byte, uint64) (int, error), p []byte, off
 }
 
 // ReadAt proxies File.ReadAt.
-func (c *clientFile) ReadAt(p []byte, offset uint64) (int, error) {
+func (c *clientFile) ReadAt(p []byte, offset int64) (int, error) {
 	return chunk(c.client.payloadSize, c.readAt, p, offset)
 }
 
-func (c *clientFile) readAt(p []byte, offset uint64) (int, error) {
+func (c *clientFile) readAt(p []byte, offset int64) (int, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return 0, linux.EBADF
 	}
 
 	rread := rread{Data: p}
-	if err := c.client.sendRecv(&tread{fid: c.fid, Offset: offset, Count: uint32(len(p))}, &rread); err != nil {
+	if err := c.client.sendRecv(&tread{fid: c.fid, Offset: uint64(offset), Count: uint32(len(p))}, &rread); err != nil {
 		return 0, err
 	}
 
@@ -309,77 +309,21 @@ func (c *clientFile) readAt(p []byte, offset uint64) (int, error) {
 }
 
 // WriteAt proxies File.WriteAt.
-func (c *clientFile) WriteAt(p []byte, offset uint64) (int, error) {
+func (c *clientFile) WriteAt(p []byte, offset int64) (int, error) {
 	return chunk(c.client.payloadSize, c.writeAt, p, offset)
 }
 
-func (c *clientFile) writeAt(p []byte, offset uint64) (int, error) {
+func (c *clientFile) writeAt(p []byte, offset int64) (int, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return 0, linux.EBADF
 	}
 
 	rwrite := rwrite{}
-	if err := c.client.sendRecv(&twrite{fid: c.fid, Offset: offset, Data: p}, &rwrite); err != nil {
+	if err := c.client.sendRecv(&twrite{fid: c.fid, Offset: uint64(offset), Data: p}, &rwrite); err != nil {
 		return 0, err
 	}
 
 	return int(rwrite.Count), nil
-}
-
-// ReadWriterFile wraps a File and implements io.ReadWriter, io.ReaderAt, and io.WriterAt.
-type ReadWriterFile struct {
-	File   File
-	Offset uint64
-}
-
-// Read implements part of the io.ReadWriter interface.
-func (r *ReadWriterFile) Read(p []byte) (int, error) {
-	n, err := r.File.ReadAt(p, r.Offset)
-	r.Offset += uint64(n)
-	if err != nil {
-		return n, err
-	}
-	if n == 0 && len(p) > 0 {
-		return n, io.EOF
-	}
-	return n, nil
-}
-
-// ReadAt implements the io.ReaderAt interface.
-func (r *ReadWriterFile) ReadAt(p []byte, offset int64) (int, error) {
-	n, err := r.File.ReadAt(p, uint64(offset))
-	if err != nil {
-		return 0, err
-	}
-	if n == 0 && len(p) > 0 {
-		return n, io.EOF
-	}
-	return n, nil
-}
-
-// Write implements part of the io.ReadWriter interface.
-func (r *ReadWriterFile) Write(p []byte) (int, error) {
-	n, err := r.File.WriteAt(p, r.Offset)
-	r.Offset += uint64(n)
-	if err != nil {
-		return n, err
-	}
-	if n < len(p) {
-		return n, io.ErrShortWrite
-	}
-	return n, nil
-}
-
-// WriteAt implements the io.WriteAt interface.
-func (r *ReadWriterFile) WriteAt(p []byte, offset int64) (int, error) {
-	n, err := r.File.WriteAt(p, uint64(offset))
-	if err != nil {
-		return n, err
-	}
-	if n < len(p) {
-		return n, io.ErrShortWrite
-	}
-	return n, nil
 }
 
 // Rename implements File.Rename.

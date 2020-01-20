@@ -97,8 +97,8 @@ type File interface {
 	// On the server, Close has no concurrency guarantee.
 	Close() error
 
-	// Open must be called prior to using Read, Write or Readdir. Once Open
-	// is called, some operations, such as Walk, will no longer work.
+	// Open must be called prior to using ReadAt, WriteAt, or Readdir. Once
+	// Open is called, some operations, such as Walk, will no longer work.
 	//
 	// On the client, Open should be called only once. The fd return is
 	// optional, and may be nil.
@@ -111,21 +111,21 @@ type File interface {
 	// deletion check, so resolving in the data path is not viable.
 	Open(mode OpenFlags) (QID, uint32, error)
 
-	// Read reads from this file. Open must be called first.
+	// ReadAt reads from this file. Open must be called first.
 	//
 	// This may return io.EOF in addition to linux.Errno values.
 	//
 	// On the server, ReadAt has a read concurrency guarantee. See Open for
 	// additional requirements regarding lazy path resolution.
-	ReadAt(p []byte, offset uint64) (int, error)
+	ReadAt(p []byte, offset int64) (int, error)
 
-	// Write writes to this file. Open must be called first.
+	// WriteAt writes to this file. Open must be called first.
 	//
 	// This may return io.EOF in addition to linux.Errno values.
 	//
 	// On the server, WriteAt has a read concurrency guarantee. See Open
 	// for additional requirements regarding lazy path resolution.
-	WriteAt(p []byte, offset uint64) (int, error)
+	WriteAt(p []byte, offset int64) (int, error)
 
 	// FSync syncs this node. Open must be called first.
 	//
@@ -189,6 +189,9 @@ type File interface {
 	UnlinkAt(name string, flags uint32) error
 
 	// Readdir reads directory entries.
+	//
+	// offset is the entry offset, and count the number of entries to
+	// return.
 	//
 	// This may return io.EOF in addition to linux.Errno values.
 	//
