@@ -78,23 +78,27 @@ func (a *attacher) Attach() (p9.File, error) {
 	}, nil
 }
 
-var stat = p9.FSStat{
-	Type:      0x01021997, /* V9FS_MAGIC */
-	BlockSize: 4096,       /* whatever */
+type statfs struct{}
+
+// StatFS implements p9.File.StatFS.
+func (statfs) StatFS() (p9.FSStat, error) {
+	return p9.FSStat{
+		Type:      0x01021997, /* V9FS_MAGIC */
+		BlockSize: 4096,       /* whatever */
+	}, nil
 }
 
 // dir is the root directory.
 type dir struct {
 	p9.DefaultWalkGetAttr
-	unimplfs.NoopFile
+	unimplfs.NotSymlinkFile
+	unimplfs.ReadOnlyDir
+	unimplfs.IsDir
+	unimplfs.NilCloser
+	statfs
 
 	qid p9.QID
 	a   *attacher
-}
-
-// StatFS implements p9.File.StatFS.
-func (dir) StatFS() (p9.FSStat, error) {
-	return stat, nil
 }
 
 // Open implements p9.File.Open.
@@ -169,6 +173,7 @@ func ReadOnlyFile(content string, qid p9.QID) p9.File {
 
 // file is a read-only file.
 type file struct {
+	statfs
 	p9.DefaultWalkGetAttr
 	unimplfs.ReadOnlyFile
 	unimplfs.NilCloser
@@ -178,11 +183,6 @@ type file struct {
 	*strings.Reader
 
 	qid p9.QID
-}
-
-// StatFS implements p9.File.StatFS.
-func (file) StatFS() (p9.FSStat, error) {
-	return stat, nil
 }
 
 // Walk implements p9.File.Walk.
