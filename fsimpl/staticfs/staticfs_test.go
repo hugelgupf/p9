@@ -19,7 +19,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/hugelgupf/p9/filetest"
+	"github.com/hugelgupf/p9/fsimpl/test"
 	"github.com/hugelgupf/p9/p9"
 )
 
@@ -28,7 +28,7 @@ func TestReadOnlyFS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filetest.TestReadOnlyFS(t, attacher)
+	test.TestReadOnlyFS(t, attacher)
 }
 
 func TestFilesMatch(t *testing.T) {

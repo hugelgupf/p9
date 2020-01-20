@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package unimplfs provides template p9.Files.
+// Package templatefs provides template p9.Files.
 //
 // NoopFile can be used to leave some methods unimplemented in incomplete
 // p9.File implementations.
@@ -20,7 +20,7 @@
 // NilCloser, ReadOnlyFile, NotDirectoryFile, and NotSymlinkFile can be used as
 // templates for commonly implemented file types. They are careful not to
 // conflict with each others' methods, so they can be embedded together.
-package unimplfs
+package templatefs
 
 import (
 	"github.com/hugelgupf/p9/p9"

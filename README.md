@@ -13,10 +13,12 @@ For how to start a server given a `p9.Attacher` implementation, see
 [cmd/p9ufs](cmd/p9ufs/p9ufs.go).
 
 For how to implement a `p9.Attacher` and `p9.File`, see as an example
-[staticfs](staticfs/staticfs.go), a simple static file system.
+[staticfs](fsimpl/staticfs/staticfs.go), a simple static file system.
+Boilerplate templates for `p9.File` implementations are in
+[templatefs](fsimpl/templatefs/).
 
 A test suite for server-side `p9.Attacher` and `p9.File` implementations is
-being built at [filetest](filetest/filetest.go).
+being built at [fsimpl/test](fsimpl/test/filetest.go).
 
 ### Client Example
 

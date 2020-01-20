@@ -1,4 +1,4 @@
-package unimplfs
+package templatefs
 
 import (
 	"github.com/hugelgupf/p9/p9"

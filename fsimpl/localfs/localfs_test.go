@@ -19,7 +19,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hugelgupf/p9/filetest"
+	"github.com/hugelgupf/p9/fsimpl/test"
 )
 
 func TestLocalFS(t *testing.T) {
@@ -29,5 +29,5 @@ func TestLocalFS(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	filetest.TestFile(t, Attacher(tempDir))
+	test.TestFile(t, Attacher(tempDir))
 }
