@@ -239,6 +239,14 @@ func (l *Local) Link(target p9.File, newname string) error {
 	return os.Link(target.(*Local).path, path.Join(l.path, newname))
 }
 
+// RenameAt implements p9.File.RenameAt.
+func (l *Local) RenameAt(oldName string, newDir p9.File, newName string) error {
+	oldPath := path.Join(l.path, oldName)
+	newPath := path.Join(newDir.(*Local).path, newName)
+
+	return os.Rename(oldPath, newPath)
+}
+
 // Readlink implements p9.File.Readlink.
 //
 // Not properly implemented.
