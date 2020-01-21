@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/hugelgupf/socketpair"
+	"github.com/u-root/u-root/pkg/ulog/ulogtest"
 )
 
 const (
@@ -34,11 +35,12 @@ func TestSendRecv(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, tag(1), &tlopen{}); err != nil {
+	l := ulogtest.Logger{t}
+	if err := send(l, client, tag(1), &tlopen{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	tagg, m, err := recv(server, maximumLength, msgRegistry.get)
+	tagg, m, err := recv(l, server, maximumLength, msgRegistry.get)
 	if err != nil {
 		t.Fatalf("recv got err %v expected nil", err)
 	}
@@ -66,11 +68,12 @@ func TestRecvOverrun(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, tag(1), &badDecode{}); err != nil {
+	l := ulogtest.Logger{t}
+	if err := send(l, client, tag(1), &badDecode{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	if _, _, err := recv(server, maximumLength, msgRegistry.get); err == nil {
+	if _, _, err := recv(l, server, maximumLength, msgRegistry.get); err == nil {
 		t.Fatalf("recv got err %v expected ErrSocket{ErrNoValidMessage}", err)
 	}
 }
@@ -91,11 +94,12 @@ func TestRecvInvalidType(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
-	if err := send(client, tag(1), &unregistered{}); err != nil {
+	l := ulogtest.Logger{t}
+	if err := send(l, client, tag(1), &unregistered{}); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	_, _, err = recv(server, maximumLength, msgRegistry.get)
+	_, _, err = recv(l, server, maximumLength, msgRegistry.get)
 	if _, ok := err.(*ErrInvalidMsgType); !ok {
 		t.Fatalf("recv got err %v expected ErrInvalidMsgType", err)
 	}
@@ -109,7 +113,8 @@ func TestRecvClosed(t *testing.T) {
 	defer server.Close()
 	client.Close()
 
-	_, _, err = recv(server, maximumLength, msgRegistry.get)
+	l := ulogtest.Logger{t}
+	_, _, err = recv(l, server, maximumLength, msgRegistry.get)
 	if err == nil {
 		t.Fatalf("got err nil expected non-nil")
 	}
@@ -126,7 +131,8 @@ func DISABLEDTestSendClosed(t *testing.T) {
 	server.Close()
 	defer client.Close()
 
-	err = send(client, tag(1), &tlopen{})
+	l := ulogtest.Logger{t}
+	err = send(l, client, tag(1), &tlopen{})
 	if err == nil {
 		t.Fatalf("send got err nil expected non-nil")
 	}
@@ -143,11 +149,12 @@ func BenchmarkSendRecv(b *testing.B) {
 	defer server.Close()
 	defer client.Close()
 
+	l := ulogtest.Logger{b}
 	// Exchange Rflush messages since these contain no data and therefore incur
 	// no additional marshaling overhead.
 	go func() {
 		for i := 0; i < b.N; i++ {
-			t, m, err := recv(server, maximumLength, msgRegistry.get)
+			t, m, err := recv(l, server, maximumLength, msgRegistry.get)
 			if err != nil {
 				b.Fatalf("recv got err %v expected nil", err)
 			}
@@ -157,17 +164,17 @@ func BenchmarkSendRecv(b *testing.B) {
 			if _, ok := m.(*rflush); !ok {
 				b.Fatalf("got message %T expected *Rflush", m)
 			}
-			if err := send(server, tag(2), &rflush{}); err != nil {
+			if err := send(l, server, tag(2), &rflush{}); err != nil {
 				b.Fatalf("send got err %v expected nil", err)
 			}
 		}
 	}()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := send(client, tag(1), &rflush{}); err != nil {
+		if err := send(l, client, tag(1), &rflush{}); err != nil {
 			b.Fatalf("send got err %v expected nil", err)
 		}
-		t, m, err := recv(client, maximumLength, msgRegistry.get)
+		t, m, err := recv(l, client, maximumLength, msgRegistry.get)
 		if err != nil {
 			b.Fatalf("recv got err %v expected nil", err)
 		}

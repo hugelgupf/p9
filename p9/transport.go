@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/hugelgupf/p9/vecnet"
+	"github.com/u-root/u-root/pkg/ulog"
 )
 
 // ErrSocket is returned in cases of a socket issue.
@@ -70,11 +71,11 @@ var dataPool = sync.Pool{
 }
 
 // send sends the given message over the socket.
-func send(w io.Writer, tag tag, m message) error {
+func send(l ulog.Logger, w io.Writer, tag tag, m message) error {
 	data := dataPool.Get().([]byte)
 	dataBuf := buffer{data: data[:0]}
 
-	Debug("send [w %p] [Tag %06d] %s", w, tag, m)
+	l.Printf("send [w %p] [Tag %06d] %s", w, tag, m)
 
 	// Encode the message. The buffer will grow automatically.
 	m.encode(&dataBuf)
@@ -126,7 +127,7 @@ type lookupTagAndType func(tag tag, t msgType) (message, error)
 // On a socket error, the special error type ErrSocket is returned.
 //
 // The tag value NoTag will always be returned if err is non-nil.
-func recv(r io.Reader, msize uint32, lookup lookupTagAndType) (tag, message, error) {
+func recv(l ulog.Logger, r io.Reader, msize uint32, lookup lookupTagAndType) (tag, message, error) {
 	// Read a header.
 	var hdr [headerLength]byte
 
@@ -239,7 +240,7 @@ func recv(r io.Reader, msize uint32, lookup lookupTagAndType) (tag, message, err
 		return noTag, nil, ErrNoValidMessage
 	}
 
-	Debug("recv [conn %p] [Tag %06d] %s", r, tag, m)
+	l.Printf("recv [conn %p] [Tag %06d] %s", r, tag, m)
 
 	// All set.
 	return tag, m, nil

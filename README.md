@@ -37,7 +37,7 @@ func main() {
   }
 
   // conn can be any net.Conn.
-  client, err := p9.NewClient(conn, p9.DefaultMessageSize, p9.HighestVersionString())
+  client, err := p9.NewClient(conn)
   if err != nil {
     log.Fatal(err)
   }
