@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/u-root/u-root/pkg/ulog"
 )
 
 // ErrOutOfTags indicates no tags are available.
@@ -102,44 +103,89 @@ type Client struct {
 	// version is the agreed upon version X of 9P2000.L.Google.X.
 	// version 0 implies 9P2000.L.
 	version uint32
+
+	// log is the logger to write to, if specified.
+	log ulog.Logger
+}
+
+// ClientOpt enables optional client configuration.
+type ClientOpt func(*Client) error
+
+// WithMessageSize overrides the default message size.
+func WithMessageSize(m uint32) ClientOpt {
+	return func(c *Client) error {
+		// Need at least one byte of payload.
+		if m <= msgRegistry.largestFixedSize {
+			return &ErrMessageTooLarge{
+				size:  m,
+				msize: msgRegistry.largestFixedSize,
+			}
+		}
+		c.messageSize = m
+		return nil
+	}
+}
+
+// WithVersion overrides the default requested version.
+func WithVersion(version string) ClientOpt {
+	return func(c *Client) error {
+		requested, ok := parseVersion(version)
+		if !ok {
+			return ErrBadVersionString
+		}
+		c.version = requested
+		return nil
+	}
+}
+
+// WithClientLogger overrides the default logger for the client.
+func WithClientLogger(l ulog.Logger) ClientOpt {
+	return func(c *Client) error {
+		c.log = l
+		return nil
+	}
+}
+
+func roundDown(p uint32, align uint32) uint32 {
+	if p > align && p%align != 0 {
+		return p - p%align
+	}
+	return p
 }
 
 // NewClient creates a new client.  It performs a Tversion exchange with
 // the server to assert that messageSize is ok to use.
 //
 // You should not use the same socket for multiple clients.
-func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, error) {
-	// Need at least one byte of payload.
-	if messageSize <= msgRegistry.largestFixedSize {
-		return nil, &ErrMessageTooLarge{
-			size:  messageSize,
-			msize: msgRegistry.largestFixedSize,
-		}
-	}
-
-	// Compute a payload size and round to 512 (normal block size)
-	// if it's larger than a single block.
-	payloadSize := messageSize - msgRegistry.largestFixedSize
-	if payloadSize > 512 && payloadSize%512 != 0 {
-		payloadSize -= (payloadSize % 512)
-	}
+func NewClient(socket net.Conn, o ...ClientOpt) (*Client, error) {
 	c := &Client{
 		socket:      socket,
 		tagPool:     pool{start: 1, limit: uint64(noTag)},
 		fidPool:     pool{start: 1, limit: uint64(noFID)},
 		pending:     make(map[tag]*response),
 		recvr:       make(chan bool, 1),
-		messageSize: messageSize,
-		payloadSize: payloadSize,
+		messageSize: DefaultMessageSize,
+		log:         ulog.Null,
+
+		// Request a high version by default.
+		version: highestSupportedVersion,
 	}
+
+	for _, opt := range o {
+		if err := opt(c); err != nil {
+			return nil, err
+		}
+	}
+
+	// Compute a payload size and round to 512 (normal block size)
+	// if it's larger than a single block.
+	c.payloadSize = roundDown(c.messageSize-msgRegistry.largestFixedSize, 512)
+
 	// Agree upon a version.
-	requested, ok := parseVersion(version)
-	if !ok {
-		return nil, ErrBadVersionString
-	}
+	requested := c.version
 	for {
 		rversion := rversion{}
-		err := c.sendRecv(&tversion{Version: versionString(requested), MSize: messageSize}, &rversion)
+		err := c.sendRecv(&tversion{Version: versionString(requested), MSize: c.messageSize}, &rversion)
 
 		// The server told us to try again with a lower version.
 		if err == linux.EAGAIN {
@@ -173,7 +219,7 @@ func NewClient(socket net.Conn, messageSize uint32, version string) (*Client, er
 // This should only be called with the token from recvr. Note that the received
 // tag will automatically be cleared from pending.
 func (c *Client) handleOne() {
-	t, r, err := recv(c.socket, c.messageSize, func(t tag, mt msgType) (message, error) {
+	t, r, err := recv(c.log, c.socket, c.messageSize, func(t tag, mt msgType) (message, error) {
 		c.pendingMu.Lock()
 		resp := c.pending[t]
 		c.pendingMu.Unlock()
@@ -270,7 +316,7 @@ func (c *Client) sendRecv(tm message, rm message) error {
 
 	// Send the request over the wire.
 	c.sendMu.Lock()
-	err := send(c.socket, tag(t), tm)
+	err := send(c.log, c.socket, tag(t), tm)
 	c.sendMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("send: %v", err)

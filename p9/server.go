@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/u-root/u-root/pkg/ulog"
 )
 
 // Server is a 9p2000.L server.
@@ -42,15 +43,32 @@ type Server struct {
 	// acquire two path nodes in any order, as all other concurrent
 	// operations acquire at most a single node.
 	renameMu sync.RWMutex
+
+	// log is a logger to log to, if specified.
+	log ulog.Logger
+}
+
+// ServerOpt is an optional config for a new server.
+type ServerOpt func(s *Server)
+
+// WithServerLogger overrides the default logger for the server.
+func WithServerLogger(l ulog.Logger) ServerOpt {
+	return func(s *Server) {
+		s.log = l
+	}
 }
 
 // NewServer returns a new server.
-//
-func NewServer(attacher Attacher) *Server {
-	return &Server{
+func NewServer(attacher Attacher, o ...ServerOpt) *Server {
+	s := &Server{
 		attacher: attacher,
 		pathTree: newPathNode(),
+		log:      ulog.Null,
 	}
+	for _, opt := range o {
+		opt(s)
+	}
+	return s
 }
 
 // connState is the state for a single connection.
@@ -399,7 +417,7 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Receive a message.
-	tag, m, err := recv(cs.t, messageSize, msgRegistry.get)
+	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgRegistry.get)
 	if errSocket, ok := err.(ErrSocket); ok {
 		// Connection problem; stop serving.
 		cs.recvDone <- errSocket.error
@@ -414,7 +432,7 @@ func (cs *connState) handleRequest() {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
 		cs.sendMu.Lock()
-		err := send(cs.r, tag, newErr(err))
+		err := send(cs.server.log, cs.r, tag, newErr(err))
 		cs.sendMu.Unlock()
 		cs.sendDone <- err
 		return
@@ -450,7 +468,7 @@ func (cs *connState) handleRequest() {
 
 		// Send back the result.
 		cs.sendMu.Lock()
-		err = send(cs.r, tag, r)
+		err = send(cs.server.log, cs.r, tag, r)
 		cs.sendMu.Unlock()
 		cs.sendDone <- err
 	}()

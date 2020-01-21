@@ -29,6 +29,7 @@ import (
 
 	"github.com/hugelgupf/p9/fsimpl/localfs"
 	"github.com/hugelgupf/p9/p9"
+	"github.com/u-root/u-root/pkg/ulog"
 )
 
 var (
@@ -39,9 +40,6 @@ var (
 
 func main() {
 	flag.Parse()
-	if *verbose {
-		p9.Debug = log.Printf
-	}
 
 	var network string
 	if *unix {
@@ -60,7 +58,11 @@ func main() {
 		log.Fatalf("err binding: %v", err)
 	}
 
+	var opts []p9.ServerOpt
+	if *verbose {
+		opts = append(opts, p9.WithServerLogger(ulog.Log))
+	}
 	// Run the server.
-	s := p9.NewServer(localfs.Attacher(*root))
+	s := p9.NewServer(localfs.Attacher(*root), opts...)
 	s.Serve(serverSocket)
 }

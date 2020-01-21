@@ -19,6 +19,7 @@ import (
 
 	"github.com/hugelgupf/p9/sys/linux"
 	"github.com/hugelgupf/socketpair"
+	"github.com/u-root/u-root/pkg/ulog/ulogtest"
 )
 
 // TestVersion tests the version negotiation.
@@ -31,11 +32,14 @@ func TestVersion(t *testing.T) {
 	defer clientSocket.Close()
 
 	// Create a new server and client.
-	s := NewServer(nil)
+	s := NewServer(nil, WithServerLogger(ulogtest.Logger{t}))
 	go s.Handle(serverSocket, serverSocket)
 
 	// NewClient does a Tversion exchange, so this is our test for success.
-	c, err := NewClient(clientSocket, 1024*1024 /* 1M message size */, HighestVersionString())
+	c, err := NewClient(clientSocket,
+		WithMessageSize(1024*1024 /* 1M message size */),
+		WithClientLogger(ulogtest.Logger{t}),
+	)
 	if err != nil {
 		t.Fatalf("got %v, expected nil", err)
 	}
