@@ -181,12 +181,12 @@ func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	return qid, 4096, nil
 }
 
-// Read implements p9.File.Read.
+// ReadAt implements p9.File.ReadAt.
 func (l *Local) ReadAt(p []byte, offset int64) (int, error) {
 	return l.file.ReadAt(p, offset)
 }
 
-// Write implements p9.File.Write.
+// WriteAt implements p9.File.WriteAt.
 func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
 	return l.file.WriteAt(p, offset)
 }

@@ -1,3 +1,4 @@
+// Package vmdriver implements a u-root/pkg/qemu.Device for networking.
 package vmdriver
 
 import (

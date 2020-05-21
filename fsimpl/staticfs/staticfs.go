@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package staticfs implements a read-only in-memory file system.
 package staticfs
 
 import (
