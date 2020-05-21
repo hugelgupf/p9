@@ -1,6 +1,6 @@
-// Package rwvm uses the Linux kernel client to mount a 9P file system for
-// reading and writing and performs tests on that file system.
-package rwvmtests
+// Package rwvmtests_test uses the Linux kernel client to mount a 9P file
+// system for reading and writing and performs tests on that file system.
+package rwvmtests_test
 
 import (
 	"fmt"
