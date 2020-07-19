@@ -22,7 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/internal/linux"
 	"github.com/u-root/u-root/pkg/ulog"
 )
 
@@ -418,7 +418,7 @@ func (cs *connState) handleRequest() {
 
 	// Receive a message.
 	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgRegistry.get)
-	if errSocket, ok := err.(ErrSocket); ok {
+	if errSocket, ok := err.(ConnError); ok {
 		// Connection problem; stop serving.
 		cs.recvDone <- errSocket.error
 		return

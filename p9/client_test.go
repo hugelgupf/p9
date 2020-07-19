@@ -17,7 +17,7 @@ package p9
 import (
 	"testing"
 
-	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/internal/linux"
 	"github.com/hugelgupf/socketpair"
 	"github.com/u-root/u-root/pkg/ulog/ulogtest"
 )

@@ -20,8 +20,8 @@ import (
 	"path"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
+	"github.com/hugelgupf/p9/internal"
 	"github.com/hugelgupf/p9/p9"
-	"github.com/hugelgupf/p9/sys"
 )
 
 type attacher struct {
@@ -136,7 +136,7 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		return qid, p9.AttrMask{}, p9.Attr{}, err
 	}
 
-	stat := sys.InfoToStat(fi)
+	stat := internal.InfoToStat(fi)
 	attr := &p9.Attr{
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),

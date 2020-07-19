@@ -118,7 +118,7 @@ func TestRecvClosed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("got err nil expected non-nil")
 	}
-	if _, ok := err.(ErrSocket); !ok {
+	if _, ok := err.(ConnError); !ok {
 		t.Fatalf("got err %v expected ErrSocket", err)
 	}
 }
@@ -136,7 +136,7 @@ func DISABLEDTestSendClosed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("send got err nil expected non-nil")
 	}
-	if _, ok := err.(ErrSocket); !ok {
+	if _, ok := err.(ConnError); !ok {
 		t.Fatalf("got err %v expected ErrSocket", err)
 	}
 }

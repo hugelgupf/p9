@@ -1,6 +1,4 @@
-// +build linux dragonfly solaris
-
-package sys
+package internal
 
 import (
 	"os"
