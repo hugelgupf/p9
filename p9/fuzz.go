@@ -15,7 +15,7 @@ func Fuzz(data []byte) int {
 		if msg != nil {
 			panic("msg !=nil on error")
 		}
-		panic(err)
+		return 0
 	}
 	buf.Reset()
 	send(ulog.Null, buf, tag, msg)
