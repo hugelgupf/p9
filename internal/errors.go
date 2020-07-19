@@ -1,10 +1,10 @@
-package sys
+package internal
 
 import (
 	"log"
 	"os"
 
-	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/internal/linux"
 )
 
 // ExtractErrno extracts a linux.Errno from a error, best effort.

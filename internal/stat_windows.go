@@ -1,4 +1,4 @@
-package sys
+package internal
 
 import (
 	"os"

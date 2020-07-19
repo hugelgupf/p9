@@ -1,6 +1,6 @@
 //+build !windows
 
-package sys
+package internal
 
 import (
 	"golang.org/x/sys/unix"
