@@ -417,6 +417,12 @@ func TestRegisterDuplicate(t *testing.T) {
 	msgRegistry.register(msgRlerror, func() message { return &rlerror{} })
 }
 
+func TestMaxMessageType(t *testing.T) {
+	if _, err := msgRegistry.get(0, 255); err == nil {
+		t.Fail()
+	}
+}
+
 func TestMsgCache(t *testing.T) {
 	// Cache starts empty.
 	if got, want := len(msgRegistry.factories[msgRlerror].cache), 0; got != want {
