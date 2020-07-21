@@ -26,17 +26,20 @@ import (
 	"github.com/u-root/u-root/pkg/ulog"
 )
 
-// ErrSocket is returned in cases of a socket issue.
+// ConnError is returned in cases of a connection issue.
 //
 // This may be treated differently than other errors.
-type ErrSocket struct {
+type ConnError struct {
 	// error is the socket error.
 	error
 }
 
-func (e ErrSocket) Error() string {
+func (e ConnError) Error() string {
 	return fmt.Sprintf("socket error: %v", e.error)
 }
+
+// Is reports whether any error in err's chain matches target.
+func (e ConnError) Is(target error) bool { return target == e.error }
 
 // ErrMessageTooLarge indicates the size was larger than reasonable.
 type ErrMessageTooLarge struct {
@@ -105,7 +108,7 @@ func send(l ulog.Logger, w io.Writer, tag tag, m message) error {
 	headerBuf.WriteTag(tag)
 
 	if _, err := vecs.WriteTo(w); err != nil {
-		return ErrSocket{err}
+		return ConnError{err}
 	}
 
 	// All set.
@@ -132,7 +135,7 @@ func recv(l ulog.Logger, r io.Reader, msize uint32, lookup lookupTagAndType) (ta
 	var hdr [headerLength]byte
 
 	if _, err := io.ReadAtLeast(r, hdr[:], int(headerLength)); err != nil {
-		return noTag, nil, ErrSocket{err}
+		return noTag, nil, ConnError{err}
 	}
 
 	// Decode the header.
@@ -144,11 +147,11 @@ func recv(l ulog.Logger, r io.Reader, msize uint32, lookup lookupTagAndType) (ta
 		// The message is too small.
 		//
 		// See above: it's probably screwed.
-		return noTag, nil, ErrSocket{ErrNoValidMessage}
+		return noTag, nil, ConnError{ErrNoValidMessage}
 	}
 	if size > maximumLength || size > msize {
 		// The message is too big.
-		return noTag, nil, ErrSocket{&ErrMessageTooLarge{size, msize}}
+		return noTag, nil, ConnError{&ErrMessageTooLarge{size, msize}}
 	}
 	remaining := size - headerLength
 
@@ -229,7 +232,7 @@ func recv(l ulog.Logger, r io.Reader, msize uint32, lookup lookupTagAndType) (ta
 
 	if len(vecs) > 0 {
 		if _, err := vecs.ReadFrom(r); err != nil {
-			return noTag, nil, ErrSocket{err}
+			return noTag, nil, ConnError{err}
 		}
 	}
 

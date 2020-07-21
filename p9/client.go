@@ -17,11 +17,11 @@ package p9
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
-	"net"
 	"sync"
 
-	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/internal/linux"
 	"github.com/u-root/u-root/pkg/ulog"
 )
 
@@ -69,8 +69,8 @@ var responsePool = sync.Pool{
 
 // Client is at least a 9P2000.L client.
 type Client struct {
-	// socket is the connected socket.
-	socket net.Conn
+	// conn is the connected conn.
+	conn io.ReadWriteCloser
 
 	// tagPool is the collection of available tags.
 	tagPool pool
@@ -153,13 +153,13 @@ func roundDown(p uint32, align uint32) uint32 {
 	return p
 }
 
-// NewClient creates a new client.  It performs a Tversion exchange with
+// NewClient creates a new client. It performs a Tversion exchange with
 // the server to assert that messageSize is ok to use.
 //
-// You should not use the same socket for multiple clients.
-func NewClient(socket net.Conn, o ...ClientOpt) (*Client, error) {
+// You should not use the same conn for multiple clients.
+func NewClient(conn io.ReadWriteCloser, o ...ClientOpt) (*Client, error) {
 	c := &Client{
-		socket:      socket,
+		conn:        conn,
 		tagPool:     pool{start: 1, limit: uint64(noTag)},
 		fidPool:     pool{start: 1, limit: uint64(noFID)},
 		pending:     make(map[tag]*response),
@@ -219,7 +219,7 @@ func NewClient(socket net.Conn, o ...ClientOpt) (*Client, error) {
 // This should only be called with the token from recvr. Note that the received
 // tag will automatically be cleared from pending.
 func (c *Client) handleOne() {
-	t, r, err := recv(c.log, c.socket, c.messageSize, func(t tag, mt msgType) (message, error) {
+	t, r, err := recv(c.log, c.conn, c.messageSize, func(t tag, mt msgType) (message, error) {
 		c.pendingMu.Lock()
 		resp := c.pending[t]
 		c.pendingMu.Unlock()
@@ -246,7 +246,7 @@ func (c *Client) handleOne() {
 	})
 
 	if err != nil {
-		// No tag was extracted (probably a socket error).
+		// No tag was extracted (probably a conn error).
 		//
 		// Likely catastrophic. Notify all waiters and clear pending.
 		c.pendingMu.Lock()
@@ -316,7 +316,7 @@ func (c *Client) sendRecv(tm message, rm message) error {
 
 	// Send the request over the wire.
 	c.sendMu.Lock()
-	err := send(c.log, c.socket, tag(t), tm)
+	err := send(c.log, c.conn, tag(t), tm)
 	c.sendMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("send: %v", err)
@@ -347,7 +347,7 @@ func (c *Client) Version() uint32 {
 	return c.version
 }
 
-// Close closes the underlying socket.
+// Close closes the underlying connection.
 func (c *Client) Close() error {
-	return c.socket.Close()
+	return c.conn.Close()
 }

@@ -1,2 +1,2 @@
 // Package sys abstracts operating system features for p9.
-package sys
+package internal

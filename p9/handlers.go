@@ -21,13 +21,13 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/hugelgupf/p9/sys"
-	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/internal"
+	"github.com/hugelgupf/p9/internal/linux"
 )
 
 // newErr returns a new error message from an error.
 func newErr(err error) *rlerror {
-	return &rlerror{Error: uint32(sys.ExtractErrno(err))}
+	return &rlerror{Error: uint32(internal.ExtractErrno(err))}
 }
 
 // handler is implemented for server-handled messages.

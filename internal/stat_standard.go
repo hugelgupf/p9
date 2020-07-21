@@ -1,4 +1,6 @@
-package sys
+// +build linux dragonfly solaris
+
+package internal
 
 import (
 	"os"
@@ -19,7 +21,7 @@ func InfoToStat(fi os.FileInfo) *Stat_t {
 		Gid:     nativeStat.Gid,
 		Rdev:    nativeStat.Rdev,
 		Size:    nativeStat.Size,
-		Blksize: int32(nativeStat.Blksize),
+		Blksize: nativeStat.Blksize,
 		Blocks:  nativeStat.Blocks,
 		Atim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Atim)),
 		Mtim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Mtim)),

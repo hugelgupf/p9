@@ -1,4 +1,6 @@
-package sys
+// +build freebsd darwin netbsd
+
+package internal
 
 import (
 	"os"
@@ -21,8 +23,8 @@ func InfoToStat(fi os.FileInfo) *Stat_t {
 		Size:    nativeStat.Size,
 		Blksize: nativeStat.Blksize,
 		Blocks:  nativeStat.Blocks,
-		Atim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Atim)),
-		Mtim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Mtim)),
-		Ctim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Ctim)),
+		Atim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Atimespec)),
+		Mtim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Mtimespec)),
+		Ctim:    unix.NsecToTimespec(syscall.TimespecToNsec(nativeStat.Ctimespec)),
 	}
 }

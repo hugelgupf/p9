@@ -1,11 +1,11 @@
 // +build !windows,!linux
 
-package sys
+package internal
 
 import (
 	"syscall"
 
-	"github.com/hugelgupf/p9/sys/linux"
+	"github.com/hugelgupf/p9/internal/linux"
 )
 
 func sysErrno(err error) linux.Errno {
