@@ -15,9 +15,10 @@
 package p9
 
 import (
+	"net"
+	"reflect"
 	"testing"
 
-	"github.com/hugelgupf/socketpair"
 	"github.com/u-root/u-root/pkg/ulog/ulogtest"
 )
 
@@ -27,31 +28,6 @@ const (
 	msgTypeUnregistered
 )
 
-func TestSendRecv(t *testing.T) {
-	server, client, err := socketpair.TCPPair()
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
-	defer server.Close()
-	defer client.Close()
-
-	l := ulogtest.Logger{TB: t}
-	if err := send(l, client, tag(1), &tlopen{}); err != nil {
-		t.Fatalf("send got err %v expected nil", err)
-	}
-
-	tagg, m, err := recv(l, server, maximumLength, msgRegistry.get)
-	if err != nil {
-		t.Fatalf("recv got err %v expected nil", err)
-	}
-	if tagg != tag(1) {
-		t.Fatalf("got tag %v expected 1", tagg)
-	}
-	if _, ok := m.(*tlopen); !ok {
-		t.Fatalf("got message %v expected *Tlopen", m)
-	}
-}
-
 // badDecode overruns on decode.
 type badDecode struct{}
 
@@ -59,24 +35,6 @@ func (*badDecode) decode(b *buffer) { b.markOverrun() }
 func (*badDecode) encode(b *buffer) {}
 func (*badDecode) typ() msgType     { return msgTypeBadDecode }
 func (*badDecode) String() string   { return "badDecode{}" }
-
-func TestRecvOverrun(t *testing.T) {
-	server, client, err := socketpair.TCPPair()
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
-	defer server.Close()
-	defer client.Close()
-
-	l := ulogtest.Logger{TB: t}
-	if err := send(l, client, tag(1), &badDecode{}); err != nil {
-		t.Fatalf("send got err %v expected nil", err)
-	}
-
-	if _, _, err := recv(l, server, maximumLength, msgRegistry.get); err == nil {
-		t.Fatalf("recv got err %v expected ErrSocket{ErrNoValidMessage}", err)
-	}
-}
 
 // unregistered is not registered on decode.
 type unregistered struct{}
@@ -86,35 +44,14 @@ func (*unregistered) encode(b *buffer) {}
 func (*unregistered) typ() msgType     { return msgTypeUnregistered }
 func (*unregistered) String() string   { return "unregistered{}" }
 
-func TestRecvInvalidType(t *testing.T) {
-	server, client, err := socketpair.TCPPair()
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
-	defer server.Close()
-	defer client.Close()
+func DISABLEDTestRecvClosed(t *testing.T) {
+	server, client := net.Pipe()
 
-	l := ulogtest.Logger{TB: t}
-	if err := send(l, client, tag(1), &unregistered{}); err != nil {
-		t.Fatalf("send got err %v expected nil", err)
-	}
-
-	_, _, err = recv(l, server, maximumLength, msgRegistry.get)
-	if _, ok := err.(*ErrInvalidMsgType); !ok {
-		t.Fatalf("recv got err %v expected ErrInvalidMsgType", err)
-	}
-}
-
-func TestRecvClosed(t *testing.T) {
-	server, client, err := socketpair.TCPPair()
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
 	defer server.Close()
 	client.Close()
 
 	l := ulogtest.Logger{TB: t}
-	_, _, err = recv(l, server, maximumLength, msgRegistry.get)
+	_, _, err := recv(l, server, maximumLength, msgRegistry.get)
 	if err == nil {
 		t.Fatalf("got err nil expected non-nil")
 	}
@@ -124,15 +61,13 @@ func TestRecvClosed(t *testing.T) {
 }
 
 func DISABLEDTestSendClosed(t *testing.T) {
-	server, client, err := socketpair.TCPPair()
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
+	server, client := net.Pipe()
+
 	server.Close()
 	defer client.Close()
 
 	l := ulogtest.Logger{TB: t}
-	err = send(l, client, tag(1), &tlopen{})
+	err := send(l, client, tag(1), &tlopen{})
 	if err == nil {
 		t.Fatalf("send got err nil expected non-nil")
 	}
@@ -141,52 +76,73 @@ func DISABLEDTestSendClosed(t *testing.T) {
 	}
 }
 
-func BenchmarkSendRecv(b *testing.B) {
-	server, client, err := socketpair.TCPPair()
-	if err != nil {
-		b.Fatalf("socketpair got err %v expected nil", err)
-	}
-	defer server.Close()
-	defer client.Close()
-
-	l := ulogtest.Logger{TB: b}
-	// Exchange Rflush messages since these contain no data and therefore incur
-	// no additional marshaling overhead.
-	go func() {
-		for i := 0; i < b.N; i++ {
-			t, m, err := recv(l, server, maximumLength, msgRegistry.get)
-			if err != nil {
-				b.Fatalf("recv got err %v expected nil", err)
-			}
-			if t != tag(1) {
-				b.Fatalf("got tag %v expected 1", t)
-			}
-			if _, ok := m.(*rflush); !ok {
-				b.Fatalf("got message %T expected *Rflush", m)
-			}
-			if err := send(l, server, tag(2), &rflush{}); err != nil {
-				b.Fatalf("send got err %v expected nil", err)
-			}
-		}
-	}()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if err := send(l, client, tag(1), &rflush{}); err != nil {
-			b.Fatalf("send got err %v expected nil", err)
-		}
-		t, m, err := recv(l, client, maximumLength, msgRegistry.get)
-		if err != nil {
-			b.Fatalf("recv got err %v expected nil", err)
-		}
-		if t != tag(2) {
-			b.Fatalf("got tag %v expected 2", t)
-		}
-		if _, ok := m.(*rflush); !ok {
-			b.Fatalf("got message %v expected *Rflush", m)
-		}
-	}
-}
-
 func init() {
 	msgRegistry.register(msgTypeBadDecode, func() message { return &badDecode{} })
+}
+
+func TestSendAndRecv(t *testing.T) {
+	type args struct {
+		tag tag
+		m   message
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "Valid",
+			args: args{
+				tag(1), &tlopen{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "InvalidType",
+			args: args{
+				tag(1), &unregistered{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "RecvOverrun",
+			args: args{
+				tag(1), &badDecode{},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server, client := net.Pipe()
+			defer server.Close()
+			defer client.Close()
+
+			l := ulogtest.Logger{TB: t}
+			fin := make(chan struct{})
+			go func() {
+				defer func() {
+					fin <- struct{}{}
+				}()
+				tagg, m, err := recv(l, server, maximumLength, msgRegistry.get)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("recv() error = %v, wantRecvErr %v", err, tt.wantErr)
+					return
+				}
+				if !tt.wantErr && tagg != tag(1) {
+					t.Fatalf("got tag %v expected 1", tagg)
+				}
+				expectedType := reflect.TypeOf(tt.args.m)
+				recievedType := reflect.TypeOf(m)
+				if !tt.wantErr && expectedType != recievedType {
+					t.Fatalf("got message %v expected %v", recievedType, expectedType)
+				}
+
+			}()
+			if err := send(l, client, tag(1), tt.args.m); err != nil {
+				t.Fatalf("got err nil expected non-nil")
+			}
+			<-fin
+		})
+	}
 }

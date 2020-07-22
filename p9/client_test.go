@@ -18,25 +18,26 @@ import (
 	"testing"
 
 	"github.com/hugelgupf/p9/internal/linux"
-	"github.com/hugelgupf/socketpair"
 	"github.com/u-root/u-root/pkg/ulog/ulogtest"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 // TestVersion tests the version negotiation.
 func TestVersion(t *testing.T) {
 	// First, create a new server and connection.
-	serverSocket, clientSocket, err := socketpair.TCPPair()
-	if err != nil {
-		t.Fatalf("socketpair got err %v expected nil", err)
-	}
-	defer clientSocket.Close()
+	l := bufconn.Listen(int(DefaultMessageSize))
 
 	// Create a new server and client.
 	s := NewServer(nil, WithServerLogger(ulogtest.Logger{TB: t}))
-	go s.Handle(serverSocket, serverSocket)
+	go s.Serve(l)
+
+	client, err := l.Dial()
+	if err != nil {
+		t.Fatalf("got %v, expected nil", err)
+	}
 
 	// NewClient does a Tversion exchange, so this is our test for success.
-	c, err := NewClient(clientSocket,
+	c, err := NewClient(client,
 		WithMessageSize(1024*1024 /* 1M message size */),
 		WithClientLogger(ulogtest.Logger{TB: t}),
 	)
