@@ -1,4 +1,5 @@
 // +build !race
+// +build linux
 
 package localfs
 
