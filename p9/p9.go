@@ -17,6 +17,8 @@
 // Servers implement Attacher and File interfaces.
 //
 // Clients can use Client.
+//
+// test
 package p9
 
 import (
