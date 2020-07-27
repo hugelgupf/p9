@@ -54,7 +54,107 @@ const (
 
 	// OpenFlagsModeMask is a mask of valid OpenFlags mode bits.
 	OpenFlagsModeMask OpenFlags = 3
+
+	// ReadAndExecute is reading, but also checking execute permissions.
+	ReadAndExecute OpenFlags = 3
+
+	// Truncate truncates the file on opening (O_TRUNC).
+	Truncate OpenFlags = 0o1000
+
+	// AppendOnly opens a file only for appending (O_APPEND).
+	AppendOnly OpenFlags = 0o2000
+
+	// CloseOnExec closes the file when the owning process execs (O_CLOEXEC).
+	CloseOnExec OpenFlags = 0o2000000
+
+	// Exclusive means exclusive client use.
+	Exclusive OpenFlags = 0o200
+
+	// RemoveOnClose removes the file when closed.
+	RemoveOnClose OpenFlags = 0o4000000
 )
+
+// Plan9Flags converts open flags to plan9 flags.
+func (o OpenFlags) Plan9Flags() Plan9OpenFlags {
+	po := Plan9OpenFlags(o & 0x3)
+	if o&Truncate == Truncate {
+		po |= OTRUNC
+	}
+	if o&AppendOnly == AppendOnly {
+		po |= OAPPEND
+	}
+	if o&CloseOnExec == CloseOnExec {
+		po |= OCEXEC
+	}
+	if o&RemoveOnClose == RemoveOnClose {
+		po |= ORCLOSE
+	}
+	return po
+}
+
+type Plan9OpenFlags uint8
+
+// Flags for the mode field in Topen and Tcreate messages.
+const (
+	OREAD   Plan9OpenFlags = 0x0  // open read-only
+	OWRITE  Plan9OpenFlags = 0x1  // open write-only
+	ORDWR   Plan9OpenFlags = 0x2  // open read-write
+	OEXEC   Plan9OpenFlags = 0x3  // execute (read but check execute permission)
+	OTRUNC  Plan9OpenFlags = 0x10 // or'ed in (except for exec), truncate file first
+	OCEXEC  Plan9OpenFlags = 0x20 // or'ed in, close on exec
+	ORCLOSE Plan9OpenFlags = 0x40 // or'ed in, remove on close
+	OAPPEND Plan9OpenFlags = 0x80 // or'ed in, append only
+)
+
+// String implements fmt.Stringer.
+func (o Plan9OpenFlags) String() string {
+	var f string
+	switch o.Mode() {
+	case OREAD:
+		f = "OREAD"
+	case OWRITE:
+		f = "OWRITE"
+	case ORDWR:
+		f = "ORDWR"
+	case OEXEC:
+		f = "OEXEC"
+	}
+
+	if o&OTRUNC == OTRUNC {
+		f += "|OTRUNC"
+	}
+	if o&OAPPEND == OAPPEND {
+		f += "|OAPPEND"
+	}
+	if o&OCEXEC == OCEXEC {
+		f += "|OCEXEC"
+	}
+	if o&ORCLOSE == ORCLOSE {
+		f += "|ORCLOSE"
+	}
+	return f
+}
+
+func (o Plan9OpenFlags) Mode() Plan9OpenFlags {
+	return o & 0x3
+}
+
+func (o Plan9OpenFlags) OpenFlags() OpenFlags {
+	lo := OpenFlags(o & 0x3)
+	if o&OTRUNC == OTRUNC {
+		lo |= Truncate
+	}
+	if o&OCEXEC == OCEXEC {
+		lo |= CloseOnExec
+	}
+	if o&ORCLOSE == ORCLOSE {
+		lo |= RemoveOnClose
+	}
+	if o&OAPPEND == OAPPEND {
+		lo |= AppendOnly
+	}
+	return lo
+}
 
 // Mode returns only the open mode (read-only, read-write, or write-only).
 func (o OpenFlags) Mode() OpenFlags {
@@ -68,18 +168,34 @@ func (o OpenFlags) OSFlags() int {
 
 // String implements fmt.Stringer.
 func (o OpenFlags) String() string {
-	switch o {
+	var f string
+	switch o.Mode() {
 	case ReadOnly:
-		return "ReadOnly"
+		f = "ReadOnly"
 	case WriteOnly:
-		return "WriteOnly"
+		f = "WriteOnly"
 	case ReadWrite:
-		return "ReadWrite"
-	case OpenFlagsModeMask:
-		return "OpenFlagsModeMask"
-	default:
-		return fmt.Sprintf("unknown (%#x)", uint32(o))
+		f = "ReadWrite"
+	case ReadAndExecute:
+		f = "ReadAndExecute"
 	}
+
+	if o&Truncate == Truncate {
+		f += "|Truncate"
+	}
+	if o&AppendOnly == AppendOnly {
+		f += "|AppendOnly"
+	}
+	if o&CloseOnExec == CloseOnExec {
+		f += "|CloseOnExec"
+	}
+	if o&Exclusive == Exclusive {
+		f += "|Exclusive"
+	}
+	if o&RemoveOnClose == RemoveOnClose {
+		f += "|RemoveOnClose"
+	}
+	return f
 }
 
 // tag is a message tag.
@@ -137,6 +253,21 @@ const (
 	// permissionsMask is the mask to apply to FileModes for permissions. It
 	// includes rwx bits for user, group and others, and sticky bit.
 	permissionsMask FileMode = 01777
+)
+
+type Plan9FileMode uint32
+
+// File modes in the Tcreate message.
+const (
+	DMDIR    Plan9FileMode = 0x80000000 // mode bit for directories
+	DMAPPEND Plan9FileMode = 0x40000000 // mode bit for append only files
+	DMEXCL   Plan9FileMode = 0x20000000 // mode bit for exclusive use files
+	DMMOUNT  Plan9FileMode = 0x10000000 // mode bit for mounted channel
+	DMAUTH   Plan9FileMode = 0x08000000 // mode bit for authentication file
+	DMTMP    Plan9FileMode = 0x04000000 // mode bit for non-backed-up file
+	DMREAD   Plan9FileMode = 0x4        // mode bit for read permission
+	DMWRITE  Plan9FileMode = 0x2        // mode bit for write permission
+	DMEXEC   Plan9FileMode = 0x1        // mode bit for execute permission
 )
 
 // QIDType is the most significant byte of the FileMode word, to be used as the
@@ -339,10 +470,15 @@ const (
 	msgRauth        msgType = 103
 	msgTattach      msgType = 104
 	msgRattach      msgType = 105
+	msgRerror       msgType = 107
 	msgTflush       msgType = 108
 	msgRflush       msgType = 109
 	msgTwalk        msgType = 110
 	msgRwalk        msgType = 111
+	msgTopen        msgType = 112
+	msgRopen        msgType = 113
+	msgTcreate      msgType = 114
+	msgRcreate      msgType = 115
 	msgTread        msgType = 116
 	msgRread        msgType = 117
 	msgTwrite       msgType = 118
@@ -351,8 +487,14 @@ const (
 	msgRclunk       msgType = 121
 	msgTremove      msgType = 122
 	msgRremove      msgType = 123
-	msgTflushf      msgType = 124
-	msgRflushf      msgType = 124
+	msgTstat        msgType = 124
+	msgRstat        msgType = 125
+	msgTwstat       msgType = 126
+	msgRwstat       msgType = 127
+)
+
+// gVisor extensions (.Google.N)
+const (
 	msgTwalkgetattr msgType = 126
 	msgRwalkgetattr msgType = 127
 	msgTucreate     msgType = 128
@@ -1071,4 +1213,59 @@ func (d *Dirent) encode(b *buffer) {
 	b.Write64(d.Offset)
 	b.WriteQIDType(d.Type)
 	b.WriteString(d.Name)
+}
+
+// Stat is the 9P2000 stat structure.
+type Stat struct {
+	Type   uint16
+	Dev    uint32
+	QID    QID
+	Mode   Plan9FileMode
+	ATime  uint32
+	MTime  uint32
+	Length uint64
+	Name   string
+	UID    string
+	GID    string
+	MUID   string
+}
+
+// String implements fmt.Stringer.
+func (p Stat) String() string {
+	return fmt.Sprintf("Stat{Type: %d, Dev: %d, QID: %s, Mode: %#x, ATime: %d, MTime: %d, Length %d, Name %s, UID %s, GID %s, MUID %s}",
+		p.Type, p.Dev, p.QID, p.Mode, p.ATime, p.MTime, p.Length, p.Name, p.UID, p.GID, p.MUID)
+}
+
+// encode implements encoder.encode.
+func (p *Stat) encode(b *buffer) {
+	size := 41 + len(p.Name) + len(p.UID) + len(p.GID) + len(p.MUID) + 8
+	b.Write16(uint16(size))
+	b.Write16(p.Type)
+	b.Write32(p.Dev)
+	p.QID.encode(b)
+	b.Write32(uint32(p.Mode))
+	b.Write32(p.ATime)
+	b.Write32(p.MTime)
+	b.Write64(p.Length)
+	b.WriteString(p.Name)
+	b.WriteString(p.UID)
+	b.WriteString(p.GID)
+	b.WriteString(p.MUID)
+}
+
+// decode implements encoder.decode.
+func (p *Stat) decode(b *buffer) {
+	// size
+	_ = b.Read16()
+	p.Type = b.Read16()
+	p.Dev = b.Read32()
+	p.QID.decode(b)
+	p.Mode = Plan9FileMode(b.Read32())
+	p.ATime = b.Read32()
+	p.MTime = b.Read32()
+	p.Length = b.Read64()
+	p.Name = b.ReadString()
+	p.UID = b.ReadString()
+	p.GID = b.ReadString()
+	p.MUID = b.ReadString()
 }

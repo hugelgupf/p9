@@ -143,6 +143,10 @@ func (t *tflush) String() string {
 	return fmt.Sprintf("Tflush{OldTag: %d}", t.OldTag)
 }
 
+type tlflush struct {
+	tflush
+}
+
 // rflush is a flush response.
 type rflush struct {
 }
@@ -163,6 +167,10 @@ func (*rflush) typ() msgType {
 // String implements fmt.Stringer.
 func (r *rflush) String() string {
 	return fmt.Sprintf("Rflush{}")
+}
+
+type rlflush struct {
+	rflush
 }
 
 // twalk is a walk request.
@@ -208,6 +216,10 @@ func (t *twalk) String() string {
 	return fmt.Sprintf("Twalk{FID: %d, newFID: %d, Names: %v}", t.fid, t.newFID, t.Names)
 }
 
+type tlwalk struct {
+	twalk
+}
+
 // rwalk is a walk response.
 type rwalk struct {
 	// QIDs are the set of QIDs returned.
@@ -243,6 +255,10 @@ func (r *rwalk) String() string {
 	return fmt.Sprintf("Rwalk{QIDs: %v}", r.QIDs)
 }
 
+type rlwalk struct {
+	rwalk
+}
+
 // tclunk is a close request.
 type tclunk struct {
 	// fid is the fid to be closed.
@@ -269,6 +285,10 @@ func (t *tclunk) String() string {
 	return fmt.Sprintf("Tclunk{FID: %d}", t.fid)
 }
 
+type tlclunk struct {
+	tclunk
+}
+
 // rclunk is a close response.
 type rclunk struct{}
 
@@ -288,6 +308,10 @@ func (*rclunk) typ() msgType {
 // String implements fmt.Stringer.
 func (r *rclunk) String() string {
 	return fmt.Sprintf("Rclunk{}")
+}
+
+type rlclunk struct {
+	rclunk
 }
 
 // tremove is a remove request.
@@ -316,6 +340,10 @@ func (t *tremove) String() string {
 	return fmt.Sprintf("Tremove{FID: %d}", t.fid)
 }
 
+type tlremove struct {
+	tremove
+}
+
 // rremove is a remove response.
 type rremove struct {
 }
@@ -336,6 +364,10 @@ func (*rremove) typ() msgType {
 // String implements fmt.Stringer.
 func (r *rremove) String() string {
 	return fmt.Sprintf("Rremove{}")
+}
+
+type rlremove struct {
+	rremove
 }
 
 // rlerror is an error response.
@@ -406,6 +438,11 @@ func (t *tauth) String() string {
 	return fmt.Sprintf("Tauth{AuthFID: %d, UserName: %s, AttachName: %s, UID: %d", t.Authenticationfid, t.UserName, t.AttachName, t.UID)
 }
 
+// tlauth is a 9P2000.L Tauth request.
+type tlauth struct {
+	tauth
+}
+
 // rauth is an authentication response.
 //
 // encode, decode and Length are inherited directly from QID.
@@ -421,6 +458,11 @@ func (*rauth) typ() msgType {
 // String implements fmt.Stringer.
 func (r *rauth) String() string {
 	return fmt.Sprintf("Rauth{QID: %s}", r.QID)
+}
+
+// rlauth is a 9P2000.L Rauth request.
+type rlauth struct {
+	rauth
 }
 
 // tattach is an attach request.
@@ -456,6 +498,11 @@ func (t *tattach) String() string {
 	return fmt.Sprintf("Tattach{FID: %d, AuthFID: %d, UserName: %s, AttachName: %s, UID: %d}", t.fid, t.Auth.Authenticationfid, t.Auth.UserName, t.Auth.AttachName, t.Auth.UID)
 }
 
+// tlattach is a 9P2000.L attach request.
+type tlattach struct {
+	tattach
+}
+
 // rattach is an attach response.
 type rattach struct {
 	QID
@@ -469,6 +516,11 @@ func (*rattach) typ() msgType {
 // String implements fmt.Stringer.
 func (r *rattach) String() string {
 	return fmt.Sprintf("Rattach{QID: %s}", r.QID)
+}
+
+// rlattach is a 9P2000.L attach response.
+type rlattach struct {
+	rattach
 }
 
 // tlopen is an open request.
@@ -993,6 +1045,10 @@ func (t *tread) String() string {
 	return fmt.Sprintf("Tread{FID: %d, Offset: %d, Count: %d}", t.fid, t.Offset, t.Count)
 }
 
+type tlread struct {
+	tread
+}
+
 // rread is the response for a Tread.
 type rread struct {
 	// Data is the resulting data.
@@ -1039,6 +1095,10 @@ func (r *rread) SetPayload(p []byte) {
 // String implements fmt.Stringer.
 func (r *rread) String() string {
 	return fmt.Sprintf("Rread{len(Data): %d}", len(r.Data))
+}
+
+type rlread struct {
+	rread
 }
 
 // twrite is a write request.
@@ -1097,6 +1157,10 @@ func (t *twrite) String() string {
 	return fmt.Sprintf("Twrite{FID: %v, Offset %d, len(Data): %d}", t.fid, t.Offset, len(t.Data))
 }
 
+type tlwrite struct {
+	twrite
+}
+
 // rwrite is the response for a Twrite.
 type rwrite struct {
 	// Count indicates the number of bytes successfully written.
@@ -1121,6 +1185,10 @@ func (*rwrite) typ() msgType {
 // String implements fmt.Stringer.
 func (r *rwrite) String() string {
 	return fmt.Sprintf("Rwrite{Count: %d}", r.Count)
+}
+
+type rlwrite struct {
+	rwrite
 }
 
 // tmknod is a mknod request.
@@ -1999,6 +2067,259 @@ func (r *rusymlink) String() string {
 	return fmt.Sprintf("Rusymlink{%v}", &r.rsymlink)
 }
 
+// rerror is a 9P2000 error response.
+type rerror struct {
+	err string
+}
+
+// decode implements encoder.decode.
+func (r *rerror) decode(b *buffer) {
+	r.err = b.ReadString()
+}
+
+// encode implements encoder.encode.
+func (r *rerror) encode(b *buffer) {
+	b.WriteString(r.err)
+}
+
+// typ implements message.typ.
+func (*rerror) typ() msgType {
+	return msgRerror
+}
+
+// String implements fmt.Stringer.
+func (r *rerror) String() string {
+	return fmt.Sprintf("Rerror{%v}", r.err)
+}
+
+// topen is the 9P2000 Topen message. It does not appear in 9P2000.L, where it
+// was replaced with Tlopen.
+type topen struct {
+	fid  fid
+	mode Plan9OpenFlags
+}
+
+// decode implements encoder.decode.
+func (t *topen) decode(b *buffer) {
+	t.fid = b.ReadFID()
+	t.mode = Plan9OpenFlags(b.Read8())
+}
+
+// encode implements encoder.encode.
+func (t *topen) encode(b *buffer) {
+	b.WriteFID(t.fid)
+	b.Write8(uint8(t.mode))
+}
+
+// typ implements message.typ.
+func (*topen) typ() msgType {
+	return msgTopen
+}
+
+// String implements fmt.Stringer.
+func (t *topen) String() string {
+	return fmt.Sprintf("Topen{FID: %d, Mode: %#x}", t.fid, t.mode)
+}
+
+// ropen is an open response in 9P2000.
+type ropen struct {
+	// QID is the file's QID.
+	QID QID
+
+	// IoUnit is the recommended I/O unit.
+	IoUnit uint32
+}
+
+// decode implements encoder.decode.
+func (r *ropen) decode(b *buffer) {
+	r.QID.decode(b)
+	r.IoUnit = b.Read32()
+}
+
+// encode implements encoder.encode.
+func (r *ropen) encode(b *buffer) {
+	r.QID.encode(b)
+	b.Write32(r.IoUnit)
+}
+
+// typ implements message.typ.
+func (*ropen) typ() msgType {
+	return msgRopen
+}
+
+// String implements fmt.Stringer.
+func (r *ropen) String() string {
+	return fmt.Sprintf("Ropen{QID: %s, IoUnit: %d}", r.QID, r.IoUnit)
+}
+
+// tcreate is a create request.
+type tcreate struct {
+	// fid is the parent fid.
+	//
+	// This becomes the new file.
+	fid fid
+
+	// Name is the file name to create.
+	Name string
+
+	// Mode is the open mode (O_RDWR, etc.).
+	//
+	// Note that flags like O_TRUNC are ignored, as is O_EXCL. All
+	// create operations are exclusive.
+	Mode Plan9OpenFlags
+
+	// Mode is the file type and the set of permission bits.
+	Permissions Plan9FileMode
+}
+
+// decode implements encoder.decode.
+func (t *tcreate) decode(b *buffer) {
+	t.fid = b.ReadFID()
+	t.Name = b.ReadString()
+	t.Permissions = Plan9FileMode(b.Read32())
+	t.Mode = Plan9OpenFlags(b.Read8())
+}
+
+// encode implements encoder.encode.
+func (t *tcreate) encode(b *buffer) {
+	b.WriteFID(t.fid)
+	b.WriteString(t.Name)
+	b.Write32(uint32(t.Permissions))
+	b.Write8(uint8(t.Mode))
+}
+
+// typ implements message.typ.
+func (*tcreate) typ() msgType {
+	return msgTcreate
+}
+
+// String implements fmt.Stringer.
+func (t *tcreate) String() string {
+	return fmt.Sprintf("Tcreate{FID: %d, Name: %s, Mode: %s, Permissions: 0o%o}", t.fid, t.Name, t.Mode, t.Permissions)
+}
+
+// rcreate is a create response.
+//
+// The encode, decode, etc. methods are inherited from Rlopen.
+type rcreate struct {
+	ropen
+}
+
+// typ implements message.typ.
+func (*rcreate) typ() msgType {
+	return msgRcreate
+}
+
+// String implements fmt.Stringer.
+func (r *rcreate) String() string {
+	return fmt.Sprintf("Rcreate{QID: %s, IoUnit: %d}", r.QID, r.IoUnit)
+}
+
+// tstat is the 9P2000 Tstat message. It does not appear in 9P2000.L, where it
+// was replaced with Tgetattr.
+type tstat struct {
+	fid fid
+}
+
+// decode implements encoder.decode.
+func (t *tstat) decode(b *buffer) {
+	t.fid = b.ReadFID()
+}
+
+// encode implements encoder.encode.
+func (t *tstat) encode(b *buffer) {
+	b.WriteFID(t.fid)
+}
+
+// typ implements message.typ.
+func (*tstat) typ() msgType {
+	return msgTstat
+}
+
+// String implements fmt.Stringer.
+func (t *tstat) String() string {
+	return fmt.Sprintf("Tstat{FID: %d}", t.fid)
+}
+
+// rstat is an stat response in 9P2000.
+type rstat struct {
+	stat []Stat
+}
+
+// decode implements encoder.decode.
+func (r *rstat) decode(b *buffer) {
+	for b.has(1) {
+		var s Stat
+		s.decode(b)
+		r.stat = append(r.stat, s)
+	}
+}
+
+// encode implements encoder.encode.
+func (r *rstat) encode(b *buffer) {
+	for _, s := range r.stat {
+		s.encode(b)
+	}
+}
+
+// typ implements message.typ.
+func (*rstat) typ() msgType {
+	return msgRstat
+}
+
+// String implements fmt.Stringer.
+func (r *rstat) String() string {
+	return fmt.Sprintf("Rstat{Stat: %s}", r.stat)
+}
+
+// twstat is the 9P2000 Twstat message. It does not appear in 9P2000.L, where it
+// was replaced with Tgetattr.
+type twstat struct {
+	fid  fid
+	stat Stat
+}
+
+// decode implements encoder.decode.
+func (t *twstat) decode(b *buffer) {
+	t.fid = b.ReadFID()
+	t.stat.decode(b)
+}
+
+// encode implements encoder.encode.
+func (t *twstat) encode(b *buffer) {
+	b.WriteFID(t.fid)
+	t.stat.encode(b)
+}
+
+// typ implements message.typ.
+func (*twstat) typ() msgType {
+	return msgTwstat
+}
+
+// String implements fmt.Stringer.
+func (t *twstat) String() string {
+	return fmt.Sprintf("Twstat{FID: %d, Stat: %s}", t.fid, t.stat)
+}
+
+// rwstat is an wstat response in 9P2000.
+type rwstat struct{}
+
+// decode implements encoder.decode.
+func (r *rwstat) decode(b *buffer) {}
+
+// encode implements encoder.encode.
+func (r *rwstat) encode(b *buffer) {}
+
+// typ implements message.typ.
+func (*rwstat) typ() msgType {
+	return msgRwstat
+}
+
+// String implements fmt.Stringer.
+func (r *rwstat) String() string {
+	return fmt.Sprintf("Rwstat{}")
+}
+
 const maxCacheSize = 3
 
 // msgFactory is used to reduce allocations by caching messages for reuse.
@@ -2013,14 +2334,22 @@ var msgVersionRegistry registry
 // msgDotLRegistry indexes all 9P2000.L(.Google.N) message factories by type.
 var msgDotLRegistry registry
 
+// msg9P2000Registry indexes all message factories by type.
+var msg9P2000Registry registry
+
 type registry struct {
 	factories [math.MaxUint8 + 1]msgFactory
 
+	s string
 	// largestFixedSize is computed so that given some message size M, you can
 	// compute the maximum payload size (e.g. for Twrite, Rread) with
 	// M-largestFixedSize. You could do this individual on a per-message basis,
 	// but it's easier to compute a single maximum safe payload.
 	largestFixedSize uint32
+}
+
+func (r registry) String() string {
+	return r.s
 }
 
 // get returns a new message by type.
@@ -2085,6 +2414,7 @@ func calculateSize(m message) uint32 {
 }
 
 func init() {
+	msgDotLRegistry.s = "9P2000.L registry"
 	msgDotLRegistry.register(msgRlerror, func() message { return &rlerror{} })
 	msgDotLRegistry.register(msgTstatfs, func() message { return &tstatfs{} })
 	msgDotLRegistry.register(msgRstatfs, func() message { return &rstatfs{} })
@@ -2122,22 +2452,22 @@ func init() {
 	msgDotLRegistry.register(msgRunlinkat, func() message { return &runlinkat{} })
 	msgDotLRegistry.register(msgTversion, func() message { return &tversion{} })
 	msgDotLRegistry.register(msgRversion, func() message { return &rversion{} })
-	msgDotLRegistry.register(msgTauth, func() message { return &tauth{} })
-	msgDotLRegistry.register(msgRauth, func() message { return &rauth{} })
-	msgDotLRegistry.register(msgTattach, func() message { return &tattach{} })
-	msgDotLRegistry.register(msgRattach, func() message { return &rattach{} })
-	msgDotLRegistry.register(msgTflush, func() message { return &tflush{} })
-	msgDotLRegistry.register(msgRflush, func() message { return &rflush{} })
-	msgDotLRegistry.register(msgTwalk, func() message { return &twalk{} })
-	msgDotLRegistry.register(msgRwalk, func() message { return &rwalk{} })
-	msgDotLRegistry.register(msgTread, func() message { return &tread{} })
-	msgDotLRegistry.register(msgRread, func() message { return &rread{} })
-	msgDotLRegistry.register(msgTwrite, func() message { return &twrite{} })
-	msgDotLRegistry.register(msgRwrite, func() message { return &rwrite{} })
-	msgDotLRegistry.register(msgTclunk, func() message { return &tclunk{} })
-	msgDotLRegistry.register(msgRclunk, func() message { return &rclunk{} })
-	msgDotLRegistry.register(msgTremove, func() message { return &tremove{} })
-	msgDotLRegistry.register(msgRremove, func() message { return &rremove{} })
+	msgDotLRegistry.register(msgTauth, func() message { return &tlauth{} })
+	msgDotLRegistry.register(msgRauth, func() message { return &rlauth{} })
+	msgDotLRegistry.register(msgTattach, func() message { return &tlattach{} })
+	msgDotLRegistry.register(msgRattach, func() message { return &rlattach{} })
+	msgDotLRegistry.register(msgTflush, func() message { return &tlflush{} })
+	msgDotLRegistry.register(msgRflush, func() message { return &rlflush{} })
+	msgDotLRegistry.register(msgTwalk, func() message { return &tlwalk{} })
+	msgDotLRegistry.register(msgRwalk, func() message { return &rlwalk{} })
+	msgDotLRegistry.register(msgTread, func() message { return &tlread{} })
+	msgDotLRegistry.register(msgRread, func() message { return &rlread{} })
+	msgDotLRegistry.register(msgTwrite, func() message { return &tlwrite{} })
+	msgDotLRegistry.register(msgRwrite, func() message { return &rlwrite{} })
+	msgDotLRegistry.register(msgTclunk, func() message { return &tlclunk{} })
+	msgDotLRegistry.register(msgRclunk, func() message { return &rlclunk{} })
+	msgDotLRegistry.register(msgTremove, func() message { return &tlremove{} })
+	msgDotLRegistry.register(msgRremove, func() message { return &rlremove{} })
 	msgDotLRegistry.register(msgTwalkgetattr, func() message { return &twalkgetattr{} })
 	msgDotLRegistry.register(msgRwalkgetattr, func() message { return &rwalkgetattr{} })
 	msgDotLRegistry.register(msgTucreate, func() message { return &tucreate{} })
@@ -2149,6 +2479,36 @@ func init() {
 	msgDotLRegistry.register(msgTusymlink, func() message { return &tusymlink{} })
 	msgDotLRegistry.register(msgRusymlink, func() message { return &rusymlink{} })
 
+	msg9P2000Registry.s = "9P2000 registry"
+	msg9P2000Registry.register(msgRerror, func() message { return &rerror{} })
+	msg9P2000Registry.register(msgTversion, func() message { return &tversion{} })
+	msg9P2000Registry.register(msgRversion, func() message { return &rversion{} })
+	msg9P2000Registry.register(msgTauth, func() message { return &tauth{} })
+	msg9P2000Registry.register(msgRauth, func() message { return &rauth{} })
+	msg9P2000Registry.register(msgTflush, func() message { return &tflush{} })
+	msg9P2000Registry.register(msgRflush, func() message { return &rflush{} })
+	msg9P2000Registry.register(msgTattach, func() message { return &tattach{} })
+	msg9P2000Registry.register(msgRattach, func() message { return &rattach{} })
+	msg9P2000Registry.register(msgTwalk, func() message { return &twalk{} })
+	msg9P2000Registry.register(msgRwalk, func() message { return &rwalk{} })
+	msg9P2000Registry.register(msgTopen, func() message { return &topen{} })
+	msg9P2000Registry.register(msgRopen, func() message { return &ropen{} })
+	msg9P2000Registry.register(msgTcreate, func() message { return &tcreate{} })
+	msg9P2000Registry.register(msgRcreate, func() message { return &rcreate{} })
+	msg9P2000Registry.register(msgTread, func() message { return &tread{} })
+	msg9P2000Registry.register(msgRread, func() message { return &rread{} })
+	msg9P2000Registry.register(msgTwrite, func() message { return &twrite{} })
+	msg9P2000Registry.register(msgRwrite, func() message { return &rwrite{} })
+	msg9P2000Registry.register(msgTclunk, func() message { return &tclunk{} })
+	msg9P2000Registry.register(msgRclunk, func() message { return &rclunk{} })
+	msg9P2000Registry.register(msgTremove, func() message { return &tremove{} })
+	msg9P2000Registry.register(msgRremove, func() message { return &rremove{} })
+	msg9P2000Registry.register(msgTstat, func() message { return &tstat{} })
+	msg9P2000Registry.register(msgRstat, func() message { return &rstat{} })
+	msg9P2000Registry.register(msgTwstat, func() message { return &twstat{} })
+	msg9P2000Registry.register(msgRwstat, func() message { return &rwstat{} })
+
+	msgVersionRegistry.s = "version registry"
 	msgVersionRegistry.register(msgTversion, func() message { return &tversion{} })
 	msgVersionRegistry.register(msgRversion, func() message { return &rversion{} })
 }

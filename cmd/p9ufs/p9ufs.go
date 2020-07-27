@@ -63,6 +63,6 @@ func main() {
 		opts = append(opts, p9.WithServerLogger(ulog.Log))
 	}
 	// Run the server.
-	s := p9.NewServer(localfs.Attacher(*root), opts...)
+	s := p9.NewServer(localfs.Attacher(*root), nil, opts...)
 	s.Serve(serverSocket)
 }

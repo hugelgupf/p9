@@ -27,6 +27,15 @@ type Attacher interface {
 	Attach() (File, error)
 }
 
+// LegacyAttacher is provided by the server.
+type LegacyAttacher interface {
+	// Attach returns a new File.
+	//
+	// The client-side attach will be translate to a series of walks from
+	// the file returned by this Attach call.
+	Attach() (QID, LegacyFile, error)
+}
+
 // File is a set of operations corresponding to a single node.
 //
 // Note that on the server side, the server logic places constraints on
@@ -222,4 +231,100 @@ type DefaultWalkGetAttr struct{}
 // WalkGetAttr implements File.WalkGetAttr.
 func (DefaultWalkGetAttr) WalkGetAttr([]string) ([]QID, File, AttrMask, Attr, error) {
 	return nil, nil, AttrMask{}, Attr{}, linux.ENOSYS
+}
+
+// LegacyFile is a set of operations corresponding to a single node.
+//
+// Note that on the server side, the server logic places constraints on
+// concurrent operations to make things easier. This may reduce the need for
+// complex, error-prone locking and logic in the backend. These are documented
+// for each method.
+//
+// There are three different types of guarantees provided:
+//
+// none: There is no concurrency guarantee. The method may be invoked
+// concurrently with any other method on any other file.
+//
+// read: The method is guaranteed to be exclusive of any write or global
+// operation that is mutating the state of the directory tree starting at this
+// node. For example, this means creating new files, symlinks, directories or
+// renaming a directory entry (or renaming in to this target), but the method
+// may be called concurrently with other read methods.
+//
+// write: The method is guaranteed to be exclusive of any read, write or global
+// operation that is mutating the state of the directory tree starting at this
+// node, as described in read above. There may however, be other write
+// operations executing concurrently on other components in the directory tree.
+//
+// global: The method is guaranteed to be exclusive of any read, write or
+// global operation.
+type LegacyFile interface {
+	// Walk walks to the path components given in names.
+	//
+	// Walk returns QIDs in the same order that the names were passed in.
+	//
+	// An empty list of arguments should return a copy of the current file.
+	//
+	// On the server, Walk has a read concurrency guarantee.
+	Walk(names []string) ([]QID, LegacyFile, error)
+
+	// Close is called when all references are dropped on the server side,
+	// and Close should be called by the client to drop all references.
+	//
+	// For server-side implementations of Close, the error is ignored.
+	//
+	// Close must be called even when Open has not been called.
+	//
+	// On the server, Close has no concurrency guarantee.
+	Close() error
+
+	// Open must be called prior to using ReadAt, WriteAt, or Readdir. Once
+	// Open is called, some operations, such as Walk, will no longer work.
+	//
+	// On the client, Open should be called only once. The fd return is
+	// optional, and may be nil.
+	//
+	// On the server, Open has a read concurrency guarantee.  Open is
+	// guaranteed to be called only once.
+	//
+	// N.B. The server must resolve any lazy paths when open is called.
+	// After this point, read and write may be called on files with no
+	// deletion check, so resolving in the data path is not viable.
+	Open(mode Plan9OpenFlags) (QID, uint32, error)
+
+	// ReadAt reads from this file. Open must be called first.
+	//
+	// This may return io.EOF in addition to linux.Errno values.
+	//
+	// On the server, ReadAt has a read concurrency guarantee. See Open for
+	// additional requirements regarding lazy path resolution.
+	ReadAt(p []byte, offset int64) (int, error)
+
+	// WriteAt writes to this file. Open must be called first.
+	//
+	// This may return io.EOF in addition to linux.Errno values.
+	//
+	// On the server, WriteAt has a read concurrency guarantee. See Open
+	// for additional requirements regarding lazy path resolution.
+	WriteAt(p []byte, offset int64) (int, error)
+
+	// FSync syncs this node. Open must be called first.
+	//
+	// On the server, FSync has a read concurrency guarantee.
+	FSync() error
+
+	// Create creates a new regular file and opens it according to the
+	// flags given. This file is already Open.
+	//
+	// N.B. On the client, the returned file is a reference to the current
+	// file, which now represents the created file. This is not the case on
+	// the server. These semantics are very subtle and can easily lead to
+	// bugs, but are a consequence of the 9P create operation.
+	//
+	// On the server, Create has a write concurrency guarantee.
+	Create(name string, flags Plan9OpenFlags, permissions Plan9FileMode) (LegacyFile, QID, uint32, error)
+
+	Stat() (Stat, error)
+	WriteStat(s Stat) error
+	Remove() error
 }

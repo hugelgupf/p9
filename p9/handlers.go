@@ -24,9 +24,17 @@ import (
 	"github.com/hugelgupf/p9/internal/linux"
 )
 
-// newErr returns a new error message from an error.
-func newErr(err error) *rlerror {
-	return &rlerror{Error: uint32(internal.ExtractErrno(err))}
+// cs.session.newErr returns a new error message from an error.
+func (s *session) newErr(err error) message {
+	switch s.baseVersion {
+	case version9P2000L:
+		return &rlerror{Error: uint32(internal.ExtractErrno(err))}
+
+	default:
+		fallthrough
+	case version9P2000:
+		return &rerror{err: err.Error()}
+	}
 }
 
 // handler is implemented for server-handled messages.
@@ -37,7 +45,7 @@ type handler interface {
 	//
 	// This may modify the server state. The handle function must return a
 	// message which will be sent back to the client. It may be useful to
-	// use newErr to automatically extract an error message.
+	// use cs.session.newErr to automatically extract an error message.
 	handle(cs *connState) message
 }
 
@@ -73,8 +81,12 @@ func (t *tversion) handle(cs *connState) message {
 		messageSize: msize,
 	}
 	switch reqBaseVersion {
-	case version9P2000, version9P2000U:
+	case version9P2000U:
 		return unknown
+
+	case version9P2000:
+		s.baseVersion = version9P2000
+		s.msgRegistry = &msg9P2000Registry
 
 	case version9P2000L:
 		s.baseVersion = version9P2000L
@@ -131,7 +143,7 @@ func checkSafeName(name string) error {
 // handle implements handler.handle.
 func (t *tclunk) handle(cs *connState) message {
 	if !cs.session.DeleteFID(t.fid) {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	return &rclunk{}
 }
@@ -140,7 +152,7 @@ func (t *tclunk) handle(cs *connState) message {
 func (t *tremove) handle(cs *connState) message {
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -168,8 +180,14 @@ func (t *tremove) handle(cs *connState) message {
 		// Retrieve the file's proper name.
 		name := ref.parent.pathNode.nameFor(ref)
 
-		// Attempt the removal.
-		if err := ref.parent.file.UnlinkAt(name, 0); err != nil {
+		var err error
+		if ref.file != nil {
+			// Attempt the removal.
+			err = ref.parent.file.UnlinkAt(name, 0)
+		} else {
+			err = ref.legacyFile.Remove()
+		}
+		if err != nil {
 			return err
 		}
 
@@ -186,10 +204,10 @@ func (t *tremove) handle(cs *connState) message {
 	// of removing the file if permissions allow."
 	// https://swtch.com/plan9port/man/man9/remove.html
 	if !cs.session.DeleteFID(t.fid) {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rremove{}
@@ -199,14 +217,14 @@ func (t *tremove) handle(cs *connState) message {
 //
 // We don't support authentication, so this just returns ENOSYS.
 func (t *tauth) handle(cs *connState) message {
-	return newErr(linux.ENOSYS)
+	return cs.session.newErr(linux.ENOSYS)
 }
 
-// handle implements handler.handle.
-func (t *tattach) handle(cs *connState) message {
+// handle implements handler.handle for the 9P2000.L Tattach.
+func (t *tlattach) handle(cs *connState) message {
 	// Ensure no authentication fid is provided.
 	if t.Auth.Authenticationfid != noFID {
-		return newErr(linux.EINVAL)
+		return cs.session.newErr(linux.EINVAL)
 	}
 
 	// Must provide an absolute path.
@@ -220,26 +238,27 @@ func (t *tattach) handle(cs *connState) message {
 	// Do the attach on the root.
 	sf, err := cs.server.attacher.Attach()
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	qid, valid, attr, err := sf.GetAttr(AttrMaskAll)
 	if err != nil {
 		sf.Close() // Drop file.
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	if !valid.Mode {
 		sf.Close() // Drop file.
-		return newErr(linux.EINVAL)
+		return cs.session.newErr(linux.EINVAL)
 	}
 
 	// Build a transient reference.
 	root := &fidRef{
-		server:   cs.server,
-		parent:   nil,
-		file:     sf,
-		refs:     1,
-		mode:     attr.Mode.FileType(),
-		pathNode: cs.server.pathTree,
+		server:     cs.server,
+		parent:     nil,
+		file:       sf,
+		refs:       1,
+		isDir:      attr.Mode.FileType().IsDir(),
+		isOpenable: CanOpen(attr.Mode.FileType()),
+		pathNode:   cs.server.pathTree,
 	}
 	defer root.DecRef()
 
@@ -252,9 +271,70 @@ func (t *tattach) handle(cs *connState) message {
 	// We want the same traversal checks to apply on attach, so always
 	// attach at the root and use the regular walk paths.
 	names := strings.Split(t.Auth.AttachName, "/")
-	_, newRef, _, _, err := doWalk(cs, root, names, false)
+	_, newRef, err := doWalk(cs, root, names, func(from *fidRef, names []string) ([]QID, *fidRef, error) {
+		qids, newRef, _, _, err := walkOneLinux(from, names, false)
+		return qids, newRef, err
+	})
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
+	}
+	defer newRef.DecRef()
+
+	// Insert the fid.
+	cs.session.InsertFID(t.fid, newRef)
+	return &rattach{QID: qid}
+}
+
+// handle implements handler.handle.
+func (t *tattach) handle(cs *connState) message {
+	// Ensure no authentication fid is provided.
+	if t.Auth.Authenticationfid != noFID {
+		return cs.session.newErr(linux.EINVAL)
+	}
+
+	// Must provide an absolute path.
+	if path.IsAbs(t.Auth.AttachName) {
+		// Trim off the leading / if the path is absolute. We always
+		// treat attach paths as absolute and call attach with the root
+		// argument on the server file for clarity.
+		t.Auth.AttachName = t.Auth.AttachName[1:]
+	}
+
+	// Do the attach on the root.
+	qid, sf, err := cs.server.legacyAttacher.Attach()
+	if err != nil {
+		return cs.session.newErr(err)
+	}
+	s, err := sf.Stat()
+	if err != nil {
+		sf.Close() // Drop file.
+		return cs.session.newErr(err)
+	}
+
+	// Build a transient reference.
+	root := &fidRef{
+		server:     cs.server,
+		parent:     nil,
+		legacyFile: sf,
+		refs:       1,
+		isDir:      s.Mode&DMDIR == DMDIR,
+		isOpenable: true,
+		pathNode:   cs.server.pathTree,
+	}
+	defer root.DecRef()
+
+	// Attach the root?
+	if len(t.Auth.AttachName) == 0 {
+		cs.session.InsertFID(t.fid, root)
+		return &rattach{QID: qid}
+	}
+
+	// We want the same traversal checks to apply on attach, so always
+	// attach at the root and use the regular walk paths.
+	names := strings.Split(t.Auth.AttachName, "/")
+	_, newRef, err := doWalk(cs, root, names, walkOneLegacy)
+	if err != nil {
+		return cs.session.newErr(err)
 	}
 	defer newRef.DecRef()
 
@@ -275,7 +355,7 @@ func (t *tlopen) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -283,13 +363,13 @@ func (t *tlopen) handle(cs *connState) message {
 	defer ref.openedMu.Unlock()
 
 	// Has it been opened already?
-	if ref.opened || !CanOpen(ref.mode) {
-		return newErr(linux.EINVAL)
+	if ref.opened || !ref.isOpenable {
+		return cs.session.newErr(linux.EINVAL)
 	}
 
 	// Is this an attempt to open a directory as writable? Don't accept.
-	if ref.mode.IsDir() && t.Flags.Mode() != ReadOnly {
-		return newErr(linux.EINVAL)
+	if ref.isDir && t.Flags.Mode() != ReadOnly {
+		return cs.session.newErr(linux.EINVAL)
 	}
 
 	var (
@@ -297,10 +377,8 @@ func (t *tlopen) handle(cs *connState) message {
 		ioUnit uint32
 	)
 	if err := ref.safelyRead(func() (err error) {
-		// Don't allow readlink on deleted files. There is no need to
-		// check if this file is opened because symlinks cannot be
-		// opened.
-		if ref.isDeleted() || !ref.mode.IsSymlink() {
+		// Don't allow readlink on deleted files.
+		if ref.isDeleted() {
 			return linux.EINVAL
 		}
 
@@ -308,7 +386,7 @@ func (t *tlopen) handle(cs *connState) message {
 		qid, ioUnit, err = ref.file.Open(t.Flags)
 		return err
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	// Mark file as opened and set open mode.
@@ -316,6 +394,111 @@ func (t *tlopen) handle(cs *connState) message {
 	ref.openFlags = t.Flags
 
 	return &rlopen{QID: qid, IoUnit: ioUnit}
+}
+
+// handle implements handler.handle for the 9P2000 Topen.
+func (t *topen) handle(cs *connState) message {
+	// Lookup the fid.
+	ref, ok := cs.session.LookupFID(t.fid)
+	if !ok {
+		return cs.session.newErr(linux.EBADF)
+	}
+	defer ref.DecRef()
+
+	ref.openedMu.Lock()
+	defer ref.openedMu.Unlock()
+
+	// Has it been opened already?
+	if ref.opened || !ref.isOpenable {
+		return cs.session.newErr(linux.EINVAL)
+	}
+
+	// Is this an attempt to open a directory as writable? Don't accept.
+	if ref.isDir && t.mode.Mode() != OREAD && t.mode.Mode() != OEXEC {
+		return cs.session.newErr(linux.EINVAL)
+	}
+
+	var (
+		qid    QID
+		ioUnit uint32
+	)
+	if err := ref.safelyRead(func() (err error) {
+		// Has it been deleted already?
+		if ref.isDeleted() {
+			return linux.EINVAL
+		}
+
+		// Do the open.
+		qid, ioUnit, err = ref.legacyFile.Open(t.mode)
+		return err
+	}); err != nil {
+		return cs.session.newErr(err)
+	}
+
+	// Mark file as opened and set open mode.
+	ref.opened = true
+	ref.openFlags = t.mode.OpenFlags()
+
+	return &ropen{QID: qid, IoUnit: ioUnit}
+}
+
+func (t *tcreate) do(cs *connState, uid UID) (*rcreate, error) {
+	// Don't allow complex names.
+	if err := checkSafeName(t.Name); err != nil {
+		return nil, err
+	}
+
+	// Lookup the fid.
+	ref, ok := cs.session.LookupFID(t.fid)
+	if !ok {
+		return nil, linux.EBADF
+	}
+	defer ref.DecRef()
+
+	var (
+		nsf    LegacyFile
+		qid    QID
+		ioUnit uint32
+		newRef *fidRef
+	)
+	if err := ref.safelyWrite(func() (err error) {
+		// Don't allow creation from non-directories or deleted directories.
+		if ref.isDeleted() || !ref.isDir {
+			return linux.EINVAL
+		}
+
+		// Not allowed on open directories.
+		if _, opened := ref.OpenFlags(); opened {
+			return linux.EINVAL
+		}
+
+		// Do the create.
+		nsf, qid, ioUnit, err = ref.legacyFile.Create(t.Name, t.Mode, t.Permissions)
+		if err != nil {
+			return err
+		}
+
+		newRef = &fidRef{
+			server:     cs.server,
+			parent:     ref,
+			legacyFile: nsf,
+			opened:     true,
+			openFlags:  t.Mode.OpenFlags(),
+			isDir:      t.Permissions&DMDIR == DMDIR,
+			isOpenable: true,
+			pathNode:   ref.pathNode.pathNodeFor(t.Name),
+		}
+		ref.pathNode.addChild(newRef, t.Name)
+		ref.IncRef() // Acquire parent reference.
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	// Replace the fid reference.
+	cs.session.InsertFID(t.fid, newRef)
+
+	return &rcreate{ropen: ropen{QID: qid, IoUnit: ioUnit}}, nil
 }
 
 func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
@@ -339,7 +522,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 	)
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow creation from non-directories or deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -355,13 +538,14 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 		}
 
 		newRef = &fidRef{
-			server:    cs.server,
-			parent:    ref,
-			file:      nsf,
-			opened:    true,
-			openFlags: t.OpenFlags,
-			mode:      ModeRegular,
-			pathNode:  ref.pathNode.pathNodeFor(t.Name),
+			server:     cs.server,
+			parent:     ref,
+			file:       nsf,
+			opened:     true,
+			openFlags:  t.OpenFlags,
+			isDir:      false,
+			isOpenable: true,
+			pathNode:   ref.pathNode.pathNodeFor(t.Name),
 		}
 		ref.pathNode.addChild(newRef, t.Name)
 		ref.IncRef() // Acquire parent reference.
@@ -380,7 +564,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 func (t *tlcreate) handle(cs *connState) message {
 	rlcreate, err := t.do(cs, NoUID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return rlcreate
 }
@@ -389,7 +573,7 @@ func (t *tlcreate) handle(cs *connState) message {
 func (t *tsymlink) handle(cs *connState) message {
 	rsymlink, err := t.do(cs, NoUID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return rsymlink
 }
@@ -410,7 +594,7 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 	var qid QID
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow symlinks from non-directories or deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -433,26 +617,26 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 func (t *tlink) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the other fid.
 	refTarget, ok := cs.session.LookupFID(t.Target)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer refTarget.DecRef()
 
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow create links from non-directories or deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -464,7 +648,7 @@ func (t *tlink) handle(cs *connState) message {
 		// Do the link.
 		return ref.file.Link(refTarget.file, t.Name)
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rlink{}
@@ -474,30 +658,30 @@ func (t *tlink) handle(cs *connState) message {
 func (t *trenameat) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.OldName); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	if err := checkSafeName(t.NewName); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.OldDirectory)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the other fid.
 	refTarget, ok := cs.session.LookupFID(t.NewDirectory)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer refTarget.DecRef()
 
 	// Perform the rename holding the global lock.
 	if err := ref.safelyGlobal(func() (err error) {
 		// Don't allow renaming across deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() || refTarget.isDeleted() || !refTarget.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir || refTarget.isDeleted() || !refTarget.isDir {
 			return linux.EINVAL
 		}
 
@@ -520,7 +704,7 @@ func (t *trenameat) handle(cs *connState) message {
 		ref.renameChildTo(t.OldName, refTarget, t.NewName)
 		return nil
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rrenameat{}
@@ -530,19 +714,19 @@ func (t *trenameat) handle(cs *connState) message {
 func (t *tunlinkat) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow deletion from non-directories or deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -574,7 +758,7 @@ func (t *tunlinkat) handle(cs *connState) message {
 		ref.markChildDeleted(t.Name)
 		return nil
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &runlinkat{}
@@ -584,20 +768,20 @@ func (t *tunlinkat) handle(cs *connState) message {
 func (t *trename) handle(cs *connState) message {
 	// Don't allow complex names.
 	if err := checkSafeName(t.Name); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the target.
 	refTarget, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer refTarget.DecRef()
 
@@ -608,7 +792,7 @@ func (t *trename) handle(cs *connState) message {
 		}
 
 		// Don't allow renaming deleting entries, or target non-directories.
-		if ref.isDeleted() || refTarget.isDeleted() || !refTarget.mode.IsDir() {
+		if ref.isDeleted() || refTarget.isDeleted() || !refTarget.isDir {
 			return linux.EINVAL
 		}
 
@@ -638,7 +822,7 @@ func (t *trename) handle(cs *connState) message {
 		ref.parent.renameChildTo(oldName, refTarget, t.Name)
 		return nil
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rrename{}
@@ -649,7 +833,7 @@ func (t *treadlink) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -664,7 +848,7 @@ func (t *treadlink) handle(cs *connState) message {
 		target, err = ref.file.Readlink()
 		return err
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rreadlink{target}
@@ -675,13 +859,13 @@ func (t *tread) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Constrain the size of the read buffer.
 	if int(t.Count) > int(maximumLength) {
-		return newErr(linux.ENOBUFS)
+		return cs.session.newErr(linux.ENOBUFS)
 	}
 
 	var (
@@ -700,10 +884,14 @@ func (t *tread) handle(cs *connState) message {
 			return linux.EPERM
 		}
 
-		n, err = ref.file.ReadAt(data, int64(t.Offset))
+		if ref.file != nil {
+			n, err = ref.file.ReadAt(data, int64(t.Offset))
+		} else {
+			n, err = ref.legacyFile.ReadAt(data, int64(t.Offset))
+		}
 		return err
 	}); err != nil && err != io.EOF {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rread{Data: data[:n]}
@@ -714,7 +902,7 @@ func (t *twrite) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -726,15 +914,20 @@ func (t *twrite) handle(cs *connState) message {
 			return linux.EINVAL
 		}
 
+		mode := openFlags.Mode()
 		// Can it be written? Check permissions.
-		if openFlags.Mode() == ReadOnly {
+		if mode == ReadOnly || mode == ReadAndExecute {
 			return linux.EPERM
 		}
 
-		n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
+		if ref.file != nil {
+			n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
+		} else {
+			n, err = ref.legacyFile.WriteAt(t.Data, int64(t.Offset))
+		}
 		return err
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rwrite{Count: uint32(n)}
@@ -744,7 +937,7 @@ func (t *twrite) handle(cs *connState) message {
 func (t *tmknod) handle(cs *connState) message {
 	rmknod, err := t.do(cs, NoUID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return rmknod
 }
@@ -765,7 +958,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 	var qid QID
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow mknod on deleted files.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -788,7 +981,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 func (t *tmkdir) handle(cs *connState) message {
 	rmkdir, err := t.do(cs, NoUID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return rmkdir
 }
@@ -809,7 +1002,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 	var qid QID
 	if err := ref.safelyWrite(func() (err error) {
 		// Don't allow mkdir on deleted files.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -833,7 +1026,7 @@ func (t *tgetattr) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -851,7 +1044,7 @@ func (t *tgetattr) handle(cs *connState) message {
 		qid, valid, attr, err = ref.file.GetAttr(t.AttrMask)
 		return err
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rgetattr{QID: qid, Valid: valid, Attr: attr}
@@ -862,7 +1055,7 @@ func (t *tsetattr) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -878,7 +1071,7 @@ func (t *tsetattr) handle(cs *connState) message {
 		// Set the attributes.
 		return ref.file.SetAttr(t.Valid, t.SetAttr)
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rsetattr{}
@@ -889,12 +1082,12 @@ func (t *txattrwalk) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// We don't support extended attributes.
-	return newErr(linux.ENODATA)
+	return cs.session.newErr(linux.ENODATA)
 }
 
 // handle implements handler.handle.
@@ -902,12 +1095,12 @@ func (t *txattrcreate) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// We don't support extended attributes.
-	return newErr(linux.ENOSYS)
+	return cs.session.newErr(linux.ENOSYS)
 }
 
 // handle implements handler.handle.
@@ -915,14 +1108,14 @@ func (t *treaddir) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	var entries []Dirent
 	if err := ref.safelyRead(func() (err error) {
 		// Don't allow reading deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.isDir {
 			return linux.EINVAL
 		}
 
@@ -938,7 +1131,7 @@ func (t *treaddir) handle(cs *connState) message {
 		}
 		return nil
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rreaddir{Count: t.Count, Entries: entries}
@@ -949,7 +1142,7 @@ func (t *tfsync) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
@@ -962,7 +1155,7 @@ func (t *tfsync) handle(cs *connState) message {
 		// Perform the sync.
 		return ref.file.FSync()
 	}); err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rfsync{}
@@ -973,22 +1166,85 @@ func (t *tstatfs) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	st, err := ref.file.StatFS()
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 
 	return &rstatfs{st}
 }
 
-// walkOne walks zero or one path elements.
+// walkOneLegacy walks zero or one path elements in 9P2000.
 //
 // The slice passed as qids is append and returned.
-func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, AttrMask, Attr, error) {
+func walkOneLegacy(from *fidRef, names []string) ([]QID, *fidRef, error) {
+	if len(names) > 1 {
+		// We require exactly zero or one elements.
+		return nil, nil, linux.EINVAL
+	}
+	localQIDs, sf, err := from.legacyFile.Walk(names)
+	if err != nil {
+		// Error walking, don't return anything.
+		return nil, nil, err
+	}
+	var s Stat
+	if len(names) == 1 {
+		s, err = sf.Stat()
+		if err != nil {
+			// Don't leak the file.
+			sf.Close()
+			return nil, nil, err
+		}
+	}
+	if len(localQIDs) != 1 {
+		// Expected a single QID.
+		sf.Close()
+		return nil, nil, linux.EINVAL
+	}
+
+	var newRef *fidRef
+	switch len(names) {
+	case 0:
+		newRef = &fidRef{
+			server:     from.server,
+			legacyFile: sf,
+			parent:     from.parent,
+			isDir:      from.isDir,
+			isOpenable: from.isOpenable,
+			pathNode:   from.pathNode,
+
+			// For the clone case, the cloned fid must
+			// preserve the deleted property of the
+			// original fid.
+			deleted: from.deleted,
+		}
+
+	case 1:
+		// Note that we don't need to acquire a lock on any of
+		// these individual instances. That's because they are
+		// not actually addressable via a fid. They are
+		// anonymous. They exist in the tree for tracking
+		// purposes.
+		newRef = &fidRef{
+			server:     from.server,
+			legacyFile: sf,
+			parent:     from,
+			isDir:      s.Mode&DMDIR == DMDIR,
+			isOpenable: true,
+			pathNode:   from.pathNode.pathNodeFor(names[0]),
+		}
+	}
+	return localQIDs, newRef, nil
+}
+
+// walkOneLinux walks zero or one path elements in 9P2000.L.
+//
+// The slice passed as qids is append and returned.
+func walkOneLinux(from *fidRef, names []string, getattr bool) ([]QID, *fidRef, AttrMask, Attr, error) {
 	if len(names) > 1 {
 		// We require exactly zero or one elements.
 		return nil, nil, AttrMask{}, Attr{}, linux.EINVAL
@@ -1002,19 +1258,19 @@ func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, 
 	)
 	switch {
 	case getattr:
-		localQIDs, sf, valid, attr, err = from.WalkGetAttr(names)
+		localQIDs, sf, valid, attr, err = from.file.WalkGetAttr(names)
 		// Can't put fallthrough in the if because Go.
 		if err != linux.ENOSYS {
 			break
 		}
 		fallthrough
 	default:
-		localQIDs, sf, err = from.Walk(names)
+		localQIDs, sf, err = from.file.Walk(names)
 		if err != nil {
 			// No way to walk this element.
 			break
 		}
-		if getattr {
+		if getattr || len(names) == 1 {
 			_, valid, attr, err = sf.GetAttr(AttrMaskAll)
 			if err != nil {
 				// Don't leak the file.
@@ -1031,15 +1287,50 @@ func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, 
 		sf.Close()
 		return nil, nil, AttrMask{}, Attr{}, linux.EINVAL
 	}
-	return append(qids, localQIDs...), sf, valid, attr, nil
+
+	var newRef *fidRef
+	switch len(names) {
+	case 0:
+		newRef = &fidRef{
+			server:     from.server,
+			file:       sf,
+			parent:     from.parent,
+			isDir:      from.isDir,
+			isOpenable: from.isOpenable,
+			pathNode:   from.pathNode,
+
+			// For the clone case, the cloned fid must
+			// preserve the deleted property of the
+			// original fid.
+			deleted: from.deleted,
+		}
+
+	case 1:
+		// Note that we don't need to acquire a lock on any of
+		// these individual instances. That's because they are
+		// not actually addressable via a fid. They are
+		// anonymous. They exist in the tree for tracking
+		// purposes.
+		newRef = &fidRef{
+			server:     from.server,
+			file:       sf,
+			parent:     from,
+			isDir:      attr.Mode.FileType().IsDir(),
+			isOpenable: CanOpen(attr.Mode.FileType()),
+			pathNode:   from.pathNode.pathNodeFor(names[0]),
+		}
+	}
+	return localQIDs, newRef, valid, attr, nil
 }
+
+type walkOneFunc func(from *fidRef, names []string) ([]QID, *fidRef, error)
 
 // doWalk walks from a given fidRef.
 //
 // This enforces that all intermediate nodes are walkable (directories). The
 // fidRef returned (newRef) has a reference associated with it that is now
 // owned by the caller and must be handled appropriately.
-func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QID, newRef *fidRef, valid AttrMask, attr Attr, err error) {
+func doWalk(cs *connState, ref *fidRef, names []string, walkOne walkOneFunc) (qids []QID, newRef *fidRef, err error) {
 	// Check the names.
 	for _, name := range names {
 		err = checkSafeName(name)
@@ -1057,26 +1348,14 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 	// Is this an empty list? Handle specially. We don't actually need to
 	// validate anything since this is always permitted.
 	if len(names) == 0 {
-		var sf File // Temporary.
 		if err := ref.maybeParent().safelyRead(func() (err error) {
-			// Clone the single element.
-			qids, sf, valid, attr, err = walkOne(nil, ref.file, nil, getattr)
+			var localQIDs []QID
+			localQIDs, newRef, err = walkOne(ref, nil)
 			if err != nil {
 				return err
 			}
+			qids = append(qids, localQIDs...)
 
-			newRef = &fidRef{
-				server:   cs.server,
-				parent:   ref.parent,
-				file:     sf,
-				mode:     ref.mode,
-				pathNode: ref.pathNode,
-
-				// For the clone case, the cloned fid must
-				// preserve the deleted property of the
-				// original fid.
-				deleted: ref.deleted,
-			}
 			if !ref.isRoot() {
 				if !newRef.isDeleted() {
 					// Add only if a non-root node; the same node.
@@ -1088,13 +1367,13 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 			newRef.IncRef()
 			return nil
 		}); err != nil {
-			return nil, nil, AttrMask{}, Attr{}, err
+			return nil, nil, err
 		}
 
 		// Do not return the new QID.
 		//
 		// TODO: why?
-		return nil, newRef, valid, attr, nil
+		return nil, newRef, nil
 	}
 
 	// Do the walk, one element at a time.
@@ -1103,32 +1382,20 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 	for i := 0; i < len(names); i++ {
 		// We won't allow beyond past symlinks; stop here if this isn't
 		// a proper directory and we have additional paths to walk.
-		if !walkRef.mode.IsDir() {
+		if !walkRef.isDir {
 			walkRef.DecRef() // Drop walk reference; no lock required.
-			return nil, nil, AttrMask{}, Attr{}, linux.EINVAL
+			return nil, nil, linux.EINVAL
 		}
 
-		var sf File // Temporary.
 		if err := walkRef.safelyRead(func() (err error) {
 			// Pass getattr = true to walkOne since we need the file type for
 			// newRef.
-			qids, sf, valid, attr, err = walkOne(qids, walkRef.file, names[i:i+1], true)
+			localQIDs, newRef, err := walkOne(walkRef, names[i:i+1])
 			if err != nil {
 				return err
 			}
+			qids = append(qids, localQIDs...)
 
-			// Note that we don't need to acquire a lock on any of
-			// these individual instances. That's because they are
-			// not actually addressable via a fid. They are
-			// anonymous. They exist in the tree for tracking
-			// purposes.
-			newRef := &fidRef{
-				server:   cs.server,
-				parent:   walkRef,
-				file:     sf,
-				mode:     attr.Mode.FileType(),
-				pathNode: walkRef.pathNode.pathNodeFor(names[i]),
-			}
 			walkRef.pathNode.addChild(newRef, names[i])
 			// We allow our walk reference to become the new parent
 			// reference here and so we don't IncRef. Instead, just
@@ -1139,27 +1406,51 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 			return nil
 		}); err != nil {
 			walkRef.DecRef() // Drop the old walkRef.
-			return nil, nil, AttrMask{}, Attr{}, err
+			return nil, nil, err
 		}
 	}
 
 	// Success.
-	return qids, walkRef, valid, attr, nil
+	return qids, walkRef, nil
 }
 
-// handle implements handler.handle.
+// handle implements handler.handle for the 9P2000 Twalk.
 func (t *twalk) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Do the walk.
-	qids, newRef, _, _, err := doWalk(cs, ref, t.Names, false)
+	qids, newRef, err := doWalk(cs, ref, t.Names, walkOneLegacy)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
+	}
+	defer newRef.DecRef()
+
+	// Install the new fid.
+	cs.session.InsertFID(t.newFID, newRef)
+	return &rwalk{QIDs: qids}
+}
+
+// handle implements handler.handle for the 9P2000.L Twalk.
+func (t *tlwalk) handle(cs *connState) message {
+	// Lookup the fid.
+	ref, ok := cs.session.LookupFID(t.fid)
+	if !ok {
+		return cs.session.newErr(linux.EBADF)
+	}
+	defer ref.DecRef()
+
+	// Do the walk.
+	qids, newRef, err := doWalk(cs, ref, t.Names, func(from *fidRef, names []string) ([]QID, *fidRef, error) {
+		qids, newRef, _, _, err := walkOneLinux(from, names, false)
+		return qids, newRef, err
+	})
+	if err != nil {
+		return cs.session.newErr(err)
 	}
 	defer newRef.DecRef()
 
@@ -1173,14 +1464,19 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
-		return newErr(linux.EBADF)
+		return cs.session.newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
+	var valid AttrMask
+	var attr Attr
 	// Do the walk.
-	qids, newRef, valid, attr, err := doWalk(cs, ref, t.Names, true)
+	qids, newRef, err := doWalk(cs, ref, t.Names, func(from *fidRef, names []string) (qids []QID, newRef *fidRef, err error) {
+		qids, newRef, valid, attr, err = walkOneLinux(from, names, true)
+		return
+	})
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	defer newRef.DecRef()
 
@@ -1193,7 +1489,7 @@ func (t *twalkgetattr) handle(cs *connState) message {
 func (t *tucreate) handle(cs *connState) message {
 	rlcreate, err := t.tlcreate.do(cs, t.UID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return &rucreate{*rlcreate}
 }
@@ -1202,7 +1498,7 @@ func (t *tucreate) handle(cs *connState) message {
 func (t *tumkdir) handle(cs *connState) message {
 	rmkdir, err := t.tmkdir.do(cs, t.UID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return &rumkdir{*rmkdir}
 }
@@ -1211,7 +1507,7 @@ func (t *tumkdir) handle(cs *connState) message {
 func (t *tusymlink) handle(cs *connState) message {
 	rsymlink, err := t.tsymlink.do(cs, t.UID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return &rusymlink{*rsymlink}
 }
@@ -1220,7 +1516,7 @@ func (t *tusymlink) handle(cs *connState) message {
 func (t *tumknod) handle(cs *connState) message {
 	rmknod, err := t.tmknod.do(cs, t.UID)
 	if err != nil {
-		return newErr(err)
+		return cs.session.newErr(err)
 	}
 	return &rumknod{*rmknod}
 }

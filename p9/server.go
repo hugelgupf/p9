@@ -31,6 +31,9 @@ type Server struct {
 	// attacher provides the attach function.
 	attacher Attacher
 
+	// legacyAttacher provides the attach function.
+	legacyAttacher LegacyAttacher
+
 	// pathTree is the full set of paths opened on this server.
 	//
 	// These may be across different connections, but rename operations
@@ -59,11 +62,12 @@ func WithServerLogger(l ulog.Logger) ServerOpt {
 }
 
 // NewServer returns a new server.
-func NewServer(attacher Attacher, o ...ServerOpt) *Server {
+func NewServer(attacher Attacher, legacyAttacher LegacyAttacher, o ...ServerOpt) *Server {
 	s := &Server{
-		attacher: attacher,
-		pathTree: newPathNode(),
-		log:      ulog.Null,
+		attacher:       attacher,
+		legacyAttacher: legacyAttacher,
+		pathTree:       newPathNode(),
+		log:            ulog.Null,
 	}
 	for _, opt := range o {
 		opt(s)
@@ -133,6 +137,9 @@ type fidRef struct {
 	// file is the associated File.
 	file File
 
+	// legacyFile is an associated LegacyFile.
+	legacyFile LegacyFile
+
 	// refs is an active refence count.
 	//
 	// The node above will be closed only when refs reaches zero.
@@ -146,11 +153,8 @@ type fidRef struct {
 	// This is updated in handlers.go.
 	opened bool
 
-	// mode is the fidRef's mode from the walk. Only the type bits are
-	// valid, the permissions may change. This is used to sanity check
-	// operations on this element, and prevent walks across
-	// non-directories.
-	mode FileMode
+	isDir      bool
+	isOpenable bool
 
 	// openFlags is the mode used in the open.
 	//
@@ -193,10 +197,19 @@ func (f *fidRef) IncRef() {
 	atomic.AddInt64(&f.refs, 1)
 }
 
+func (f *fidRef) Close() {
+	if f.file != nil {
+		f.file.Close()
+	}
+	if f.legacyFile != nil {
+		f.legacyFile.Close()
+	}
+}
+
 // DecRef should be called when you're finished with a fid.
 func (f *fidRef) DecRef() {
 	if atomic.AddInt64(&f.refs, -1) == 0 {
-		f.file.Close()
+		f.Close()
 
 		// Drop the parent reference.
 		//
@@ -222,7 +235,7 @@ func (s *session) stop() {
 	// any remaining FIDs.
 	for fid, fidRef := range s.fids {
 		delete(s.fids, fid)
-		fidRef.file.Close()
+		fidRef.Close()
 	}
 }
 
@@ -464,7 +477,7 @@ func (cs *connState) handleRequest(s *session) {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
 		cs.sendMu.Lock()
-		err := send(cs.server.log, cs.r, tag, newErr(err))
+		err := send(cs.server.log, cs.r, tag, s.newErr(err))
 		cs.sendMu.Unlock()
 		cs.sendDone <- err
 		return
@@ -490,7 +503,7 @@ func (cs *connState) handleRequest(s *session) {
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
-			r = newErr(linux.EFAULT)
+			r = s.newErr(linux.EFAULT)
 		}
 
 		// Clear the tag before sending. That's because as soon as this
@@ -509,7 +522,7 @@ func (cs *connState) handleRequest(s *session) {
 		r = handler.handle(cs)
 	} else {
 		// Produce an ENOSYS error.
-		r = newErr(linux.ENOSYS)
+		r = s.newErr(linux.ENOSYS)
 	}
 	s.msgRegistry.put(m)
 	m = nil // 'm' should not be touched after this point.
