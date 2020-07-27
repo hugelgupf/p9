@@ -76,7 +76,7 @@ func (t *tversion) encode(b *buffer) {
 	b.WriteString(t.Version)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tversion) typ() msgType {
 	return msgTversion
 }
@@ -107,7 +107,7 @@ func (r *rversion) encode(b *buffer) {
 	b.WriteString(r.Version)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rversion) typ() msgType {
 	return msgRversion
 }
@@ -133,7 +133,7 @@ func (t *tflush) encode(b *buffer) {
 	b.WriteTag(t.OldTag)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tflush) typ() msgType {
 	return msgTflush
 }
@@ -155,7 +155,7 @@ func (*rflush) decode(b *buffer) {
 func (*rflush) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rflush) typ() msgType {
 	return msgRflush
 }
@@ -198,7 +198,7 @@ func (t *twalk) encode(b *buffer) {
 	}
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*twalk) typ() msgType {
 	return msgTwalk
 }
@@ -233,7 +233,7 @@ func (r *rwalk) encode(b *buffer) {
 	}
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rwalk) typ() msgType {
 	return msgRwalk
 }
@@ -259,7 +259,7 @@ func (t *tclunk) encode(b *buffer) {
 	b.WriteFID(t.fid)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tclunk) typ() msgType {
 	return msgTclunk
 }
@@ -280,7 +280,7 @@ func (*rclunk) decode(b *buffer) {
 func (*rclunk) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rclunk) typ() msgType {
 	return msgRclunk
 }
@@ -306,7 +306,7 @@ func (t *tremove) encode(b *buffer) {
 	b.WriteFID(t.fid)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tremove) typ() msgType {
 	return msgTremove
 }
@@ -328,7 +328,7 @@ func (*rremove) decode(b *buffer) {
 func (*rremove) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rremove) typ() msgType {
 	return msgRremove
 }
@@ -355,7 +355,7 @@ func (r *rlerror) encode(b *buffer) {
 	b.Write32(r.Error)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rlerror) typ() msgType {
 	return msgRlerror
 }
@@ -396,7 +396,7 @@ func (t *tauth) encode(b *buffer) {
 	b.WriteUID(t.UID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tauth) typ() msgType {
 	return msgTauth
 }
@@ -413,7 +413,7 @@ type rauth struct {
 	QID
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rauth) typ() msgType {
 	return msgRauth
 }
@@ -446,7 +446,7 @@ func (t *tattach) encode(b *buffer) {
 	t.Auth.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tattach) typ() msgType {
 	return msgTattach
 }
@@ -461,7 +461,7 @@ type rattach struct {
 	QID
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rattach) typ() msgType {
 	return msgRattach
 }
@@ -492,7 +492,7 @@ func (t *tlopen) encode(b *buffer) {
 	b.WriteOpenFlags(t.Flags)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tlopen) typ() msgType {
 	return msgTlopen
 }
@@ -523,7 +523,7 @@ func (r *rlopen) encode(b *buffer) {
 	b.Write32(r.IoUnit)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rlopen) typ() msgType {
 	return msgRlopen
 }
@@ -574,7 +574,7 @@ func (t *tlcreate) encode(b *buffer) {
 	b.WriteGID(t.GID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tlcreate) typ() msgType {
 	return msgTlcreate
 }
@@ -591,7 +591,7 @@ type rlcreate struct {
 	rlopen
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rlcreate) typ() msgType {
 	return msgRlcreate
 }
@@ -632,7 +632,7 @@ func (t *tsymlink) encode(b *buffer) {
 	b.WriteGID(t.GID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tsymlink) typ() msgType {
 	return msgTsymlink
 }
@@ -658,7 +658,7 @@ func (r *rsymlink) encode(b *buffer) {
 	r.QID.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rsymlink) typ() msgType {
 	return msgRsymlink
 }
@@ -694,7 +694,7 @@ func (t *tlink) encode(b *buffer) {
 	b.WriteString(t.Name)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tlink) typ() msgType {
 	return msgTlink
 }
@@ -708,7 +708,7 @@ func (t *tlink) String() string {
 type rlink struct {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rlink) typ() msgType {
 	return msgRlink
 }
@@ -757,7 +757,7 @@ func (t *trenameat) encode(b *buffer) {
 	b.WriteString(t.NewName)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*trenameat) typ() msgType {
 	return msgTrenameat
 }
@@ -779,7 +779,7 @@ func (*rrenameat) decode(b *buffer) {
 func (*rrenameat) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rrenameat) typ() msgType {
 	return msgRrenameat
 }
@@ -815,7 +815,7 @@ func (t *tunlinkat) encode(b *buffer) {
 	b.Write32(t.Flags)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tunlinkat) typ() msgType {
 	return msgTunlinkat
 }
@@ -837,7 +837,7 @@ func (*runlinkat) decode(b *buffer) {
 func (*runlinkat) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*runlinkat) typ() msgType {
 	return msgRunlinkat
 }
@@ -873,7 +873,7 @@ func (t *trename) encode(b *buffer) {
 	b.WriteString(t.Name)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*trename) typ() msgType {
 	return msgTrename
 }
@@ -895,7 +895,7 @@ func (*rrename) decode(b *buffer) {
 func (*rrename) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rrename) typ() msgType {
 	return msgRrename
 }
@@ -921,7 +921,7 @@ func (t *treadlink) encode(b *buffer) {
 	b.WriteFID(t.fid)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*treadlink) typ() msgType {
 	return msgTreadlink
 }
@@ -947,7 +947,7 @@ func (r *rreadlink) encode(b *buffer) {
 	b.WriteString(r.Target)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rreadlink) typ() msgType {
 	return msgRreadlink
 }
@@ -983,7 +983,7 @@ func (t *tread) encode(b *buffer) {
 	b.Write32(t.Count)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tread) typ() msgType {
 	return msgTread
 }
@@ -1016,7 +1016,7 @@ func (r *rread) encode(b *buffer) {
 	b.Write32(uint32(len(r.Data)))
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rread) typ() msgType {
 	return msgRread
 }
@@ -1072,7 +1072,7 @@ func (t *twrite) encode(b *buffer) {
 	b.Write32(uint32(len(t.Data)))
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*twrite) typ() msgType {
 	return msgTwrite
 }
@@ -1113,7 +1113,7 @@ func (r *rwrite) encode(b *buffer) {
 	b.Write32(r.Count)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rwrite) typ() msgType {
 	return msgRwrite
 }
@@ -1164,7 +1164,7 @@ func (t *tmknod) encode(b *buffer) {
 	b.WriteGID(t.GID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tmknod) typ() msgType {
 	return msgTmknod
 }
@@ -1190,7 +1190,7 @@ func (r *rmknod) encode(b *buffer) {
 	r.QID.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rmknod) typ() msgType {
 	return msgRmknod
 }
@@ -1231,7 +1231,7 @@ func (t *tmkdir) encode(b *buffer) {
 	b.WriteGID(t.GID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tmkdir) typ() msgType {
 	return msgTmkdir
 }
@@ -1257,7 +1257,7 @@ func (r *rmkdir) encode(b *buffer) {
 	r.QID.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rmkdir) typ() msgType {
 	return msgRmkdir
 }
@@ -1288,7 +1288,7 @@ func (t *tgetattr) encode(b *buffer) {
 	t.AttrMask.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tgetattr) typ() msgType {
 	return msgTgetattr
 }
@@ -1324,7 +1324,7 @@ func (r *rgetattr) encode(b *buffer) {
 	r.Attr.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rgetattr) typ() msgType {
 	return msgRgetattr
 }
@@ -1360,7 +1360,7 @@ func (t *tsetattr) encode(b *buffer) {
 	t.SetAttr.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tsetattr) typ() msgType {
 	return msgTsetattr
 }
@@ -1382,7 +1382,7 @@ func (*rsetattr) decode(b *buffer) {
 func (*rsetattr) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rsetattr) typ() msgType {
 	return msgRsetattr
 }
@@ -1418,7 +1418,7 @@ func (t *txattrwalk) encode(b *buffer) {
 	b.WriteString(t.Name)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*txattrwalk) typ() msgType {
 	return msgTxattrwalk
 }
@@ -1444,7 +1444,7 @@ func (r *rxattrwalk) encode(b *buffer) {
 	b.Write64(r.Size)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rxattrwalk) typ() msgType {
 	return msgRxattrwalk
 }
@@ -1488,7 +1488,7 @@ func (t *txattrcreate) encode(b *buffer) {
 	b.Write32(t.Flags)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*txattrcreate) typ() msgType {
 	return msgTxattrcreate
 }
@@ -1510,7 +1510,7 @@ func (r *rxattrcreate) decode(b *buffer) {
 func (r *rxattrcreate) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rxattrcreate) typ() msgType {
 	return msgRxattrcreate
 }
@@ -1546,7 +1546,7 @@ func (t *treaddir) encode(b *buffer) {
 	b.Write32(t.Count)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*treaddir) typ() msgType {
 	return msgTreaddir
 }
@@ -1606,7 +1606,7 @@ func (r *rreaddir) encode(b *buffer) {
 	b.Write32(uint32(r.Count))
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rreaddir) typ() msgType {
 	return msgRreaddir
 }
@@ -1647,7 +1647,7 @@ func (t *tfsync) encode(b *buffer) {
 	b.WriteFID(t.fid)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tfsync) typ() msgType {
 	return msgTfsync
 }
@@ -1669,7 +1669,7 @@ func (*rfsync) decode(b *buffer) {
 func (*rfsync) encode(b *buffer) {
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rfsync) typ() msgType {
 	return msgRfsync
 }
@@ -1695,7 +1695,7 @@ func (t *tstatfs) encode(b *buffer) {
 	b.WriteFID(t.fid)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*tstatfs) typ() msgType {
 	return msgTstatfs
 }
@@ -1721,7 +1721,7 @@ func (r *rstatfs) encode(b *buffer) {
 	r.FSStat.encode(b)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rstatfs) typ() msgType {
 	return msgRstatfs
 }
@@ -1764,7 +1764,7 @@ func (t *twalkgetattr) encode(b *buffer) {
 	}
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*twalkgetattr) typ() msgType {
 	return msgTwalkgetattr
 }
@@ -1809,7 +1809,7 @@ func (r *rwalkgetattr) encode(b *buffer) {
 	}
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rwalkgetattr) typ() msgType {
 	return msgRwalkgetattr
 }
@@ -1839,7 +1839,7 @@ func (t *tucreate) encode(b *buffer) {
 	b.WriteUID(t.UID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (t *tucreate) typ() msgType {
 	return msgTucreate
 }
@@ -1854,7 +1854,7 @@ type rucreate struct {
 	rlcreate
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rucreate) typ() msgType {
 	return msgRucreate
 }
@@ -1884,7 +1884,7 @@ func (t *tumkdir) encode(b *buffer) {
 	b.WriteUID(t.UID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (t *tumkdir) typ() msgType {
 	return msgTumkdir
 }
@@ -1899,7 +1899,7 @@ type rumkdir struct {
 	rmkdir
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rumkdir) typ() msgType {
 	return msgRumkdir
 }
@@ -1929,7 +1929,7 @@ func (t *tumknod) encode(b *buffer) {
 	b.WriteUID(t.UID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (t *tumknod) typ() msgType {
 	return msgTumknod
 }
@@ -1944,7 +1944,7 @@ type rumknod struct {
 	rmknod
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rumknod) typ() msgType {
 	return msgRumknod
 }
@@ -1974,7 +1974,7 @@ func (t *tusymlink) encode(b *buffer) {
 	b.WriteUID(t.UID)
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (t *tusymlink) typ() msgType {
 	return msgTusymlink
 }
@@ -1989,7 +1989,7 @@ type rusymlink struct {
 	rsymlink
 }
 
-// Type implements message.Type.
+// typ implements message.typ.
 func (*rusymlink) typ() msgType {
 	return msgRusymlink
 }
