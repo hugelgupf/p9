@@ -120,6 +120,9 @@ type session struct {
 
 	// recvOkay indicates that a receive may start.
 	recvOkay chan bool
+
+	// msgRegistry is the appropriate registry of messages.
+	msgRegistry *registry
 }
 
 // fidRef wraps a node and tracks references.
@@ -197,15 +200,29 @@ func (f *fidRef) DecRef() {
 
 		// Drop the parent reference.
 		//
-		// Since this fidRef is guaranteed to be non-discoverable when
-		// the references reach zero, we don't need to worry about
-		// clearing the parent.
+		// NOTE(this is horseshit, because we are not guaranteed that
+		// the client clunked every FID): Since this fidRef is
+		// guaranteed to be non-discoverable when the references reach
+		// zero, we don't need to worry about clearing the parent.
 		if f.parent != nil {
 			// If we've been previously deleted, this removing this
 			// ref is a no-op. That's expected.
 			f.parent.pathNode.removeChild(f)
 			f.parent.DecRef()
 		}
+	}
+}
+
+func (s *session) stop() {
+	close(s.recvOkay)
+
+	s.fidMu.Lock()
+	defer s.fidMu.Unlock()
+	// Because we cannot be sure that the client clunked every FID, close
+	// any remaining FIDs.
+	for fid, fidRef := range s.fids {
+		delete(s.fids, fid)
+		fidRef.file.Close()
 	}
 }
 
@@ -417,23 +434,30 @@ func (s *session) WaitTag(t tag) {
 //
 // The recvDone channel is signaled when recv is done (with a error if
 // necessary). The sendDone channel is signaled with the result of the send.
-func (cs *connState) handleRequest() {
-	messageSize := atomic.LoadUint32(&cs.session.messageSize)
+func (cs *connState) handleRequest(s *session) {
+	messageSize := atomic.LoadUint32(&s.messageSize)
 	if messageSize == 0 {
 		// Default or not yet negotiated.
 		messageSize = maximumLength
 	}
 
 	// Receive a message.
-	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgDotLRegistry.get)
+	tag, m, err := recv(cs.server.log, cs.t, messageSize, s.msgRegistry.get)
 	if errSocket, ok := err.(ConnError); ok {
 		// Connection problem; stop serving.
 		cs.recvDone <- errSocket.error
 		return
 	}
 
-	// Signal receive is done.
-	cs.recvDone <- nil
+	// Defer recvDone so that we can switch out the session, if necessary.
+	if _, ok := m.(*tversion); !ok {
+		// Signal receive is done, so that another goroutine to start
+		// receiving messages can be started.
+		cs.recvDone <- nil
+	} else {
+		// Wait until after we've decided what to send back.
+		defer func() { cs.recvDone <- nil }()
+	}
 
 	// Deal with other errors.
 	if err != nil && err != io.EOF {
@@ -447,7 +471,7 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Try to start the tag.
-	if !cs.session.StartTag(tag) {
+	if !s.StartTag(tag) {
 		// Nothing we can do at this point; client is behaving badly.
 		cs.sendDone <- ErrNoValidMessage
 		return
@@ -472,7 +496,7 @@ func (cs *connState) handleRequest() {
 		// Clear the tag before sending. That's because as soon as this
 		// hits the wire, the client can legally send another message
 		// with the same tag.
-		cs.session.ClearTag(tag)
+		s.ClearTag(tag)
 
 		// Send back the result.
 		cs.sendMu.Lock()
@@ -487,28 +511,21 @@ func (cs *connState) handleRequest() {
 		// Produce an ENOSYS error.
 		r = newErr(linux.ENOSYS)
 	}
-	msgDotLRegistry.put(m)
+	s.msgRegistry.put(m)
 	m = nil // 'm' should not be touched after this point.
 }
 
-func (cs *connState) handleRequests() {
-	for range cs.session.recvOkay {
-		cs.handleRequest()
+func (cs *connState) handleRequests(s *session) {
+	for range s.recvOkay {
+		cs.handleRequest(s)
 	}
 }
 
 func (cs *connState) stop() {
-	// Close all channels.
-	close(cs.session.recvOkay)
 	close(cs.recvDone)
 	close(cs.sendDone)
 
-	for _, fidRef := range cs.session.fids {
-		// Drop final reference in the fid table. Note this should
-		// always close the file, since we've ensured that there are no
-		// handlers running via the wait for Pending => 0 below.
-		fidRef.DecRef()
-	}
+	cs.session.stop()
 
 	// Ensure the connection is closed.
 	cs.r.Close()
@@ -520,10 +537,18 @@ func (cs *connState) service() error {
 	// Pending is the number of handlers that have finished receiving but
 	// not finished processing requests. These must be waiting on properly
 	// below. See the next comment for an explanation of the loop.
-	pending := 0
+	pending := 1
+
+	startingSession := &session{
+		fids:        make(map[fid]*fidRef),
+		tags:        make(map[tag]chan struct{}),
+		recvOkay:    make(chan bool),
+		msgRegistry: &msgVersionRegistry,
+	}
+	cs.session = startingSession
 
 	// Start the first request handler.
-	go cs.handleRequests() // S/R-SAFE: Irrelevant.
+	go cs.handleRequests(startingSession) // S/R-SAFE: Irrelevant.
 	cs.session.recvOkay <- true
 
 	// We loop and make sure there's always one goroutine waiting for a new
@@ -548,7 +573,7 @@ func (cs *connState) service() error {
 			select {
 			case cs.session.recvOkay <- true:
 			default:
-				go cs.handleRequests() // S/R-SAFE: Irrelevant.
+				go cs.handleRequests(cs.session) // S/R-SAFE: Irrelevant.
 				cs.session.recvOkay <- true
 			}
 
