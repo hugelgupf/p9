@@ -17,7 +17,6 @@ package p9
 import (
 	"testing"
 
-	"github.com/hugelgupf/p9/internal/linux"
 	"github.com/u-root/u-root/pkg/ulog/ulogtest"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -45,23 +44,45 @@ func TestVersion(t *testing.T) {
 		t.Fatalf("got %v, expected nil", err)
 	}
 
+	want := rversion{
+		Version: "unknown",
+		MSize:   0,
+	}
 	// Check a bogus version string.
-	if err := c.sendRecv(&tversion{Version: "notokay", MSize: 1024 * 1024}, &rversion{}); err != linux.EINVAL {
-		t.Errorf("got %v expected %v", err, linux.EINVAL)
+	var r rversion
+	if err := c.sendRecv(&tversion{Version: "notokay", MSize: 1024 * 1024}, &r); err != nil {
+		t.Errorf("err %v", err)
+	}
+	if r != want {
+		t.Errorf("got %v, want %v", r, want)
 	}
 
 	// Check a bogus version number.
-	if err := c.sendRecv(&tversion{Version: "9P1000.L", MSize: 1024 * 1024}, &rversion{}); err != linux.EINVAL {
-		t.Errorf("got %v expected %v", err, linux.EINVAL)
+	if err := c.sendRecv(&tversion{Version: "9P1000.L", MSize: 1024 * 1024}, &r); err != nil {
+		t.Errorf("err %v", err)
 	}
-
-	// Check a too high version number.
-	if err := c.sendRecv(&tversion{Version: versionString(highestSupportedVersion + 1), MSize: 1024 * 1024}, &rversion{}); err != linux.EAGAIN {
-		t.Errorf("got %v expected %v", err, linux.EAGAIN)
+	if r != want {
+		t.Errorf("got %v, want %v", r, want)
 	}
 
 	// Check an invalid MSize.
-	if err := c.sendRecv(&tversion{Version: versionString(highestSupportedVersion), MSize: 0}, &rversion{}); err != linux.EINVAL {
-		t.Errorf("got %v expected %v", err, linux.EINVAL)
+	if err := c.sendRecv(&tversion{Version: versionString(version9P2000L, highestSupportedVersion), MSize: 0}, &r); err != nil {
+		t.Errorf("err %v", err)
 	}
+	if r != want {
+		t.Errorf("got %v, want %v", r, want)
+	}
+
+	want = rversion{
+		Version: versionString(version9P2000L, highestSupportedVersion),
+		MSize:   1024 * 1024,
+	}
+	// Check a too high version number.
+	if err := c.sendRecv(&tversion{Version: versionString(version9P2000L, highestSupportedVersion+1), MSize: 1024 * 1024}, &r); err != nil {
+		t.Errorf("err %v", err)
+	}
+	if r != want {
+		t.Errorf("got %v, want %v", r, want)
+	}
+
 }

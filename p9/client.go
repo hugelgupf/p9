@@ -126,18 +126,6 @@ func WithMessageSize(m uint32) ClientOpt {
 	}
 }
 
-// WithVersion overrides the default requested version.
-func WithVersion(version string) ClientOpt {
-	return func(c *Client) error {
-		requested, ok := parseVersion(version)
-		if !ok {
-			return ErrBadVersionString
-		}
-		c.version = requested
-		return nil
-	}
-}
-
 // WithClientLogger overrides the default logger for the client.
 func WithClientLogger(l ulog.Logger) ClientOpt {
 	return func(c *Client) error {
@@ -185,7 +173,7 @@ func NewClient(conn io.ReadWriteCloser, o ...ClientOpt) (*Client, error) {
 	requested := c.version
 	for {
 		rversion := rversion{}
-		err := c.sendRecv(&tversion{Version: versionString(requested), MSize: c.messageSize}, &rversion)
+		err := c.sendRecv(&tversion{Version: versionString(version9P2000L, requested), MSize: c.messageSize}, &rversion)
 
 		// The server told us to try again with a lower version.
 		if err == linux.EAGAIN {
@@ -202,10 +190,14 @@ func NewClient(conn io.ReadWriteCloser, o ...ClientOpt) (*Client, error) {
 		}
 
 		// Parse the version.
-		version, ok := parseVersion(rversion.Version)
+		baseVersion, version, ok := parseVersion(rversion.Version)
 		if !ok {
 			// The server gave us a bad version. We return a generically worrisome error.
 			log.Printf("server returned bad version string %q", rversion.Version)
+			return nil, ErrBadVersionString
+		}
+		if baseVersion != version9P2000L {
+			log.Printf("server returned unsupported base version %q (version %q)", baseVersion, rversion.Version)
 			return nil, ErrBadVersionString
 		}
 		c.version = version

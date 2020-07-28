@@ -44,28 +44,58 @@ type handler interface {
 
 // handle implements handler.handle.
 func (t *tversion) handle(cs *connState) message {
+	// "If the server does not understand the client's version string, it
+	// should respond with an Rversion message (not Rerror) with the
+	// version string the 7 characters "unknown"".
+	//
+	// - 9P2000 spec.
+	//
+	// Makes sense, since there are two different kinds of errors depending on the version.
+	unknown := &rversion{
+		MSize:   0,
+		Version: "unknown",
+	}
 	if t.MSize == 0 {
-		return newErr(linux.EINVAL)
+		return unknown
 	}
+	msize := t.MSize
 	if t.MSize > maximumLength {
-		return newErr(linux.EINVAL)
+		msize = maximumLength
 	}
-	atomic.StoreUint32(&cs.messageSize, t.MSize)
-	requested, ok := parseVersion(t.Version)
+
+	reqBaseVersion, reqVersion, ok := parseVersion(t.Version)
 	if !ok {
-		return newErr(linux.EINVAL)
+		return unknown
 	}
-	// The server cannot support newer versions that it doesn't know about.  In this
-	// case we return EAGAIN to tell the client to try again with a lower version.
-	if requested > highestSupportedVersion {
-		return newErr(linux.EAGAIN)
+	var baseVersion baseVersion
+	var version uint32
+
+	switch reqBaseVersion {
+	case version9P2000, version9P2000U:
+		return unknown
+
+	case version9P2000L:
+		baseVersion = reqBaseVersion
+		// The server cannot support newer versions that it doesn't know about.  In this
+		// case we return EAGAIN to tell the client to try again with a lower version.
+		if reqVersion > highestSupportedVersion {
+			version = highestSupportedVersion
+		} else {
+			version = reqVersion
+		}
 	}
+
 	// From Tversion(9P): "The server may respond with the client’s version
 	// string, or a version string identifying an earlier defined protocol version".
-	atomic.StoreUint32(&cs.version, requested)
+	atomic.StoreUint32(&cs.messageSize, msize)
+	atomic.StoreUint32(&cs.version, version)
+	// This is not thread-safe. We're changing this into sessions anyway,
+	// so who cares.
+	cs.baseVersion = baseVersion
+
 	return &rversion{
-		MSize:   t.MSize,
-		Version: t.Version,
+		MSize:   msize,
+		Version: versionString(baseVersion, version),
 	}
 }
 
