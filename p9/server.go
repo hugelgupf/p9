@@ -100,6 +100,9 @@ type connState struct {
 	// do automatic splitting of messages.
 	messageSize uint32
 
+	// baseVersion is the version of 9P protocol.
+	baseVersion baseVersion
+
 	// version is the agreed upon version X of 9P2000.L.Google.X.
 	// version 0 implies 9P2000.L.
 	version uint32
