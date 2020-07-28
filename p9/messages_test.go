@@ -386,8 +386,8 @@ func TestEncodeDecode(t *testing.T) {
 }
 
 func TestMessageStrings(t *testing.T) {
-	for typ := range msgRegistry.factories {
-		entry := &msgRegistry.factories[typ]
+	for typ := range msgDotLRegistry.factories {
+		entry := &msgDotLRegistry.factories[typ]
 		if entry.create != nil {
 			name := fmt.Sprintf("%+v", typ)
 			t.Run(name, func(t *testing.T) {
@@ -414,48 +414,48 @@ func TestRegisterDuplicate(t *testing.T) {
 	}()
 
 	// Register a duplicate.
-	msgRegistry.register(msgRlerror, func() message { return &rlerror{} })
+	msgDotLRegistry.register(msgRlerror, func() message { return &rlerror{} })
 }
 
 func TestMaxMessageType(t *testing.T) {
-	if _, err := msgRegistry.get(0, 255); err == nil {
+	if _, err := msgDotLRegistry.get(0, 255); err == nil {
 		t.Fail()
 	}
 }
 
 func TestMsgCache(t *testing.T) {
 	// Cache starts empty.
-	if got, want := len(msgRegistry.factories[msgRlerror].cache), 0; got != want {
+	if got, want := len(msgDotLRegistry.factories[msgRlerror].cache), 0; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 
 	// Message can be created with an empty cache.
-	msg, err := msgRegistry.get(0, msgRlerror)
+	msg, err := msgDotLRegistry.get(0, msgRlerror)
 	if err != nil {
-		t.Errorf("msgRegistry.get(): %v", err)
+		t.Errorf("msgDotLRegistry.get(): %v", err)
 	}
-	if got, want := len(msgRegistry.factories[msgRlerror].cache), 0; got != want {
+	if got, want := len(msgDotLRegistry.factories[msgRlerror].cache), 0; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 
 	// Check that message is added to the cache when returned.
-	msgRegistry.put(msg)
-	if got, want := len(msgRegistry.factories[msgRlerror].cache), 1; got != want {
+	msgDotLRegistry.put(msg)
+	if got, want := len(msgDotLRegistry.factories[msgRlerror].cache), 1; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 
 	// Check that returned message is reused.
-	if got, err := msgRegistry.get(0, msgRlerror); err != nil {
-		t.Errorf("msgRegistry.get(): %v", err)
+	if got, err := msgDotLRegistry.get(0, msgRlerror); err != nil {
+		t.Errorf("msgDotLRegistry.get(): %v", err)
 	} else if msg != got {
 		t.Errorf("Message not reused, got: %d, want: %d", got, msg)
 	}
 
 	// Check that cache doesn't grow beyond max size.
 	for i := 0; i < maxCacheSize+1; i++ {
-		msgRegistry.put(&rlerror{})
+		msgDotLRegistry.put(&rlerror{})
 	}
-	if got, want := len(msgRegistry.factories[msgRlerror].cache), maxCacheSize; got != want {
+	if got, want := len(msgDotLRegistry.factories[msgRlerror].cache), maxCacheSize; got != want {
 		t.Errorf("Wrong cache size, got: %d, want: %d", got, want)
 	}
 }

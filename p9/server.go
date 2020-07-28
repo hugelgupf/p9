@@ -420,7 +420,7 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Receive a message.
-	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgRegistry.get)
+	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgDotLRegistry.get)
 	if errSocket, ok := err.(ConnError); ok {
 		// Connection problem; stop serving.
 		cs.recvDone <- errSocket.error
@@ -482,7 +482,7 @@ func (cs *connState) handleRequest() {
 		// Produce an ENOSYS error.
 		r = newErr(linux.ENOSYS)
 	}
-	msgRegistry.put(m)
+	msgDotLRegistry.put(m)
 	m = nil // 'm' should not be touched after this point.
 }
 

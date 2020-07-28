@@ -51,7 +51,7 @@ func DISABLEDTestRecvClosed(t *testing.T) {
 	client.Close()
 
 	l := ulogtest.Logger{TB: t}
-	_, _, err := recv(l, server, maximumLength, msgRegistry.get)
+	_, _, err := recv(l, server, maximumLength, msgDotLRegistry.get)
 	if err == nil {
 		t.Fatalf("got err nil expected non-nil")
 	}
@@ -77,7 +77,7 @@ func DISABLEDTestSendClosed(t *testing.T) {
 }
 
 func init() {
-	msgRegistry.register(msgTypeBadDecode, func() message { return &badDecode{} })
+	msgDotLRegistry.register(msgTypeBadDecode, func() message { return &badDecode{} })
 }
 
 func TestSendAndRecv(t *testing.T) {
@@ -124,7 +124,7 @@ func TestSendAndRecv(t *testing.T) {
 				defer func() {
 					fin <- struct{}{}
 				}()
-				tagg, m, err := recv(l, server, maximumLength, msgRegistry.get)
+				tagg, m, err := recv(l, server, maximumLength, msgDotLRegistry.get)
 				if (err != nil) != tt.wantErr {
 					t.Errorf("recv() error = %v, wantRecvErr %v", err, tt.wantErr)
 					return
