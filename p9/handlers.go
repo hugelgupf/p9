@@ -87,11 +87,11 @@ func (t *tversion) handle(cs *connState) message {
 
 	// From Tversion(9P): "The server may respond with the client’s version
 	// string, or a version string identifying an earlier defined protocol version".
-	atomic.StoreUint32(&cs.messageSize, msize)
-	atomic.StoreUint32(&cs.version, version)
-	// This is not thread-safe. We're changing this into sessions anyway,
-	// so who cares.
-	cs.baseVersion = baseVersion
+	atomic.StoreUint32(&cs.session.messageSize, msize)
+	atomic.StoreUint32(&cs.session.version, version)
+	// This is not thread-safe. Soon, this will switch out the whole
+	// session instead.
+	cs.session.baseVersion = baseVersion
 
 	return &rversion{
 		MSize:   msize,
@@ -101,7 +101,7 @@ func (t *tversion) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *tflush) handle(cs *connState) message {
-	cs.WaitTag(t.OldTag)
+	cs.session.WaitTag(t.OldTag)
 	return &rflush{}
 }
 
@@ -115,7 +115,7 @@ func checkSafeName(name string) error {
 
 // handle implements handler.handle.
 func (t *tclunk) handle(cs *connState) message {
-	if !cs.DeleteFID(t.fid) {
+	if !cs.session.DeleteFID(t.fid) {
 		return newErr(linux.EBADF)
 	}
 	return &rclunk{}
@@ -123,7 +123,7 @@ func (t *tclunk) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *tremove) handle(cs *connState) message {
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -170,7 +170,7 @@ func (t *tremove) handle(cs *connState) message {
 	// "It is correct to consider remove to be a clunk with the side effect
 	// of removing the file if permissions allow."
 	// https://swtch.com/plan9port/man/man9/remove.html
-	if !cs.DeleteFID(t.fid) {
+	if !cs.session.DeleteFID(t.fid) {
 		return newErr(linux.EBADF)
 	}
 	if err != nil {
@@ -230,7 +230,7 @@ func (t *tattach) handle(cs *connState) message {
 
 	// Attach the root?
 	if len(t.Auth.AttachName) == 0 {
-		cs.InsertFID(t.fid, root)
+		cs.session.InsertFID(t.fid, root)
 		return &rattach{QID: qid}
 	}
 
@@ -244,7 +244,7 @@ func (t *tattach) handle(cs *connState) message {
 	defer newRef.DecRef()
 
 	// Insert the fid.
-	cs.InsertFID(t.fid, newRef)
+	cs.session.InsertFID(t.fid, newRef)
 	return &rattach{QID: qid}
 }
 
@@ -258,7 +258,7 @@ func CanOpen(mode FileMode) bool {
 // handle implements handler.handle.
 func (t *tlopen) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -308,7 +308,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -354,7 +354,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 	}
 
 	// Replace the fid reference.
-	cs.InsertFID(t.fid, newRef)
+	cs.session.InsertFID(t.fid, newRef)
 
 	return &rlcreate{rlopen: rlopen{QID: qid, IoUnit: ioUnit}}, nil
 }
@@ -384,7 +384,7 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -420,14 +420,14 @@ func (t *tlink) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the other fid.
-	refTarget, ok := cs.LookupFID(t.Target)
+	refTarget, ok := cs.session.LookupFID(t.Target)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -464,14 +464,14 @@ func (t *trenameat) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.OldDirectory)
+	ref, ok := cs.session.LookupFID(t.OldDirectory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the other fid.
-	refTarget, ok := cs.LookupFID(t.NewDirectory)
+	refTarget, ok := cs.session.LookupFID(t.NewDirectory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -517,7 +517,7 @@ func (t *tunlinkat) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -571,14 +571,14 @@ func (t *trename) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the target.
-	refTarget, ok := cs.LookupFID(t.Directory)
+	refTarget, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -630,7 +630,7 @@ func (t *trename) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *treadlink) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -658,7 +658,7 @@ func (t *treadlink) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tread) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -697,7 +697,7 @@ func (t *tread) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *twrite) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -741,7 +741,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -785,7 +785,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -816,7 +816,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 // handle implements handler.handle.
 func (t *tgetattr) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -845,7 +845,7 @@ func (t *tgetattr) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tsetattr) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -872,7 +872,7 @@ func (t *tsetattr) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *txattrwalk) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -885,7 +885,7 @@ func (t *txattrwalk) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *txattrcreate) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -898,7 +898,7 @@ func (t *txattrcreate) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *treaddir) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -932,7 +932,7 @@ func (t *treaddir) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tfsync) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -956,7 +956,7 @@ func (t *tfsync) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tstatfs) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -1135,7 +1135,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 // handle implements handler.handle.
 func (t *twalk) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -1149,14 +1149,14 @@ func (t *twalk) handle(cs *connState) message {
 	defer newRef.DecRef()
 
 	// Install the new fid.
-	cs.InsertFID(t.newFID, newRef)
+	cs.session.InsertFID(t.newFID, newRef)
 	return &rwalk{QIDs: qids}
 }
 
 // handle implements handler.handle.
 func (t *twalkgetattr) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -1170,7 +1170,7 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	defer newRef.DecRef()
 
 	// Install the new fid.
-	cs.InsertFID(t.newFID, newRef)
+	cs.session.InsertFID(t.newFID, newRef)
 	return &rwalkgetattr{QIDs: qids, Valid: valid, Attr: attr}
 }
 
