@@ -243,7 +243,7 @@ func recv(l ulog.Logger, r io.Reader, msize uint32, lookup lookupTagAndType) (ta
 		return noTag, nil, ErrNoValidMessage
 	}
 
-	l.Printf("recv [conn %p] [Tag %06d] %s", r, tag, m)
+	l.Printf("recv [r %p] [Tag %06d] %s", r, tag, m)
 
 	// All set.
 	return tag, m, nil
