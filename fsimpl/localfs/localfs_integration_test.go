@@ -15,7 +15,6 @@ import (
 	"github.com/hugelgupf/p9/p9"
 	"github.com/u-root/u-root/pkg/qemu"
 	"github.com/u-root/u-root/pkg/ulog/ulogtest"
-	"github.com/u-root/u-root/pkg/uroot"
 	"github.com/u-root/u-root/pkg/vmtest"
 )
 
@@ -39,12 +38,6 @@ func TestIntegration(t *testing.T) {
 
 	// Run the read-write tests from fsimpl/test/rwvm.
 	vmtest.GolangTest(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"}, &vmtest.Options{
-		BuildOpts: uroot.Opts{
-			Commands: uroot.BusyBoxCmds(
-				"github.com/u-root/u-root/cmds/core/dhclient",
-				"github.com/u-root/u-root/cmds/core/ls",
-			),
-		},
 		QEMUOpts: qemu.Options{
 			Devices: []qemu.Device{
 				vmdriver.HostNetwork{
