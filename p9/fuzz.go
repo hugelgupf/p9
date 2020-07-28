@@ -10,7 +10,7 @@ import (
 
 func Fuzz(data []byte) int {
 	buf := bytes.NewBuffer(data)
-	tag, msg, err := recv(ulog.Null, buf, DefaultMessageSize, msgRegistry.get)
+	tag, msg, err := recv(ulog.Null, buf, DefaultMessageSize, msgDotLRegistry.get)
 	if err != nil {
 		if msg != nil {
 			panic("msg !=nil on error")
