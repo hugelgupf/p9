@@ -115,10 +115,10 @@ type ClientOpt func(*Client) error
 func WithMessageSize(m uint32) ClientOpt {
 	return func(c *Client) error {
 		// Need at least one byte of payload.
-		if m <= msgRegistry.largestFixedSize {
+		if m <= msgDotLRegistry.largestFixedSize {
 			return &ErrMessageTooLarge{
 				size:  m,
-				msize: msgRegistry.largestFixedSize,
+				msize: msgDotLRegistry.largestFixedSize,
 			}
 		}
 		c.messageSize = m
@@ -167,7 +167,7 @@ func NewClient(conn io.ReadWriteCloser, o ...ClientOpt) (*Client, error) {
 
 	// Compute a payload size and round to 512 (normal block size)
 	// if it's larger than a single block.
-	c.payloadSize = roundDown(c.messageSize-msgRegistry.largestFixedSize, 512)
+	c.payloadSize = roundDown(c.messageSize-msgDotLRegistry.largestFixedSize, 512)
 
 	// Agree upon a version.
 	requested := c.version

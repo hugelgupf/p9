@@ -22,7 +22,7 @@ func BenchmarkSendRecvTCP(b *testing.B) {
 	// no additional marshaling overhead.
 	go func() {
 		for i := 0; i < b.N; i++ {
-			t, m, err := recv(l, server, maximumLength, msgRegistry.get)
+			t, m, err := recv(l, server, maximumLength, msgDotLRegistry.get)
 			if err != nil {
 				b.Fatalf("recv got err %v expected nil", err)
 			}
@@ -42,7 +42,7 @@ func BenchmarkSendRecvTCP(b *testing.B) {
 		if err := send(l, client, tag(1), &rflush{}); err != nil {
 			b.Fatalf("send got err %v expected nil", err)
 		}
-		t, m, err := recv(l, client, maximumLength, msgRegistry.get)
+		t, m, err := recv(l, client, maximumLength, msgDotLRegistry.get)
 		if err != nil {
 			b.Fatalf("recv got err %v expected nil", err)
 		}
