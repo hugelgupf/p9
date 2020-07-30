@@ -31,6 +31,8 @@ func ExtractErrno(err error) linux.Errno {
 		return ExtractErrno(e.Err)
 	case *os.SyscallError:
 		return ExtractErrno(e.Err)
+	case *os.LinkError:
+		return ExtractErrno(e.Err)
 	}
 
 	if e := sysErrno(err); e != 0 {
