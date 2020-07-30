@@ -1593,17 +1593,17 @@ func (r *rreaddir) decode(b *buffer) {
 // encode implements encoder.encode.
 func (r *rreaddir) encode(b *buffer) {
 	entriesBuf := buffer{}
+	payloadSize := 0
 	for _, d := range r.Entries {
-		prev := len(entriesBuf.data)
 		d.encode(&entriesBuf)
-		if len(entriesBuf.data) >= int(r.Count) {
-			entriesBuf.data = entriesBuf.data[:prev]
+		if len(entriesBuf.data) > int(r.Count) {
 			break
 		}
+		payloadSize = len(entriesBuf.data)
 	}
-	r.Count = uint32(len(entriesBuf.data))
-	r.payload = entriesBuf.data
-	b.Write32(uint32(r.Count))
+	r.Count = uint32(payloadSize)
+	r.payload = entriesBuf.data[:payloadSize]
+	b.Write32(r.Count)
 }
 
 // typ implements message.typ.
