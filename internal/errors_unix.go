@@ -1,4 +1,4 @@
-// +build !windows,!linux
+// +build !windows,!linux,!plan9
 
 package internal
 
