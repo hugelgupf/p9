@@ -4,12 +4,13 @@ import (
 	"os"
 )
 
-//NOTE: taken from amd64 Linux
+// Timespec holds an interval
 type Timespec struct {
 	Sec  int64
 	Nsec int64
 }
 
+// Stat_t holds stat info
 type Stat_t struct {
 	Dev     uint64
 	Ino     uint64
