@@ -14,7 +14,7 @@ import (
 	"github.com/hugelgupf/p9/fsimpl/test/vmdriver"
 	"github.com/hugelgupf/p9/p9"
 	"github.com/u-root/u-root/pkg/qemu"
-	"github.com/u-root/u-root/pkg/ulog/ulogtest"
+	"github.com/u-root/uio/ulog/ulogtest"
 	"github.com/u-root/u-root/pkg/vmtest"
 )
 

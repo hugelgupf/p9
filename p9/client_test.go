@@ -17,7 +17,7 @@ package p9
 import (
 	"testing"
 
-	"github.com/u-root/u-root/pkg/ulog/ulogtest"
+	"github.com/u-root/uio/ulog/ulogtest"
 	"google.golang.org/grpc/test/bufconn"
 )
 

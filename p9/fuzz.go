@@ -5,7 +5,7 @@ package p9
 import (
 	"bytes"
 
-	"github.com/u-root/u-root/pkg/ulog"
+	"github.com/u-root/uio/ulog"
 )
 
 func Fuzz(data []byte) int {
