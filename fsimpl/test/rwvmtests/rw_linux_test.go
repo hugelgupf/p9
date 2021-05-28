@@ -2,7 +2,7 @@
 // system for reading and writing and performs tests on that file system.
 package rwvmtests_test
 
-import (
+/*import (
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -68,4 +68,4 @@ func TestMountP9(t *testing.T) {
 	if err := mp.Unmount(0); err != nil {
 		t.Fatal(err)
 	}
-}
+}*/
