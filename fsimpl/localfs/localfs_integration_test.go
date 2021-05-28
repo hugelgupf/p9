@@ -3,7 +3,7 @@
 
 package localfs
 
-import (
+/*import (
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -52,4 +52,4 @@ func TestIntegration(t *testing.T) {
 			Timeout:    30 * time.Second,
 		},
 	})
-}
+}*/
