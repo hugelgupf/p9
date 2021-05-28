@@ -23,7 +23,7 @@ import (
 	"sync"
 
 	"github.com/hugelgupf/p9/vecnet"
-	"github.com/u-root/u-root/pkg/ulog"
+	"github.com/u-root/uio/ulog"
 )
 
 // ConnError is returned in cases of a connection issue.

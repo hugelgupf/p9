@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 
 	"github.com/hugelgupf/p9/internal/linux"
-	"github.com/u-root/u-root/pkg/ulog"
+	"github.com/u-root/uio/ulog"
 )
 
 // Server is a 9p2000.L server.

@@ -22,7 +22,7 @@ import (
 	"sync"
 
 	"github.com/hugelgupf/p9/internal/linux"
-	"github.com/u-root/u-root/pkg/ulog"
+	"github.com/u-root/uio/ulog"
 )
 
 // ErrOutOfTags indicates no tags are available.

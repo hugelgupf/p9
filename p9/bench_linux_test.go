@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/hugelgupf/socketpair"
-	"github.com/u-root/u-root/pkg/ulog/ulogtest"
+	"github.com/u-root/uio/ulog/ulogtest"
 )
 
 func BenchmarkSendRecvTCP(b *testing.B) {
