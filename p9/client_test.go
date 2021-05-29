@@ -27,7 +27,7 @@ func TestVersion(t *testing.T) {
 	l := bufconn.Listen(int(DefaultMessageSize))
 
 	// Create a new server and client.
-	s := NewServer(nil, WithServerLogger(ulogtest.Logger{TB: t}))
+	s := NewServer(nil, nil, WithServerLogger(ulogtest.Logger{TB: t}))
 	go s.Serve(l)
 
 	client, err := l.Dial()

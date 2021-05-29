@@ -33,7 +33,7 @@ func TestIntegration(t *testing.T) {
 	serverPort := serverSocket.Addr().(*net.TCPAddr).Port
 
 	// Run the server.
-	s := p9.NewServer(Attacher(tempDir), p9.WithServerLogger(ulogtest.Logger{TB: t}))
+	s := p9.NewServer(Attacher(tempDir), nil, p9.WithServerLogger(ulogtest.Logger{TB: t}))
 	go s.Serve(serverSocket)
 
 	// Run the read-write tests from fsimpl/test/rwvm.
