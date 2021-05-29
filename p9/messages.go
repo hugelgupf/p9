@@ -2007,6 +2007,9 @@ type msgFactory struct {
 	cache  chan message
 }
 
+// msgVersionRegistry only allows tversion messages.
+var msgVersionRegistry registry
+
 // msgDotLRegistry indexes all 9P2000.L(.Google.N) message factories by type.
 var msgDotLRegistry registry
 
@@ -2145,4 +2148,7 @@ func init() {
 	msgDotLRegistry.register(msgRumknod, func() message { return &rumknod{} })
 	msgDotLRegistry.register(msgTusymlink, func() message { return &tusymlink{} })
 	msgDotLRegistry.register(msgRusymlink, func() message { return &rusymlink{} })
+
+	msgVersionRegistry.register(msgTversion, func() message { return &tversion{} })
+	msgVersionRegistry.register(msgRversion, func() message { return &rversion{} })
 }

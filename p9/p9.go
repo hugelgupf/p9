@@ -352,7 +352,7 @@ const (
 	msgTremove      msgType = 122
 	msgRremove      msgType = 123
 	msgTflushf      msgType = 124
-	msgRflushf      msgType = 125
+	msgRflushf      msgType = 124
 	msgTwalkgetattr msgType = 126
 	msgRwalkgetattr msgType = 127
 	msgTucreate     msgType = 128

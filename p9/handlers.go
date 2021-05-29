@@ -19,7 +19,6 @@ import (
 	"io"
 	"path"
 	"strings"
-	"sync/atomic"
 
 	"github.com/hugelgupf/p9/internal"
 	"github.com/hugelgupf/p9/internal/linux"
@@ -67,41 +66,57 @@ func (t *tversion) handle(cs *connState) message {
 	if !ok {
 		return unknown
 	}
-	var baseVersion baseVersion
-	var version uint32
-
+	s := &session{
+		fids:        make(map[fid]*fidRef),
+		tags:        make(map[tag]chan struct{}),
+		recvOkay:    make(chan bool),
+		messageSize: msize,
+	}
 	switch reqBaseVersion {
 	case version9P2000, version9P2000U:
 		return unknown
 
 	case version9P2000L:
-		baseVersion = reqBaseVersion
+		s.baseVersion = version9P2000L
+		s.msgRegistry = &msgDotLRegistry
+
 		// The server cannot support newer versions that it doesn't know about.  In this
 		// case we return EAGAIN to tell the client to try again with a lower version.
+		//
+		// From Tversion(9P): "The server may respond with the client’s version
+		// string, or a version string identifying an earlier defined protocol version".
 		if reqVersion > highestSupportedVersion {
-			version = highestSupportedVersion
+			s.version = highestSupportedVersion
 		} else {
-			version = reqVersion
+			s.version = reqVersion
 		}
 	}
 
-	// From Tversion(9P): "The server may respond with the client’s version
-	// string, or a version string identifying an earlier defined protocol version".
-	atomic.StoreUint32(&cs.messageSize, msize)
-	atomic.StoreUint32(&cs.version, version)
-	// This is not thread-safe. We're changing this into sessions anyway,
-	// so who cares.
-	cs.baseVersion = baseVersion
+	// Clunk all FIDs. Make sure we stop recv using this session.
+	//
+	// This is safe, because there should be no new messages received at
+	// this point, because tversion defers recvDone in handleRequest.
+	//
+	// TODO: What is still NOT SAFE is, we should be waiting for all
+	// outstanding handlers to complete as well. I.e. pending on
+	// handleRequest should go to 0 before we do this.
+	//
+	// What we really should be doing is sequencing this in handleRequest
+	// somehow. Stay tuned.
+	cs.session.stop()
+
+	// Nothing else should be trying to recv right now. No need to lock.
+	cs.session = s
 
 	return &rversion{
-		MSize:   msize,
-		Version: versionString(baseVersion, version),
+		MSize:   s.messageSize,
+		Version: versionString(s.baseVersion, s.version),
 	}
 }
 
 // handle implements handler.handle.
 func (t *tflush) handle(cs *connState) message {
-	cs.WaitTag(t.OldTag)
+	cs.session.WaitTag(t.OldTag)
 	return &rflush{}
 }
 
@@ -115,7 +130,7 @@ func checkSafeName(name string) error {
 
 // handle implements handler.handle.
 func (t *tclunk) handle(cs *connState) message {
-	if !cs.DeleteFID(t.fid) {
+	if !cs.session.DeleteFID(t.fid) {
 		return newErr(linux.EBADF)
 	}
 	return &rclunk{}
@@ -123,7 +138,7 @@ func (t *tclunk) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *tremove) handle(cs *connState) message {
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -170,7 +185,7 @@ func (t *tremove) handle(cs *connState) message {
 	// "It is correct to consider remove to be a clunk with the side effect
 	// of removing the file if permissions allow."
 	// https://swtch.com/plan9port/man/man9/remove.html
-	if !cs.DeleteFID(t.fid) {
+	if !cs.session.DeleteFID(t.fid) {
 		return newErr(linux.EBADF)
 	}
 	if err != nil {
@@ -230,7 +245,7 @@ func (t *tattach) handle(cs *connState) message {
 
 	// Attach the root?
 	if len(t.Auth.AttachName) == 0 {
-		cs.InsertFID(t.fid, root)
+		cs.session.InsertFID(t.fid, root)
 		return &rattach{QID: qid}
 	}
 
@@ -244,7 +259,7 @@ func (t *tattach) handle(cs *connState) message {
 	defer newRef.DecRef()
 
 	// Insert the fid.
-	cs.InsertFID(t.fid, newRef)
+	cs.session.InsertFID(t.fid, newRef)
 	return &rattach{QID: qid}
 }
 
@@ -255,10 +270,10 @@ func CanOpen(mode FileMode) bool {
 	return mode.IsRegular() || mode.IsDir() || mode.IsNamedPipe() || mode.IsBlockDevice() || mode.IsCharacterDevice()
 }
 
-// handle implements handler.handle.
+// handle implements handler.handle for the 9P2000.L Tlopen.
 func (t *tlopen) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -282,8 +297,10 @@ func (t *tlopen) handle(cs *connState) message {
 		ioUnit uint32
 	)
 	if err := ref.safelyRead(func() (err error) {
-		// Has it been deleted already?
-		if ref.isDeleted() {
+		// Don't allow readlink on deleted files. There is no need to
+		// check if this file is opened because symlinks cannot be
+		// opened.
+		if ref.isDeleted() || !ref.mode.IsSymlink() {
 			return linux.EINVAL
 		}
 
@@ -308,7 +325,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -354,7 +371,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 	}
 
 	// Replace the fid reference.
-	cs.InsertFID(t.fid, newRef)
+	cs.session.InsertFID(t.fid, newRef)
 
 	return &rlcreate{rlopen: rlopen{QID: qid, IoUnit: ioUnit}}, nil
 }
@@ -384,7 +401,7 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -420,14 +437,14 @@ func (t *tlink) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the other fid.
-	refTarget, ok := cs.LookupFID(t.Target)
+	refTarget, ok := cs.session.LookupFID(t.Target)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -464,14 +481,14 @@ func (t *trenameat) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.OldDirectory)
+	ref, ok := cs.session.LookupFID(t.OldDirectory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the other fid.
-	refTarget, ok := cs.LookupFID(t.NewDirectory)
+	refTarget, ok := cs.session.LookupFID(t.NewDirectory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -517,7 +534,7 @@ func (t *tunlinkat) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -571,14 +588,14 @@ func (t *trename) handle(cs *connState) message {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
 
 	// Lookup the target.
-	refTarget, ok := cs.LookupFID(t.Directory)
+	refTarget, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -630,7 +647,7 @@ func (t *trename) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *treadlink) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -638,10 +655,8 @@ func (t *treadlink) handle(cs *connState) message {
 
 	var target string
 	if err := ref.safelyRead(func() (err error) {
-		// Don't allow readlink on deleted files. There is no need to
-		// check if this file is opened because symlinks cannot be
-		// opened.
-		if ref.isDeleted() || !ref.mode.IsSymlink() {
+		// Don't allow readlink on deleted files.
+		if ref.isDeleted() {
 			return linux.EINVAL
 		}
 
@@ -658,7 +673,7 @@ func (t *treadlink) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tread) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -681,7 +696,7 @@ func (t *tread) handle(cs *connState) message {
 		}
 
 		// Can it be read? Check permissions.
-		if openFlags&OpenFlagsModeMask == WriteOnly {
+		if openFlags.Mode() == WriteOnly {
 			return linux.EPERM
 		}
 
@@ -697,7 +712,7 @@ func (t *tread) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *twrite) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -712,7 +727,7 @@ func (t *twrite) handle(cs *connState) message {
 		}
 
 		// Can it be written? Check permissions.
-		if openFlags&OpenFlagsModeMask == ReadOnly {
+		if openFlags.Mode() == ReadOnly {
 			return linux.EPERM
 		}
 
@@ -741,7 +756,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -785,7 +800,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 	}
 
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return nil, linux.EBADF
 	}
@@ -816,7 +831,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 // handle implements handler.handle.
 func (t *tgetattr) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -845,7 +860,7 @@ func (t *tgetattr) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tsetattr) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -872,7 +887,7 @@ func (t *tsetattr) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *txattrwalk) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -885,7 +900,7 @@ func (t *txattrwalk) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *txattrcreate) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -898,7 +913,7 @@ func (t *txattrcreate) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *treaddir) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.Directory)
+	ref, ok := cs.session.LookupFID(t.Directory)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -932,7 +947,7 @@ func (t *treaddir) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tfsync) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -956,7 +971,7 @@ func (t *tfsync) handle(cs *connState) message {
 // handle implements handler.handle.
 func (t *tstatfs) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -1135,7 +1150,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 // handle implements handler.handle.
 func (t *twalk) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -1149,14 +1164,14 @@ func (t *twalk) handle(cs *connState) message {
 	defer newRef.DecRef()
 
 	// Install the new fid.
-	cs.InsertFID(t.newFID, newRef)
+	cs.session.InsertFID(t.newFID, newRef)
 	return &rwalk{QIDs: qids}
 }
 
 // handle implements handler.handle.
 func (t *twalkgetattr) handle(cs *connState) message {
 	// Lookup the fid.
-	ref, ok := cs.LookupFID(t.fid)
+	ref, ok := cs.session.LookupFID(t.fid)
 	if !ok {
 		return newErr(linux.EBADF)
 	}
@@ -1170,7 +1185,7 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	defer newRef.DecRef()
 
 	// Install the new fid.
-	cs.InsertFID(t.newFID, newRef)
+	cs.session.InsertFID(t.newFID, newRef)
 	return &rwalkgetattr{QIDs: qids, Valid: valid, Attr: attr}
 }
 
