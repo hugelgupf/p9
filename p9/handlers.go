@@ -1033,13 +1033,6 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 		}
 	}
 
-	// Has it been opened already?
-	if _, opened := ref.OpenFlags(); opened {
-		err = linux.EBUSY
-		return
-	}
-
-	// Is this an empty list? Handle specially. We don't actually need to
 	// validate anything since this is always permitted.
 	if len(names) == 0 {
 		var sf File // Temporary.
@@ -1141,6 +1134,15 @@ func (t *twalk) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
+	// Has it been opened already?
+	// That as OK as long as newFID is different.
+	// Note this violates the spec, but the Linux client
+	// does too, so we have little choice.
+	if _, opened := ref.OpenFlags(); opened && t.fid == t.newFID {
+		return newErr(linux.EBUSY)
+	}
+
+	// Is this an empty list? Handle specially. We don't actually need to
 	// Do the walk.
 	qids, newRef, _, _, err := doWalk(cs, ref, t.Names, false)
 	if err != nil {
@@ -1162,6 +1164,15 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
+	// Has it been opened already?
+	// That as OK as long as newFID is different.
+	// Note this violates the spec, but the Linux client
+	// does too, so we have little choice.
+	if _, opened := ref.OpenFlags(); opened && t.fid == t.newFID {
+		return newErr(linux.EBUSY)
+	}
+
+	// Is this an empty list? Handle specially. We don't actually need to
 	// Do the walk.
 	qids, newRef, valid, attr, err := doWalk(cs, ref, t.Names, true)
 	if err != nil {
