@@ -3,7 +3,7 @@ version: 2
 templates:
   golang-template: &golang-template
     docker:
-      - image: uroottest/test-image-amd64:v3.2.13
+      - image: uroottest/test-image-amd64:v4.6.0
     working_directory: /go/src/github.com/hugelgupf/p9
     environment:
       - GOPATH: "/go"
