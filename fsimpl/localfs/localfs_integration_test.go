@@ -1,9 +1,9 @@
-// +build !race
-// +build linux
+//go:build !race && linux
+// +build !race,linux
 
 package localfs
 
-/*import (
+import (
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -14,8 +14,8 @@ package localfs
 	"github.com/hugelgupf/p9/fsimpl/test/vmdriver"
 	"github.com/hugelgupf/p9/p9"
 	"github.com/u-root/u-root/pkg/qemu"
-	"github.com/u-root/uio/ulog/ulogtest"
 	"github.com/u-root/u-root/pkg/vmtest"
+	"github.com/u-root/uio/ulog/ulogtest"
 )
 
 func TestIntegration(t *testing.T) {
@@ -52,4 +52,4 @@ func TestIntegration(t *testing.T) {
 			Timeout:    30 * time.Second,
 		},
 	})
-}*/
+}
