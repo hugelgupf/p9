@@ -325,6 +325,10 @@ const (
 	msgRreaddir     msgType = 41
 	msgTfsync       msgType = 50
 	msgRfsync       msgType = 51
+	msgTlock        msgType = 52
+	msgRlock        msgType = 53
+	msgTgetlock     msgType = 54
+	msgRgetlock     msgType = 55
 	msgTlink        msgType = 70
 	msgRlink        msgType = 71
 	msgTmkdir       msgType = 72

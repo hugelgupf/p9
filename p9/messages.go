@@ -1999,6 +1999,168 @@ func (r *rusymlink) String() string {
 	return fmt.Sprintf("Rusymlink{%v}", &r.rsymlink)
 }
 
+// lock - acquire or release a POSIX record lock
+// from the linux kernel: req = p9_client_rpc(clnt, P9_TLOCK, "dbdqqds", fid->fid, flock->type, (etc.)
+// byte doubleword quad quad doubleword string
+// This confirms this doc:
+// size[4] Tlock tag[2] fid[4] type[1] flags[4] start[8] length[8] proc_id[4] client_id[s]
+// start, length, and proc_id correspond to the analogous fields passed to Linux fcntl(F_SETLK):
+// size[4] Rlock tag[2] status[1]
+// lock is used to acquire or release a POSIX record lock on fid and has semantics similar to Linux fcntl(F_SETLK).
+// Most servers implement almost none of this stuff -- they use berkeley flock -- i.e., whole file locking.
+// Hence most of these parameters are ignored. A good thing, since this kind of locking over a network
+// makes no sense.
+
+// LockType is lock type for Tlock
+type LockType uint8
+
+// These constants define Lock operations: Read, Write, and Un(lock)
+const (
+	ReadLock  LockType = iota
+	WriteLock LockType = 1
+	Unlock    LockType = 2
+)
+
+func (l *LockType) String() string {
+	switch *l {
+	case ReadLock:
+		return "ReadLock"
+	case WriteLock:
+		return "WriteLock"
+	case Unlock:
+		return "Unlock"
+	}
+	return "Unknown lock type"
+}
+
+// A few notes on 9p2000.L and locks.
+// Docs are incomplete and confuse whence and flags. Turns out only flags matter.
+// And whence is not in the packet. And the implementations don't use any of this stuff.
+// They just use flock.
+//
+// Locking over a network almost never works anyway. And note that this packet includes a PID.
+// On a system with, say, 1M cores (these exist) a PID is hardly disambiguating.
+// So, this can't work and is hardly worth doing.
+// "something not worth doing is not worth doing well."
+//
+// This is in some docs,
+// struct flock {
+//     short l_type;  /* Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
+//     short l_whence;/* How to interpret l_start: SEEK_SET, SEEK_CUR, SEEK_END */
+//     off_t l_start; /* Starting offset for lock */
+//     off_t l_len;   /* Number of bytes to lock */
+//     pid_t l_pid;   /* PID of process blocking our lock (F_GETLK only) */
+// };
+// flags bits are:
+
+// #define P9_LOCK_FLAGS_BLOCK 1    /* blocking request */
+// #define P9_LOCK_FLAGS_RECLAIM 2  /* reserved for future use */
+// client_id is an additional mechanism for uniquely identifying the lock requester and is set to the nodename by the Linux v9fs client.
+
+// LockStat contains lock status result.
+type LockStat uint8
+
+// These are the four current return values for Rlock.
+const (
+	LockOK      LockStat = 0
+	LockBlocked LockStat = 1
+	LockError   LockStat = 2
+	LockGrace   LockStat = 3
+)
+
+// The Linux v9fs client implements the fcntl(F_SETLKW) (blocking)
+// lock request by calling lock with P9_LOCK_FLAGS_BLOCK set. If the
+// response is P9_LOCK_BLOCKED, it retries the lock request in an
+// interruptible loop until status is no longer P9_LOCK_BLOCKED.
+
+// The Linux v9fs client translates BSD advisory locks (flock) to
+// whole-file POSIX record locks. v9fs does not implement mandatory
+// locks and will return ENOLCK if use is attempted.
+
+// Because of POSIX record lock inheritance and upgrade properties,
+// pass-through servers must be implemented carefully.
+
+// tlock is a Tlock message
+type tlock struct {
+	Type   LockType  // Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
+	Flags  uint32 // flags, not whence, docs are wrong.
+	Start  uint64 // Starting offset for lock
+	Length uint64 // Number of bytes to lock
+	PID    uint32 // PID of process blocking our lock (F_GETLK only)
+	Client string // not documented in .h
+}
+
+// decode implements encoder.decode.
+func (t *tlock) decode(b *buffer) {
+	// type[1] flags[4] start[8] length[8] proc_id[4] client_id[s]
+	t.Type = LockType(b.Read8())
+	t.Flags = b.Read32()
+	t.Start = b.Read64()
+	t.Length = b.Read64()
+	t.PID = b.Read32()
+	t.Client = b.ReadString()
+}
+
+// encode implements encoder.encode.
+func (t *tlock) encode(b *buffer) {
+	b.Write8(uint8(t.Type))
+	b.Write32(t.Flags)
+	b.Write64(t.Start)
+	b.Write64(t.Length)
+	b.Write32(t.PID)
+	b.WriteString(t.Client)
+}
+
+// typ implements message.typ.
+func (*tlock) typ() msgType {
+	return msgTlock
+}
+
+// String implements fmt.Stringer.
+func (t *tlock) String() string {
+	return fmt.Sprintf("Tlock{Type: %s, Flags: %#x, Start: %d, Length: %d, PID: %d, Client: %s}", t.Type.String(), t.Flags, t.Start, t.Length, t.PID, t.Client)
+}
+
+// rversion is a version response.
+type rlock struct {
+	Status uint8
+}
+
+// decode implements encoder.decode.
+func (r *rlock) decode(b *buffer) {
+	r.Status = b.Read8()
+}
+
+// encode implements encoder.encode.
+func (r *rlock) encode(b *buffer) {
+	b.Write8(r.Status)
+}
+
+// typ implements message.typ.
+func (*rlock) typ() msgType {
+	return msgRlock
+}
+
+// String implements fmt.Stringer.
+func (r *rlock) String() string {
+	return fmt.Sprintf("Rlock{Status: %d}", r.Status)
+}
+
+// Let's wait until we need this? POSIX locks over a network make 0 sense.
+// getlock - test for the existence of a POSIX record lock
+// size[4] Tgetlock tag[2] fid[4] type[1] start[8] length[8] proc_id[4] client_id[s]
+// size[4] Rgetlock tag[2] type[1] start[8] length[8] proc_id[4] client_id[s]
+// getlock tests for the existence of a POSIX record lock and has semantics similar to Linux fcntl(F_GETLK).
+
+// As with lock, type has one of the values defined above, and start,
+// length, and proc_id correspond to the analogous fields in struct
+// flock passed to Linux fcntl(F_GETLK), and client_Id is an
+// additional mechanism for uniquely identifying the lock requester
+// and is set to the nodename by the Linux v9fs client.  tusymlink is
+// a Tsymlink message that includes a UID.
+
+/// END LOCK
+
 const maxCacheSize = 3
 
 // msgFactory is used to reduce allocations by caching messages for reuse.
