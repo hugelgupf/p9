@@ -132,6 +132,29 @@ type File interface {
 	// On the server, FSync has a read concurrency guarantee.
 	FSync() error
 
+	// Lock locks the file. The operation as defined in 9P2000.L
+	// is fairly ambitious, being a near-direct mapping to
+	// lockf(2)/fcntl(2)-style locking, but most implementations
+	// use flock(2).
+	//
+	// Arguments are defined by the 9P2000.L standard.
+	//
+	// Pid is the pid on the client.
+	// Locktype is one of read, write, or unlock (resp. 0, 1, or 2).
+	// Flags are to block (0), meaning wait; or reclaim (1),
+	//   which is currently "reserved for future use."
+	// Start and length are the start of the region to use and the size.
+	//   In many implementations, they are ignored and flock(2) is used.
+	// Client is an arbitrary string, also frequently unused.
+	//
+	// While this function specifies an error value, the 9P2000.L
+	// Rlock return value is one byte (!), which is inconsistent
+	// with how 9P is supposed to work in every version of 9P from
+	// the beginning. The most commonly used return values are
+	// success and error (resp. 0 and 2); blocked (2) and grace (3)
+	// are also possible.
+	Lock(pid, locktype, flags int, start, length uint64, client string) error
+
 	// Create creates a new regular file and opens it according to the
 	// flags given. This file is already Open.
 	//
