@@ -2082,17 +2082,20 @@ const (
 
 // tlock is a Tlock message
 type tlock struct {
-	Type   LockType  // Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
-	Flags  uint32 // flags, not whence, docs are wrong.
-	Start  uint64 // Starting offset for lock
-	Length uint64 // Number of bytes to lock
-	PID    uint32 // PID of process blocking our lock (F_GETLK only)
-	Client string // not documented in .h
+	// fid is the fid to lock.
+	fid fid
+
+	Type   LockType // Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
+	Flags  uint32   // flags, not whence, docs are wrong.
+	Start  uint64   // Starting offset for lock
+	Length uint64   // Number of bytes to lock
+	PID    uint32   // PID of process blocking our lock (F_GETLK only)
+	Client string   // not documented in .h
 }
 
 // decode implements encoder.decode.
 func (t *tlock) decode(b *buffer) {
-	// type[1] flags[4] start[8] length[8] proc_id[4] client_id[s]
+	t.fid = b.ReadFID()
 	t.Type = LockType(b.Read8())
 	t.Flags = b.Read32()
 	t.Start = b.Read64()
@@ -2103,6 +2106,7 @@ func (t *tlock) decode(b *buffer) {
 
 // encode implements encoder.encode.
 func (t *tlock) encode(b *buffer) {
+	b.WriteFID(t.fid)
 	b.Write8(uint8(t.Type))
 	b.Write32(t.Flags)
 	b.Write64(t.Start)
