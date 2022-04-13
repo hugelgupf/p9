@@ -38,3 +38,11 @@ func localToQid(path string, info os.FileInfo) (uint64, error) {
 	x := uint64(fi.FileIndexHigh)<<32 | uint64(fi.FileIndexLow)
 	return x, nil
 }
+
+// lock implements p9.File.Lock.
+// As in FreeBSD NFS locking, we just say "sure, we did it" without actually
+// doing anything; this lock design makes even less sense on Windows than
+// it does on Linux (pid? really? what were they thinking?)
+func (l *Local) lock(pid, locktype, flags int, start, length uint64, client string) error {
+	return nil
+}

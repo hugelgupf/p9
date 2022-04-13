@@ -148,3 +148,8 @@ func (NoopFile) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 func (NoopFile) Readlink() (string, error) {
 	return "", linux.ENOSYS
 }
+
+// Lock implements p9.File.Lock.
+func (NoopFile) Lock(pid, locktype, flags int, start, length uint64, client string) error {
+	return linux.ENOSYS
+}
