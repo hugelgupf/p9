@@ -17,6 +17,7 @@ package p9
 import (
 	"fmt"
 	"math"
+	"syscall"
 )
 
 // ErrInvalidMsgType is returned when an unsupported message type is found.
@@ -2062,11 +2063,16 @@ type LockStat uint8
 
 // These are the four current return values for Rlock.
 const (
-	LockOK      LockStat = 0
-	LockBlocked LockStat = 1
-	LockError   LockStat = 2
-	LockGrace   LockStat = 3
+	lockOK      LockStat = 0
+	lockBlocked LockStat = 1
+	lockError   LockStat = 2
+	lockGrace   LockStat = 3
 )
+
+// ELockError is the overarching error for Tlock.
+// The 9P2000.L lock errors are basically "something failed",
+// i.e., not conformant with how 9P2000 is supposed to work.
+var ELockError = syscall.Errno(lockError)
 
 // The Linux v9fs client implements the fcntl(F_SETLKW) (blocking)
 // lock request by calling lock with P9_LOCK_FLAGS_BLOCK set. If the
