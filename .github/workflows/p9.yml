@@ -29,28 +29,3 @@ jobs:
 
     - name: Test
       run: go test -v ./...
-  fuzz:
-    name: Fuzz
-    runs-on: [ubuntu-latest]
-    needs: [build]
-    steps:
-    - name: Build Fuzzers
-      id: build
-      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
-      with:
-        oss-fuzz-project-name: 'p9'
-        dry-run: false
-
-    - name: Run Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@master
-      with:
-        oss-fuzz-project-name: 'p9'
-        fuzz-seconds: 600
-        dry-run: false
-
-    - name: Upload Crash
-      uses: actions/upload-artifact@v1
-      if: failure() && steps.build.outcome == 'success'
-      with:
-        name: artifacts
-        path: ./out/artifacts
