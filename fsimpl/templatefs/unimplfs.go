@@ -150,6 +150,6 @@ func (NoopFile) Readlink() (string, error) {
 }
 
 // Lock implements p9.File.Lock.
-func (NoopFile) Lock(pid, locktype, flags int, start, length uint64, client string) error {
+func (NoopFile) Lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
 	return linux.ENOSYS
 }

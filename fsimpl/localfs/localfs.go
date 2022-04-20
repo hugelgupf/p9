@@ -187,7 +187,7 @@ func (l *Local) ReadAt(p []byte, offset int64) (int, error) {
 }
 
 // Lock implements p9.File.Lock.
-func (l *Local) Lock(pid, locktype, flags int, start, length uint64, client string) error {
+func (l *Local) Lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
 	return l.lock(pid, locktype, flags, start, length, client)
 }
 

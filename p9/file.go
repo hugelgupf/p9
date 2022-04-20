@@ -153,7 +153,7 @@ type File interface {
 	// the beginning. The most commonly used return values are
 	// success and error (resp. 0 and 2); blocked (2) and grace (3)
 	// are also possible.
-	Lock(pid, locktype, flags int, start, length uint64, client string) error
+	Lock(pid int, locktype LockType, flags int, start, length uint64, client string) error
 
 	// Create creates a new regular file and opens it according to the
 	// flags given. This file is already Open.

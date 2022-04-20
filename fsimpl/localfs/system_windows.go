@@ -3,6 +3,7 @@ package localfs
 import (
 	"os"
 
+	"github.com/hugelgupf/p9/p9"
 	"golang.org/x/sys/windows"
 )
 
@@ -43,6 +44,6 @@ func localToQid(path string, info os.FileInfo) (uint64, error) {
 // As in FreeBSD NFS locking, we just say "sure, we did it" without actually
 // doing anything; this lock design makes even less sense on Windows than
 // it does on Linux (pid? really? what were they thinking?)
-func (l *Local) lock(pid, locktype, flags int, start, length uint64, client string) error {
+func (l *Local) lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
 	return nil
 }
