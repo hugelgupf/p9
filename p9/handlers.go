@@ -980,7 +980,7 @@ func (t *tlock) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	r1 := lockOK
-	if err := ref.file.Lock(int(t.PID), int(t.Type), int(t.Flags), t.Start, t.Length, t.Client); err != nil {
+	if err := ref.file.Lock(int(t.PID), t.Type, int(t.Flags), t.Start, t.Length, t.Client); err != nil {
 		r1 = lockError
 	}
 	return &rlock{Status: uint8(r1)}

@@ -20,7 +20,7 @@ func localToQid(_ string, fi os.FileInfo) (uint64, error) {
 }
 
 // lock implements p9.File.Lock.
-func (l *Local) lock(pid, locktype, flags int, start, length uint64, client string) error {
+func (l *Local) lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
 	var err error
 	switch p9.LockType(locktype) {
 	case p9.ReadLock, p9.WriteLock:

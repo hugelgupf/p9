@@ -142,7 +142,7 @@ func (d *dir) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 // Lock implements p9.File.Lock.
 // It may seem odd to have a Lock on a dir, but 9P2000 does not distinguish
 // dirs and files.
-func (*dir) Lock(pid, locktype, flags int, start, length uint64, client string) error {
+func (*dir) Lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
 	return nil
 }
 
@@ -224,6 +224,6 @@ func (f *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 }
 
 // Lock implements p9.File.Lock.
-func (*file) Lock(pid, locktype, flags int, start, length uint64, client string) error {
+func (*file) Lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
 	return nil
 }

@@ -2016,14 +2016,17 @@ func (r *rusymlink) String() string {
 type LockType uint8
 
 // These constants define Lock operations: Read, Write, and Un(lock)
+// They map to Linux values of F_RDLCK, F_WRLCK, F_UNLCK.
+// If that seems a little Linux-centric, recall that the "L"
+// in 9P2000.L means "Linux" :-)
 const (
-	ReadLock  LockType = iota
-	WriteLock LockType = 1
-	Unlock    LockType = 2
+	ReadLock LockType = iota
+	WriteLock
+	Unlock
 )
 
-func (l *LockType) String() string {
-	switch *l {
+func (l LockType) String() string {
+	switch l {
 	case ReadLock:
 		return "ReadLock"
 	case WriteLock:
@@ -2034,15 +2037,21 @@ func (l *LockType) String() string {
 	return "Unknown lock type"
 }
 
+// LockFlags are flags for the lock. Currently, and possibly
+// forever, only one is really used: LockFlagsBlock
+type LockFlags uint32
+
+const (
+	// Blocking request.
+	LockFlagsBlock LockFlags = 1
+	// "Reserved for future use."
+	LockFlagsReclaim LockFlags = 2
+)
+
 // A few notes on 9p2000.L and locks.
 // Docs are incomplete and confuse whence and flags. Turns out only flags matter.
 // And whence is not in the packet. And the implementations don't use any of this stuff.
 // They just use flock.
-//
-// Locking over a network almost never works anyway. And note that this packet includes a PID.
-// On a system with, say, 1M cores (these exist) a PID is hardly disambiguating.
-// So, this can't work and is hardly worth doing.
-// "something not worth doing is not worth doing well."
 //
 // This is in some docs,
 // struct flock {
@@ -2056,17 +2065,16 @@ func (l *LockType) String() string {
 
 // #define P9_LOCK_FLAGS_BLOCK 1    /* blocking request */
 // #define P9_LOCK_FLAGS_RECLAIM 2  /* reserved for future use */
-// client_id is an additional mechanism for uniquely identifying the lock requester and is set to the nodename by the Linux v9fs client.
 
-// LockStat contains lock status result.
-type LockStat uint8
+// LockStatus contains lock status result.
+type LockStatus uint8
 
 // These are the four current return values for Rlock.
 const (
-	lockOK      LockStat = 0
-	lockBlocked LockStat = 1
-	lockError   LockStat = 2
-	lockGrace   LockStat = 3
+	lockOK LockStatus = iota
+	lockBlocked
+	lockError
+	lockGrace
 )
 
 // ELockError is the overarching error for Tlock.
@@ -2095,8 +2103,13 @@ type tlock struct {
 	Flags  uint32   // flags, not whence, docs are wrong.
 	Start  uint64   // Starting offset for lock
 	Length uint64   // Number of bytes to lock
-	PID    uint32   // PID of process blocking our lock (F_GETLK only)
-	Client string   // not documented in .h
+	PID    int32    // PID of process blocking our lock (F_GETLK only)
+
+	// "client_id is an additional mechanism for uniquely
+	// identifying the lock requester and is set to the nodename
+	// by the Linux v9fs client."
+	// https://github.com/chaos/diod/blob/master/protocol.md#lock---acquire-or-release-a-posix-record-lock
+	Client string // Client id -- but technically can be anything.
 }
 
 // decode implements encoder.decode.
@@ -2106,7 +2119,7 @@ func (t *tlock) decode(b *buffer) {
 	t.Flags = b.Read32()
 	t.Start = b.Read64()
 	t.Length = b.Read64()
-	t.PID = b.Read32()
+	t.PID = int32(b.Read32())
 	t.Client = b.ReadString()
 }
 
@@ -2117,7 +2130,7 @@ func (t *tlock) encode(b *buffer) {
 	b.Write32(t.Flags)
 	b.Write64(t.Start)
 	b.Write64(t.Length)
-	b.Write32(t.PID)
+	b.Write32(uint32(t.PID))
 	b.WriteString(t.Client)
 }
 
