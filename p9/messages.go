@@ -2042,9 +2042,11 @@ func (l LockType) String() string {
 type LockFlags uint32
 
 const (
-	// Blocking request.
+	// LockFlagsBlock indicates a blocking request.
 	LockFlagsBlock LockFlags = 1
-	// "Reserved for future use."
+	// LockFlagsReclaim is "Reserved for future use."
+	// It's been some time since 9P2000.L came about,
+	// I suspect "future" in this case is "never"?
 	LockFlagsReclaim LockFlags = 2
 )
 
