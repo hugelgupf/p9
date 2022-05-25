@@ -31,7 +31,7 @@ type Buffers net.Buffers
 //
 // ReadFrom keeps reading until all bufs are filled or EOF is received.
 //
-// The pre-allocatted space used by ReadFrom is based upon slice lengths.
+// The pre-allocated space used by ReadFrom is based upon slice lengths.
 func (bufs Buffers) ReadFrom(r io.Reader) (int64, error) {
 	if conn, ok := r.(syscall.Conn); ok && readFromBuffers != nil {
 		return readFromBuffers(bufs, conn)
