@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !linux linux,386
+//go:build (!linux && !windows) || (linux && 386)
+// +build !linux,!windows linux,386
 
 package vecnet
 
