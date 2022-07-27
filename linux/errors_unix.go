@@ -1,15 +1,11 @@
 //go:build !windows && !linux
 // +build !windows,!linux
 
-package internal
+package linux
 
-import (
-	"syscall"
+import "syscall"
 
-	"github.com/hugelgupf/p9/internal/linux"
-)
-
-func sysErrno(err error) linux.Errno {
+func sysErrno(err error) Errno {
 	se, ok := err.(syscall.Errno)
 	if ok {
 		// POSIX-defined errors seem to match up to error number 34
@@ -17,7 +13,7 @@ func sysErrno(err error) linux.Errno {
 		//
 		// 9P2000.L expects Linux error codes, so after 34 we normalize.
 		if se <= 34 {
-			return linux.Errno(se)
+			return Errno(se)
 		}
 		return 0
 	}

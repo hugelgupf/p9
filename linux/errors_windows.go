@@ -1,26 +1,22 @@
 //go:build windows
 // +build windows
 
-package internal
+package linux
 
-import (
-	"syscall"
+import "syscall"
 
-	"github.com/hugelgupf/p9/internal/linux"
-)
-
-func sysErrno(err error) linux.Errno {
+func sysErrno(err error) Errno {
 	switch err {
 	case syscall.ERROR_FILE_NOT_FOUND:
-		return linux.ENOENT
+		return ENOENT
 	case syscall.ERROR_PATH_NOT_FOUND:
-		return linux.ENOENT
+		return ENOENT
 	case syscall.ERROR_ACCESS_DENIED:
-		return linux.EACCES
+		return EACCES
 	case syscall.ERROR_FILE_EXISTS:
-		return linux.EEXIST
+		return EEXIST
 	case syscall.ERROR_INSUFFICIENT_BUFFER:
-		return linux.ENOMEM
+		return ENOMEM
 	default:
 		// No clue what to do with others.
 		return 0
