@@ -4,9 +4,7 @@
 
 package linux
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // Errno is a Linux error number on every GOOS.
 type Errno uintptr

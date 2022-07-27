@@ -1,31 +1,29 @@
-package internal
+package linux
 
 import (
 	"log"
 	"os"
-
-	"github.com/hugelgupf/p9/internal/linux"
 )
 
-// ExtractErrno extracts a linux.Errno from a error, best effort.
+// ExtractErrno extracts an [Errno] from an error, best effort.
 //
 // If the system-specific or Go-specific error cannot be mapped to anything, it
-// will be logged an EIO will be returned.
-func ExtractErrno(err error) linux.Errno {
+// will be logged and EIO will be returned.
+func ExtractErrno(err error) Errno {
 	switch err {
 	case os.ErrNotExist:
-		return linux.ENOENT
+		return ENOENT
 	case os.ErrExist:
-		return linux.EEXIST
+		return EEXIST
 	case os.ErrPermission:
-		return linux.EACCES
+		return EACCES
 	case os.ErrInvalid:
-		return linux.EINVAL
+		return EINVAL
 	}
 
 	// Attempt to unwrap.
 	switch e := err.(type) {
-	case linux.Errno:
+	case Errno:
 		return e
 	case *os.PathError:
 		return ExtractErrno(e.Err)
@@ -43,5 +41,5 @@ func ExtractErrno(err error) linux.Errno {
 	//
 	// TODO: give the ability to turn this off.
 	log.Printf("unknown error: %v", err)
-	return linux.EIO
+	return EIO
 }
