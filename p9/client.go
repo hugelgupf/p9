@@ -21,7 +21,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/hugelgupf/p9/internal/linux"
+	"github.com/hugelgupf/p9/linux"
 	"github.com/u-root/uio/ulog"
 )
 

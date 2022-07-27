@@ -23,7 +23,7 @@
 package templatefs
 
 import (
-	"github.com/hugelgupf/p9/internal/linux"
+	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
 )
 

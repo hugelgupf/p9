@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
-	"github.com/hugelgupf/p9/internal/linux"
+	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
 )
 
