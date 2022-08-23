@@ -2146,7 +2146,7 @@ func (t *tlock) String() string {
 	return fmt.Sprintf("Tlock{Type: %s, Flags: %#x, Start: %d, Length: %d, PID: %d, Client: %s}", t.Type.String(), t.Flags, t.Start, t.Length, t.PID, t.Client)
 }
 
-// rversion is a version response.
+// rlock is a lock response.
 type rlock struct {
 	Status uint8
 }
@@ -2298,6 +2298,8 @@ func init() {
 	msgDotLRegistry.register(msgRfsync, func() message { return &rfsync{} })
 	msgDotLRegistry.register(msgTlink, func() message { return &tlink{} })
 	msgDotLRegistry.register(msgRlink, func() message { return &rlink{} })
+	msgDotLRegistry.register(msgTlock, func() message { return &tlock{} })
+	msgDotLRegistry.register(msgRlock, func() message { return &rlock{} })
 	msgDotLRegistry.register(msgTmkdir, func() message { return &tmkdir{} })
 	msgDotLRegistry.register(msgRmkdir, func() message { return &rmkdir{} })
 	msgDotLRegistry.register(msgTrenameat, func() message { return &trenameat{} })
