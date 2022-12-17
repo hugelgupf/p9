@@ -178,7 +178,7 @@ func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	}
 	l.file = f
 
-	return qid, 4096, nil
+	return qid, 0, nil
 }
 
 // ReadAt implements p9.File.ReadAt.
@@ -205,7 +205,7 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 		l2.Close()
 		return nil, p9.QID{}, 0, err
 	}
-	return l2, qid, 4096, nil
+	return l2, qid, 0, nil
 }
 
 // Mkdir implements p9.File.Mkdir.
