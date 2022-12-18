@@ -98,6 +98,7 @@ type dir struct {
 	templatefs.IsDir
 	templatefs.NilCloser
 	templatefs.NoopRenamed
+	templatefs.NotLockable
 
 	qid p9.QID
 	a   *attacher
@@ -137,13 +138,6 @@ func (d *dir) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		GID:   0,
 		NLink: 2,
 	}, nil
-}
-
-// Lock implements p9.File.Lock.
-// It may seem odd to have a Lock on a dir, but 9P2000 does not distinguish
-// dirs and files.
-func (*dir) Lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
-	return nil
 }
 
 func min(a, b uint64) uint64 {
@@ -189,6 +183,7 @@ type file struct {
 	templatefs.NotDirectoryFile
 	templatefs.NotSymlinkFile
 	templatefs.NoopRenamed
+	templatefs.NotLockable
 
 	*strings.Reader
 
@@ -221,9 +216,4 @@ func (f *file) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 		Size:      uint64(f.Reader.Size()),
 		BlockSize: 4096, /* whatever? */
 	}, nil
-}
-
-// Lock implements p9.File.Lock.
-func (*file) Lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
-	return nil
 }

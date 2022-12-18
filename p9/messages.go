@@ -17,7 +17,6 @@ package p9
 import (
 	"fmt"
 	"math"
-	"syscall"
 )
 
 // ErrInvalidMsgType is returned when an unsupported message type is found.
@@ -2000,18 +1999,6 @@ func (r *rusymlink) String() string {
 	return fmt.Sprintf("Rusymlink{%v}", &r.rsymlink)
 }
 
-// lock - acquire or release a POSIX record lock
-// from the linux kernel: req = p9_client_rpc(clnt, P9_TLOCK, "dbdqqds", fid->fid, flock->type, (etc.)
-// byte doubleword quad quad doubleword string
-// This confirms this doc:
-// size[4] Tlock tag[2] fid[4] type[1] flags[4] start[8] length[8] proc_id[4] client_id[s]
-// start, length, and proc_id correspond to the analogous fields passed to Linux fcntl(F_SETLK):
-// size[4] Rlock tag[2] status[1]
-// lock is used to acquire or release a POSIX record lock on fid and has semantics similar to Linux fcntl(F_SETLK).
-// Most servers implement almost none of this stuff -- they use berkeley flock -- i.e., whole file locking.
-// Hence most of these parameters are ignored. A good thing, since this kind of locking over a network
-// makes no sense.
-
 // LockType is lock type for Tlock
 type LockType uint8
 
@@ -2034,78 +2021,58 @@ func (l LockType) String() string {
 	case Unlock:
 		return "Unlock"
 	}
-	return "Unknown lock type"
+	return "unknown lock type"
 }
 
-// LockFlags are flags for the lock. Currently, and possibly
-// forever, only one is really used: LockFlagsBlock
+// LockFlags are flags for the lock. Currently, and possibly forever, only one
+// is really used: LockFlagsBlock
 type LockFlags uint32
 
 const (
 	// LockFlagsBlock indicates a blocking request.
 	LockFlagsBlock LockFlags = 1
+
 	// LockFlagsReclaim is "Reserved for future use."
 	// It's been some time since 9P2000.L came about,
 	// I suspect "future" in this case is "never"?
 	LockFlagsReclaim LockFlags = 2
 )
 
-// A few notes on 9p2000.L and locks.
-// Docs are incomplete and confuse whence and flags. Turns out only flags matter.
-// And whence is not in the packet. And the implementations don't use any of this stuff.
-// They just use flock.
-//
-// This is in some docs,
-// struct flock {
-//     short l_type;  /* Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
-//     short l_whence;/* How to interpret l_start: SEEK_SET, SEEK_CUR, SEEK_END */
-//     off_t l_start; /* Starting offset for lock */
-//     off_t l_len;   /* Number of bytes to lock */
-//     pid_t l_pid;   /* PID of process blocking our lock (F_GETLK only) */
-// };
-// flags bits are:
-
-// #define P9_LOCK_FLAGS_BLOCK 1    /* blocking request */
-// #define P9_LOCK_FLAGS_RECLAIM 2  /* reserved for future use */
-
 // LockStatus contains lock status result.
 type LockStatus uint8
 
 // These are the four current return values for Rlock.
 const (
-	lockOK LockStatus = iota
-	lockBlocked
-	lockError
-	lockGrace
+	LockStatusOK LockStatus = iota
+	LockStatusBlocked
+	LockStatusError
+	LockStatusGrace
 )
 
-// ELockError is the overarching error for Tlock.
-// The 9P2000.L lock errors are basically "something failed",
-// i.e., not conformant with how 9P2000 is supposed to work.
-var ELockError = syscall.Errno(lockError)
-
-// The Linux v9fs client implements the fcntl(F_SETLKW) (blocking)
-// lock request by calling lock with P9_LOCK_FLAGS_BLOCK set. If the
-// response is P9_LOCK_BLOCKED, it retries the lock request in an
-// interruptible loop until status is no longer P9_LOCK_BLOCKED.
-
-// The Linux v9fs client translates BSD advisory locks (flock) to
-// whole-file POSIX record locks. v9fs does not implement mandatory
-// locks and will return ENOLCK if use is attempted.
-
-// Because of POSIX record lock inheritance and upgrade properties,
-// pass-through servers must be implemented carefully.
+func (s LockStatus) String() string {
+	switch s {
+	case LockStatusOK:
+		return "LockStatusOK"
+	case LockStatusBlocked:
+		return "LockStatusBlocked"
+	case LockStatusError:
+		return "LockStatusError"
+	case LockStatusGrace:
+		return "LockStatusGrace"
+	}
+	return "unknown lock status"
+}
 
 // tlock is a Tlock message
 type tlock struct {
 	// fid is the fid to lock.
 	fid fid
 
-	Type   LockType // Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
-	Flags  uint32   // flags, not whence, docs are wrong.
-	Start  uint64   // Starting offset for lock
-	Length uint64   // Number of bytes to lock
-	PID    int32    // PID of process blocking our lock (F_GETLK only)
+	Type   LockType  // Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
+	Flags  LockFlags // flags, not whence, docs are wrong.
+	Start  uint64    // Starting offset for lock
+	Length uint64    // Number of bytes to lock
+	PID    int32     // PID of process blocking our lock (F_GETLK only)
 
 	// "client_id is an additional mechanism for uniquely
 	// identifying the lock requester and is set to the nodename
@@ -2118,7 +2085,7 @@ type tlock struct {
 func (t *tlock) decode(b *buffer) {
 	t.fid = b.ReadFID()
 	t.Type = LockType(b.Read8())
-	t.Flags = b.Read32()
+	t.Flags = LockFlags(b.Read32())
 	t.Start = b.Read64()
 	t.Length = b.Read64()
 	t.PID = int32(b.Read32())
@@ -2129,7 +2096,7 @@ func (t *tlock) decode(b *buffer) {
 func (t *tlock) encode(b *buffer) {
 	b.WriteFID(t.fid)
 	b.Write8(uint8(t.Type))
-	b.Write32(t.Flags)
+	b.Write32(uint32(t.Flags))
 	b.Write64(t.Start)
 	b.Write64(t.Length)
 	b.Write32(uint32(t.PID))
@@ -2148,17 +2115,17 @@ func (t *tlock) String() string {
 
 // rlock is a lock response.
 type rlock struct {
-	Status uint8
+	Status LockStatus
 }
 
 // decode implements encoder.decode.
 func (r *rlock) decode(b *buffer) {
-	r.Status = b.Read8()
+	r.Status = LockStatus(b.Read8())
 }
 
 // encode implements encoder.encode.
 func (r *rlock) encode(b *buffer) {
-	b.Write8(r.Status)
+	b.Write8(uint8(r.Status))
 }
 
 // typ implements message.typ.
@@ -2168,7 +2135,7 @@ func (*rlock) typ() msgType {
 
 // String implements fmt.Stringer.
 func (r *rlock) String() string {
-	return fmt.Sprintf("Rlock{Status: %d}", r.Status)
+	return fmt.Sprintf("Rlock{Status: %s}", r.Status)
 }
 
 // Let's wait until we need this? POSIX locks over a network make 0 sense.
