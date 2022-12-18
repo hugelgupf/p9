@@ -3,10 +3,10 @@ version: 2
 templates:
   golang-template: &golang-template
     docker:
-      - image: uroottest/test-image-amd64:v4.6.0
-    working_directory: /go/src/github.com/hugelgupf/p9
+      - image: uroottest/test-image-amd64:v5.1.0
+    working_directory: /home/circleci/go/src/github.com/hugelgupf/p9
     environment:
-      - GOPATH: "/go"
+      - GOPATH: "/home/circleci/go"
       - CGO_ENABLED: 0
       # Double all timeouts for QEMU VM tests since they run without KVM.
       - UROOT_QEMU_TIMEOUT_X: 2
