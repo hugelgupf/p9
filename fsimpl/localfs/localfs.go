@@ -21,6 +21,7 @@ import (
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/internal"
+	"github.com/hugelgupf/p9/internal/linux"
 	"github.com/hugelgupf/p9/p9"
 )
 
@@ -262,4 +263,20 @@ func (l *Local) Readlink() (string, error) {
 // Renamed implements p9.File.Renamed.
 func (l *Local) Renamed(parent p9.File, newName string) {
 	l.path = path.Join(parent.(*Local).path, newName)
+}
+
+// SetAttr implements p9.File.SetAttr.
+func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
+	// When truncate(2) is called on Linux, Linux will try to set time & size. Fake it. Sorry.
+	supported := p9.SetAttrMask{Size: true, MTime: true, CTime: true}
+	if !valid.IsSubsetOf(supported) {
+		return linux.ENOSYS
+	}
+
+	if valid.Size {
+		// If more than one thing is ever implemented, we can't just
+		// return an error here.
+		return os.Truncate(l.path, int64(attr.Size))
+	}
+	return nil
 }
