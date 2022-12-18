@@ -979,11 +979,11 @@ func (t *tlock) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	r1 := lockOK
-	if err := ref.file.Lock(int(t.PID), t.Type, int(t.Flags), t.Start, t.Length, t.Client); err != nil {
-		r1 = lockError
+	status, err := ref.file.Lock(int(t.PID), t.Type, t.Flags, t.Start, t.Length, t.Client)
+	if err != nil {
+		return newErr(err)
 	}
-	return &rlock{Status: uint8(r1)}
+	return &rlock{Status: status}
 }
 
 // walkOne walks zero or one path elements.

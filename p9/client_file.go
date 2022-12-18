@@ -171,19 +171,21 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 }
 
 // Lock implements File.Lock
-func (c *clientFile) Lock(pid int, locktype LockType, flags int, start, length uint64, client string) error {
+func (c *clientFile) Lock(pid int, locktype LockType, flags LockFlags, start, length uint64, client string) (LockStatus, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
-		return linux.EBADF
+		return LockStatusError, linux.EBADF
 	}
 
-	return c.client.sendRecv(&tlock{
-		Type:   LockType(locktype),
-		Flags:  uint32(flags),
+	r := rlock{}
+	err := c.client.sendRecv(&tlock{
+		Type:   locktype,
+		Flags:  flags,
 		Start:  start,
 		Length: length,
 		PID:    int32(pid),
-		Client: "Good luck! You'll need it!"}, &rlock{})
-
+		Client: client,
+	}, &r)
+	return r.Status, err
 }
 
 // Remove implements File.Remove.

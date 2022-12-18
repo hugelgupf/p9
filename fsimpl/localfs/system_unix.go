@@ -20,23 +20,21 @@ func localToQid(_ string, fi os.FileInfo) (uint64, error) {
 }
 
 // lock implements p9.File.Lock.
-func (l *Local) lock(pid int, locktype p9.LockType, flags int, start, length uint64, client string) error {
-	var err error
-	switch p9.LockType(locktype) {
+func (l *Local) lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
+	switch locktype {
 	case p9.ReadLock, p9.WriteLock:
 		if err := unix.Flock(int(l.file.Fd()), unix.LOCK_EX); err != nil {
-			err = p9.ELockError
+			return p9.LockStatusError, nil
 		}
+
 	case p9.Unlock:
 		if err := unix.Flock(int(l.file.Fd()), unix.LOCK_EX); err != nil {
-			err = p9.ELockError
+			return p9.LockStatusError, nil
 		}
+
 	default:
-		// 9P2000.L not only does not return an Rerror per standard,
-		// it does not have a way to say "not implemented" for a Lock type.
-		// They had 255 possible values, and use 3, ... ay yi yi.
-		// 9P2000.L doesn't really fit the spirit of 9P.
-		err = p9.ELockError
+		return p9.LockStatusOK, unix.ENOSYS
 	}
-	return err
+
+	return p9.LockStatusOK, nil
 }
