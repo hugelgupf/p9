@@ -1,3 +1,4 @@
+//go:build linux || dragonfly || solaris
 // +build linux dragonfly solaris
 
 package internal
