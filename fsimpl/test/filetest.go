@@ -91,7 +91,7 @@ func readdir(dir p9.File) (p9.Dirents, error) {
 }
 
 func testWalkSelf(t *testing.T, root p9.File) {
-	for _, names := range [][]string{nil, []string{}} {
+	for _, names := range [][]string{nil, {}} {
 		t.Run(fmt.Sprintf("self-%#v", names), func(t *testing.T) {
 			qids, got, err := root.Walk(names)
 			if err != nil {

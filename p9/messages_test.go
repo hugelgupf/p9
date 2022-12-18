@@ -353,6 +353,17 @@ func TestEncodeDecode(t *testing.T) {
 		&rumknod{
 			rmknod{QID: QID{Type: 1}},
 		},
+		&tlock{
+			Type:   0x5,
+			Flags:  0xaabbccdd,
+			Start:  0x67893456,
+			Length: 0x33333333,
+			PID:    0x9876,
+			Client: "This will never work",
+		},
+		&rlock{
+			Status: 0x54,
+		},
 	}
 
 	for _, enc := range objs {

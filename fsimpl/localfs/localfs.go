@@ -178,12 +178,17 @@ func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	}
 	l.file = f
 
-	return qid, 4096, nil
+	return qid, 0, nil
 }
 
 // ReadAt implements p9.File.ReadAt.
 func (l *Local) ReadAt(p []byte, offset int64) (int, error) {
 	return l.file.ReadAt(p, offset)
+}
+
+// Lock implements p9.File.Lock.
+func (l *Local) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
+	return l.lock(pid, locktype, flags, start, length, client)
 }
 
 // WriteAt implements p9.File.WriteAt.
@@ -205,7 +210,7 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 		l2.Close()
 		return nil, p9.QID{}, 0, err
 	}
-	return l2, qid, 4096, nil
+	return l2, qid, 0, nil
 }
 
 // Mkdir implements p9.File.Mkdir.

@@ -98,6 +98,7 @@ type dir struct {
 	templatefs.IsDir
 	templatefs.NilCloser
 	templatefs.NoopRenamed
+	templatefs.NotLockable
 
 	qid p9.QID
 	a   *attacher
@@ -182,6 +183,7 @@ type file struct {
 	templatefs.NotDirectoryFile
 	templatefs.NotSymlinkFile
 	templatefs.NoopRenamed
+	templatefs.NotLockable
 
 	*strings.Reader
 

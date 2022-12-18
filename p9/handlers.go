@@ -970,6 +970,22 @@ func (t *tstatfs) handle(cs *connState) message {
 	return &rstatfs{st}
 }
 
+// handle implements handler.handle.
+func (t *tlock) handle(cs *connState) message {
+	// Lookup the fid.
+	ref, ok := cs.LookupFID(t.fid)
+	if !ok {
+		return newErr(linux.EBADF)
+	}
+	defer ref.DecRef()
+
+	status, err := ref.file.Lock(int(t.PID), t.Type, t.Flags, t.Start, t.Length, t.Client)
+	if err != nil {
+		return newErr(err)
+	}
+	return &rlock{Status: status}
+}
+
 // walkOne walks zero or one path elements.
 //
 // The slice passed as qids is append and returned.

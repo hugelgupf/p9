@@ -1999,6 +1999,160 @@ func (r *rusymlink) String() string {
 	return fmt.Sprintf("Rusymlink{%v}", &r.rsymlink)
 }
 
+// LockType is lock type for Tlock
+type LockType uint8
+
+// These constants define Lock operations: Read, Write, and Un(lock)
+// They map to Linux values of F_RDLCK, F_WRLCK, F_UNLCK.
+// If that seems a little Linux-centric, recall that the "L"
+// in 9P2000.L means "Linux" :-)
+const (
+	ReadLock LockType = iota
+	WriteLock
+	Unlock
+)
+
+func (l LockType) String() string {
+	switch l {
+	case ReadLock:
+		return "ReadLock"
+	case WriteLock:
+		return "WriteLock"
+	case Unlock:
+		return "Unlock"
+	}
+	return "unknown lock type"
+}
+
+// LockFlags are flags for the lock. Currently, and possibly forever, only one
+// is really used: LockFlagsBlock
+type LockFlags uint32
+
+const (
+	// LockFlagsBlock indicates a blocking request.
+	LockFlagsBlock LockFlags = 1
+
+	// LockFlagsReclaim is "Reserved for future use."
+	// It's been some time since 9P2000.L came about,
+	// I suspect "future" in this case is "never"?
+	LockFlagsReclaim LockFlags = 2
+)
+
+// LockStatus contains lock status result.
+type LockStatus uint8
+
+// These are the four current return values for Rlock.
+const (
+	LockStatusOK LockStatus = iota
+	LockStatusBlocked
+	LockStatusError
+	LockStatusGrace
+)
+
+func (s LockStatus) String() string {
+	switch s {
+	case LockStatusOK:
+		return "LockStatusOK"
+	case LockStatusBlocked:
+		return "LockStatusBlocked"
+	case LockStatusError:
+		return "LockStatusError"
+	case LockStatusGrace:
+		return "LockStatusGrace"
+	}
+	return "unknown lock status"
+}
+
+// tlock is a Tlock message
+type tlock struct {
+	// fid is the fid to lock.
+	fid fid
+
+	Type   LockType  // Type of lock: F_RDLCK, F_WRLCK, F_UNLCK */
+	Flags  LockFlags // flags, not whence, docs are wrong.
+	Start  uint64    // Starting offset for lock
+	Length uint64    // Number of bytes to lock
+	PID    int32     // PID of process blocking our lock (F_GETLK only)
+
+	// "client_id is an additional mechanism for uniquely
+	// identifying the lock requester and is set to the nodename
+	// by the Linux v9fs client."
+	// https://github.com/chaos/diod/blob/master/protocol.md#lock---acquire-or-release-a-posix-record-lock
+	Client string // Client id -- but technically can be anything.
+}
+
+// decode implements encoder.decode.
+func (t *tlock) decode(b *buffer) {
+	t.fid = b.ReadFID()
+	t.Type = LockType(b.Read8())
+	t.Flags = LockFlags(b.Read32())
+	t.Start = b.Read64()
+	t.Length = b.Read64()
+	t.PID = int32(b.Read32())
+	t.Client = b.ReadString()
+}
+
+// encode implements encoder.encode.
+func (t *tlock) encode(b *buffer) {
+	b.WriteFID(t.fid)
+	b.Write8(uint8(t.Type))
+	b.Write32(uint32(t.Flags))
+	b.Write64(t.Start)
+	b.Write64(t.Length)
+	b.Write32(uint32(t.PID))
+	b.WriteString(t.Client)
+}
+
+// typ implements message.typ.
+func (*tlock) typ() msgType {
+	return msgTlock
+}
+
+// String implements fmt.Stringer.
+func (t *tlock) String() string {
+	return fmt.Sprintf("Tlock{Type: %s, Flags: %#x, Start: %d, Length: %d, PID: %d, Client: %s}", t.Type.String(), t.Flags, t.Start, t.Length, t.PID, t.Client)
+}
+
+// rlock is a lock response.
+type rlock struct {
+	Status LockStatus
+}
+
+// decode implements encoder.decode.
+func (r *rlock) decode(b *buffer) {
+	r.Status = LockStatus(b.Read8())
+}
+
+// encode implements encoder.encode.
+func (r *rlock) encode(b *buffer) {
+	b.Write8(uint8(r.Status))
+}
+
+// typ implements message.typ.
+func (*rlock) typ() msgType {
+	return msgRlock
+}
+
+// String implements fmt.Stringer.
+func (r *rlock) String() string {
+	return fmt.Sprintf("Rlock{Status: %s}", r.Status)
+}
+
+// Let's wait until we need this? POSIX locks over a network make 0 sense.
+// getlock - test for the existence of a POSIX record lock
+// size[4] Tgetlock tag[2] fid[4] type[1] start[8] length[8] proc_id[4] client_id[s]
+// size[4] Rgetlock tag[2] type[1] start[8] length[8] proc_id[4] client_id[s]
+// getlock tests for the existence of a POSIX record lock and has semantics similar to Linux fcntl(F_GETLK).
+
+// As with lock, type has one of the values defined above, and start,
+// length, and proc_id correspond to the analogous fields in struct
+// flock passed to Linux fcntl(F_GETLK), and client_Id is an
+// additional mechanism for uniquely identifying the lock requester
+// and is set to the nodename by the Linux v9fs client.  tusymlink is
+// a Tsymlink message that includes a UID.
+
+/// END LOCK
+
 const maxCacheSize = 3
 
 // msgFactory is used to reduce allocations by caching messages for reuse.
@@ -2111,6 +2265,8 @@ func init() {
 	msgDotLRegistry.register(msgRfsync, func() message { return &rfsync{} })
 	msgDotLRegistry.register(msgTlink, func() message { return &tlink{} })
 	msgDotLRegistry.register(msgRlink, func() message { return &rlink{} })
+	msgDotLRegistry.register(msgTlock, func() message { return &tlock{} })
+	msgDotLRegistry.register(msgRlock, func() message { return &rlock{} })
 	msgDotLRegistry.register(msgTmkdir, func() message { return &tmkdir{} })
 	msgDotLRegistry.register(msgRmkdir, func() message { return &rmkdir{} })
 	msgDotLRegistry.register(msgTrenameat, func() message { return &trenameat{} })

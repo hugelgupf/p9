@@ -132,6 +132,40 @@ type File interface {
 	// On the server, FSync has a read concurrency guarantee.
 	FSync() error
 
+	// Lock locks the file. The operation as defined in 9P2000.L is fairly
+	// ambitious, being a near-direct mapping to lockf(2)/fcntl(2)-style
+	// locking, but most implementations use flock(2).
+	//
+	// Arguments are defined by the 9P2000.L standard.
+	//
+	// Pid is the PID on the client. Locktype is one of read, write, or
+	// unlock (resp. 0, 1, or 2). Flags are to block (0), meaning wait; or
+	// reclaim (1), which is currently "reserved for future use." Start and
+	// length are the start of the region to use and the size. In many
+	// implementations, they are ignored and flock(2) is used. Client is an
+	// arbitrary string, also frequently unused. The Linux v9fs client
+	// happens to set the client name to the node name.
+	//
+	// The Linux v9fs client implements fcntl(F_SETLK) by calling lock
+	// without any flags set.
+	//
+	// The Linux v9fs client implements the fcntl(F_SETLKW) (blocking)
+	// lock request by calling lock with P9_LOCK_FLAGS_BLOCK set. If the
+	// response is P9_LOCK_BLOCKED, it retries the lock request in an
+	// interruptible loop until status is no longer P9_LOCK_BLOCKED.
+	//
+	// The Linux v9fs client translates BSD advisory locks (flock) to
+	// whole-file POSIX record locks. v9fs does not implement mandatory
+	// locks and will return ENOLCK if use is attempted.
+	//
+	// In the return values, a LockStatus corresponds to an Rlock, while
+	// returning an error corresponds to an Rlerror message. If any non-nil
+	// error is returned, an Rlerror message will be sent.
+	//
+	// The most commonly used return values are success and error (resp. 0
+	// and 2); blocked (1) and grace (3) are also possible.
+	Lock(pid int, locktype LockType, flags LockFlags, start, length uint64, client string) (LockStatus, error)
+
 	// Create creates a new regular file and opens it according to the
 	// flags given. This file is already Open.
 	//

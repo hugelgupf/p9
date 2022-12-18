@@ -46,6 +46,7 @@ type NoopFile struct {
 	p9.DefaultWalkGetAttr
 	NilCloser
 	NoopRenamed
+	NotLockable
 }
 
 var (
@@ -147,4 +148,11 @@ func (NoopFile) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 // Readlink implements p9.File.Readlink.
 func (NoopFile) Readlink() (string, error) {
 	return "", linux.ENOSYS
+}
+
+type NotLockable struct{}
+
+// Lock implements p9.File.Lock.
+func (NotLockable) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
+	return p9.LockStatusOK, linux.ENOSYS
 }
