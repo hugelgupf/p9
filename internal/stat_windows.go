@@ -4,7 +4,7 @@ import (
 	"os"
 )
 
-//NOTE: taken from amd64 Linux
+// NOTE: taken from amd64 Linux
 type Timespec struct {
 	Sec  int64
 	Nsec int64
@@ -39,7 +39,7 @@ func InfoToStat(fi os.FileInfo) *Stat_t {
 
 }
 
-//TODO: copied from pkg p9
+// TODO: copied from pkg p9
 // we should probably migrate the OS methods from p9 into sys
 const (
 	FileModeMask        uint32 = 0170000

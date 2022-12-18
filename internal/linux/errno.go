@@ -21,7 +21,7 @@ func (e Errno) Error() string {
 	return fmt.Sprintf("errno %d", int(e))
 }
 
-//  numbers defined on Linux/amd64.
+// numbers defined on Linux/amd64.
 const (
 	E2BIG           = Errno(0x7)
 	EACCES          = Errno(0xd)

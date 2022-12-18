@@ -70,8 +70,10 @@ func HighestVersionString() string {
 // predicate must be commented and should take the format:
 //
 // // VersionSupportsX returns true if version v supports X and must be checked when ...
-// func VersionSupportsX(v int32) bool {
-//	...
+//
+//	func VersionSupportsX(v int32) bool {
+//		...
+//
 // )
 func parseVersion(str string) (baseVersion, uint32, bool) {
 	switch str {
