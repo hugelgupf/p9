@@ -51,6 +51,10 @@ type payloader interface {
 	// This is going to be total message size - FixedSize. But this should
 	// be validated during decode, which will be called after SetPayload.
 	SetPayload([]byte)
+
+	// PayloadCleanup is called after a payloader message is sent and
+	// buffers can be reapt.
+	PayloadCleanup()
 }
 
 // tversion is a version request.
@@ -993,6 +997,18 @@ func (t *tread) String() string {
 	return fmt.Sprintf("Tread{FID: %d, Offset: %d, Count: %d}", t.fid, t.Offset, t.Count)
 }
 
+// rreadPayloader is the response for a Tread.
+//
+// rreadPayloader exists so the fuzzer can fuzz rread -- however,
+// PayloadCleanup causes it to panic, and putting connState in the fuzzer seems
+// excessive.
+type rreadPayloader struct {
+	rread
+
+	fullBuffer []byte
+	cs         *connState
+}
+
 // rread is the response for a Tread.
 type rread struct {
 	// Data is the resulting data.
@@ -1022,18 +1038,25 @@ func (*rread) typ() msgType {
 }
 
 // FixedSize implements payloader.FixedSize.
-func (*rread) FixedSize() uint32 {
+func (*rreadPayloader) FixedSize() uint32 {
 	return 4
 }
 
 // Payload implements payloader.Payload.
-func (r *rread) Payload() []byte {
+func (r *rreadPayloader) Payload() []byte {
 	return r.Data
 }
 
 // SetPayload implements payloader.SetPayload.
-func (r *rread) SetPayload(p []byte) {
+func (r *rreadPayloader) SetPayload(p []byte) {
 	r.Data = p
+}
+
+// PayloadCleanup implements payloader.PayloadCleanup.
+func (r *rreadPayloader) PayloadCleanup() {
+	// Fill it with zeros to not risk leaking previous files' data.
+	copy(r.Data, r.cs.pristineZeros)
+	r.cs.readBufPool.Put(&r.fullBuffer)
 }
 
 // String implements fmt.Stringer.
@@ -1086,6 +1109,8 @@ func (*twrite) FixedSize() uint32 {
 func (t *twrite) Payload() []byte {
 	return t.Data
 }
+
+func (t *twrite) PayloadCleanup() {}
 
 // SetPayload implements payloader.SetPayload.
 func (t *twrite) SetPayload(p []byte) {
@@ -1620,6 +1645,8 @@ func (*rreaddir) FixedSize() uint32 {
 func (r *rreaddir) Payload() []byte {
 	return r.payload
 }
+
+func (r *rreaddir) PayloadCleanup() {}
 
 // SetPayload implements payloader.SetPayload.
 func (r *rreaddir) SetPayload(p []byte) {

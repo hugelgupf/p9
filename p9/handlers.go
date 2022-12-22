@@ -19,6 +19,7 @@ import (
 	"io"
 	"path"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/hugelgupf/p9/internal"
@@ -92,6 +93,19 @@ func (t *tversion) handle(cs *connState) message {
 	// This is not thread-safe. We're changing this into sessions anyway,
 	// so who cares.
 	cs.baseVersion = baseVersion
+
+	// Initial a pool with msize-shaped buffers.
+	cs.readBufPool = sync.Pool{
+		New: func() interface{} {
+			// These buffers are used for decoding without a payload.
+			// We need to return a pointer to avoid unnecessary allocations
+			// (see https://staticcheck.io/docs/checks#SA6002).
+			b := make([]byte, msize)
+			return &b
+		},
+	}
+	// Buffer of zeros.
+	cs.pristineZeros = make([]byte, msize)
 
 	return &rversion{
 		MSize:   msize,
@@ -669,10 +683,10 @@ func (t *tread) handle(cs *connState) message {
 		return newErr(linux.ENOBUFS)
 	}
 
-	var (
-		data = make([]byte, t.Count)
-		n    int
-	)
+	var n int
+	data := cs.readBufPool.Get().(*[]byte)
+	// Retain a reference to the full length of the buffer.
+	dataBuf := (*data)
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
 		openFlags, opened := ref.OpenFlags()
@@ -685,13 +699,19 @@ func (t *tread) handle(cs *connState) message {
 			return linux.EPERM
 		}
 
-		n, err = ref.file.ReadAt(data, int64(t.Offset))
+		n, err = ref.file.ReadAt(dataBuf[:t.Count], int64(t.Offset))
 		return err
 	}); err != nil && err != io.EOF {
 		return newErr(err)
 	}
 
-	return &rread{Data: data[:n]}
+	return &rreadPayloader{
+		rread: rread{
+			Data: dataBuf[:n],
+		},
+		cs:         cs,
+		fullBuffer: dataBuf,
+	}
 }
 
 // handle implements handler.handle.

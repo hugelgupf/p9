@@ -102,6 +102,7 @@ func send(l ulog.Logger, w io.Writer, tag tag, m message) error {
 			vecs = append(vecs, p)
 			totalLength += uint32(len(p))
 		}
+		defer payloader.PayloadCleanup()
 	}
 
 	// Construct the header.
