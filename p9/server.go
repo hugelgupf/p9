@@ -98,7 +98,9 @@ type connState struct {
 
 	// messageSize is the maximum message size. The server does not
 	// do automatic splitting of messages.
-	messageSize uint32
+	messageSize   uint32
+	readBufPool   sync.Pool
+	pristineZeros []byte
 
 	// baseVersion is the version of 9P protocol.
 	baseVersion baseVersion
