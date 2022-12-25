@@ -14,7 +14,7 @@ type HostNetwork struct {
 }
 
 // Cmdline implements qemu.Device.Cmdline.
-func (h HostNetwork) Cmdline() []string {
+func (h HostNetwork) Cmdline(string) []string {
 	return []string{
 		"-device", "e1000,netdev=host0",
 		"-netdev", fmt.Sprintf("user,id=host0,net=%s,dhcpstart=%s", h.Net, nthIP(h.Net, 8)),
