@@ -13,9 +13,9 @@ import (
 
 	"github.com/hugelgupf/p9/fsimpl/test/vmdriver"
 	"github.com/hugelgupf/p9/p9"
-	"github.com/u-root/u-root/pkg/qemu"
+	"github.com/hugelgupf/vmtest"
+	"github.com/hugelgupf/vmtest/qemu"
 	"github.com/u-root/u-root/pkg/uroot"
-	"github.com/u-root/u-root/pkg/vmtest"
 	"github.com/u-root/uio/ulog/ulogtest"
 )
 
@@ -38,19 +38,30 @@ func TestIntegration(t *testing.T) {
 	go s.Serve(serverSocket)
 
 	// Run the read-write tests from fsimpl/test/rwvm.
-	vmtest.GolangTest(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"}, &vmtest.Options{
-		QEMUOpts: qemu.Options{
-			Devices: []qemu.Device{
-				vmdriver.HostNetwork{
-					Net: &net.IPNet{
-						// 192.168.0.0/24
-						IP:   net.IP{192, 168, 0, 0},
-						Mask: net.CIDRMask(24, 32),
+	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"}, &vmtest.UrootFSOptions{
+		BuildOpts: uroot.Opts{
+			Commands: uroot.BusyBoxCmds(
+				"github.com/u-root/u-root/cmds/core/ls",
+				"github.com/u-root/u-root/cmds/core/dhclient",
+			),
+			ExtraFiles: []string{
+				"/usr/bin/dd:bin/dd",
+			},
+		},
+		VMOptions: vmtest.VMOptions{
+			QEMUOpts: qemu.Options{
+				Devices: []qemu.Device{
+					vmdriver.HostNetwork{
+						Net: &net.IPNet{
+							// 192.168.0.0/24
+							IP:   net.IP{192, 168, 0, 0},
+							Mask: net.CIDRMask(24, 32),
+						},
 					},
 				},
+				KernelArgs: fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort),
+				Timeout:    30 * time.Second,
 			},
-			KernelArgs: fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort),
-			Timeout:    30 * time.Second,
 		},
 	})
 }
@@ -75,24 +86,30 @@ func TestBenchmark(t *testing.T) {
 	go s.Serve(serverSocket)
 
 	// Run the read-write tests from fsimpl/test/rwvm.
-	vmtest.GolangTest(t, []string{"github.com/hugelgupf/p9/fsimpl/test/benchmark"}, &vmtest.Options{
+	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/benchmark"}, &vmtest.UrootFSOptions{
 		BuildOpts: uroot.Opts{
+			Commands: uroot.BusyBoxCmds(
+				"github.com/u-root/u-root/cmds/core/ls",
+				"github.com/u-root/u-root/cmds/core/dhclient",
+			),
 			ExtraFiles: []string{
 				"/usr/bin/dd:bin/dd",
 			},
 		},
-		QEMUOpts: qemu.Options{
-			Devices: []qemu.Device{
-				vmdriver.HostNetwork{
-					Net: &net.IPNet{
-						// 192.168.0.0/24
-						IP:   net.IP{192, 168, 0, 0},
-						Mask: net.CIDRMask(24, 32),
+		VMOptions: vmtest.VMOptions{
+			QEMUOpts: qemu.Options{
+				Devices: []qemu.Device{
+					vmdriver.HostNetwork{
+						Net: &net.IPNet{
+							// 192.168.0.0/24
+							IP:   net.IP{192, 168, 0, 0},
+							Mask: net.CIDRMask(24, 32),
+						},
 					},
 				},
+				KernelArgs: fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort),
+				Timeout:    30 * time.Second,
 			},
-			KernelArgs: fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort),
-			Timeout:    30 * time.Second,
 		},
 	})
 }
