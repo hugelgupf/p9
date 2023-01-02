@@ -11,6 +11,7 @@ templates:
       # Double all timeouts for QEMU VM tests since they run without KVM.
       - UROOT_QEMU_TIMEOUT_X: 2
       - GO111MODULE: "off"
+      - UROOT_SOURCE: "/home/circleci/go/src/github.com/u-root/u-root"
 
 workflows:
   version: 2
