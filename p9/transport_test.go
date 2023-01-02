@@ -130,12 +130,12 @@ func TestSendAndRecv(t *testing.T) {
 					return
 				}
 				if !tt.wantErr && tagg != tag(1) {
-					t.Fatalf("got tag %v expected 1", tagg)
+					t.Errorf("got tag %v expected 1", tagg)
 				}
 				expectedType := reflect.TypeOf(tt.args.m)
 				recievedType := reflect.TypeOf(m)
 				if !tt.wantErr && expectedType != recievedType {
-					t.Fatalf("got message %v expected %v", recievedType, expectedType)
+					t.Errorf("got message %v expected %v", recievedType, expectedType)
 				}
 
 			}()
