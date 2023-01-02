@@ -25,16 +25,16 @@ func BenchmarkSendRecvTCP(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			t, m, err := recv(l, server, maximumLength, msgDotLRegistry.get)
 			if err != nil {
-				b.Fatalf("recv got err %v expected nil", err)
+				b.Errorf("recv got err %v expected nil", err)
 			}
 			if t != tag(1) {
-				b.Fatalf("got tag %v expected 1", t)
+				b.Errorf("got tag %v expected 1", t)
 			}
 			if _, ok := m.(*rflush); !ok {
-				b.Fatalf("got message %T expected *Rflush", m)
+				b.Errorf("got message %T expected *Rflush", m)
 			}
 			if err := send(l, server, tag(2), &rflush{}); err != nil {
-				b.Fatalf("send got err %v expected nil", err)
+				b.Errorf("send got err %v expected nil", err)
 			}
 		}
 	}()
