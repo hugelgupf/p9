@@ -16,10 +16,37 @@ workflows:
   version: 2
   build:
     jobs:
-      - build
-      - test
+      - tidy
+      - build:
+          requires:
+            - tidy
+      - test:
+          requires:
+            - tidy
 
 jobs:
+  tidy:
+    <<: *golang-template
+    steps:
+      - checkout
+      - run: go env
+      - run: go vet ./...
+      - run:
+          name: go mod tidy
+          command: |
+            go mod tidy
+            go mod verify
+            git status
+            if [[ -n "$(git status --porcelain .)" ]]; then
+              echo 'go.mod/go.sum is out-of-date: run `go mod tidy` in the right module directories (see git status) and then check in the changes'
+              echo 'If `go mod tidy` results in no changes, make sure you are using the latest relase of Go'
+              git status --porcelain .
+              exit 1
+            fi
+      - run:
+          name: gofmt
+          command: test -z "$(gofmt -s -l $(find -name '*.go'))"
+
   test:
     <<: *golang-template
     steps:
