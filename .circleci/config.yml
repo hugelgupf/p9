@@ -3,15 +3,14 @@ version: 2
 templates:
   golang-template: &golang-template
     docker:
-      - image: uroottest/test-image-amd64:v5.1.0
+      - image: uroottest/test-image-amd64:v5.2.0
     working_directory: /home/circleci/go/src/github.com/hugelgupf/p9
     environment:
-      - GOPATH: "/home/circleci/go"
       - CGO_ENABLED: 0
       # Double all timeouts for QEMU VM tests since they run without KVM.
       - UROOT_QEMU_TIMEOUT_X: 2
-      - GO111MODULE: "off"
-      - UROOT_SOURCE: "/home/circleci/go/src/github.com/u-root/u-root"
+      - VMTEST_KERNEL: /home/circleci/bzImage
+      - VMTEST_QEMU: "/home/circleci/qemu-system-x86_64 -L /home/circleci/pc-bios -m 1G"
 
 workflows:
   version: 2
@@ -26,9 +25,6 @@ jobs:
     steps:
       - checkout
       - run: go env
-      - run: go get -v -t -d github.com/u-root/u-root
-      - run: go get -v -d ./...
-      - run: GO111MODULE=on go mod vendor
       - run: go test -timeout 15m -v ./...
       - run: CGO_ENABLED=1 go test -race -timeout 15m -v ./...
 
@@ -38,8 +34,8 @@ jobs:
       - checkout
       - run: go env
       - run: |
-          go get github.com/mitchellh/gox
+          go install github.com/mitchellh/gox@latest
 
           # Exclude darwin/arm(64?).
-          GO111MODULE=on gox -osarch="darwin/amd64" ./...
-          GO111MODULE=on gox -parallel=2 -os="windows linux freebsd netbsd openbsd solaris" -arch="386 amd64 arm arm64 ppc64 ppc64le s390x mips mipsle mips64 mips64le" ./...
+          gox -osarch="darwin/amd64" ./...
+          gox -parallel=2 -os="windows linux freebsd netbsd openbsd solaris" -arch="386 amd64 arm arm64 ppc64 ppc64le s390x mips mipsle mips64 mips64le" ./...
