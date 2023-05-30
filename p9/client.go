@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"sync"
 
 	"github.com/hugelgupf/p9/linux"
@@ -193,11 +192,11 @@ func NewClient(conn io.ReadWriteCloser, o ...ClientOpt) (*Client, error) {
 		baseVersion, version, ok := parseVersion(rversion.Version)
 		if !ok {
 			// The server gave us a bad version. We return a generically worrisome error.
-			log.Printf("server returned bad version string %q", rversion.Version)
+			c.log.Printf("server returned bad version string %q", rversion.Version)
 			return nil, ErrBadVersionString
 		}
 		if baseVersion != version9P2000L {
-			log.Printf("server returned unsupported base version %q (version %q)", baseVersion, rversion.Version)
+			c.log.Printf("server returned unsupported base version %q (version %q)", baseVersion, rversion.Version)
 			return nil, ErrBadVersionString
 		}
 		c.version = version
@@ -218,7 +217,7 @@ func (c *Client) handleOne() {
 
 		// Not expecting this message?
 		if resp == nil {
-			log.Printf("client received unexpected tag %v, ignoring", t)
+			c.log.Printf("client received unexpected tag %v, ignoring", t)
 			return nil, ErrUnexpectedTag
 		}
 
