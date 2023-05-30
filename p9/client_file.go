@@ -17,7 +17,6 @@ package p9
 import (
 	"fmt"
 	"io"
-	"log"
 	"runtime"
 	"sync/atomic"
 
@@ -245,7 +244,6 @@ func (c *clientFile) Close() error {
 	if err := c.client.sendRecv(&tclunk{fid: c.fid}, &rclunk{}); err != nil {
 		// If an error occurred, we toss away the fid. This isn't ideal,
 		// but I'm not sure what else makes sense in this context.
-		log.Printf("Tclunk failed, losing fid %v: %v", c.fid, err)
 		return err
 	}
 
