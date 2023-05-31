@@ -1038,6 +1038,23 @@ func (*rread) typ() msgType {
 }
 
 // FixedSize implements payloader.FixedSize.
+func (*rread) FixedSize() uint32 {
+	return 4
+}
+
+// Payload implements payloader.Payload.
+func (r *rread) Payload() []byte {
+	return r.Data
+}
+
+// SetPayload implements payloader.SetPayload.
+func (r *rread) SetPayload(p []byte) {
+	r.Data = p
+}
+
+func (*rread) PayloadCleanup() {}
+
+// FixedSize implements payloader.FixedSize.
 func (*rreadPayloader) FixedSize() uint32 {
 	return 4
 }
