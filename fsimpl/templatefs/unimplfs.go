@@ -150,6 +150,21 @@ func (NoopFile) Readlink() (string, error) {
 	return "", linux.ENOSYS
 }
 
+// SetXattr implements p9.File.SetXattr.
+func (NoopFile) SetXattr(attr string, data []byte, flags int) error {
+	return linux.ENOSYS
+}
+
+// GetXattr implements p9.File.GetXattr.
+func (NoopFile) GetXattr(attr string, buf []byte) (int, error) {
+	return 0, linux.ENOSYS
+}
+
+// ListXattrs implements p9.File.ListXattrs.
+func (NoopFile) ListXattrs(buf []byte) (int, error) {
+	return 0, linux.ENOSYS
+}
+
 type NotLockable struct{}
 
 // Lock implements p9.File.Lock.

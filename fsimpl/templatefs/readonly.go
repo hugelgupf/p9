@@ -94,6 +94,21 @@ func (ReadOnlyFile) Flush() error {
 	return nil
 }
 
+// SetXattr implements p9.File.SetXattr.
+func (ReadOnlyFile) SetXattr(attr string, data []byte, flags int) error {
+	return linux.ENOSYS
+}
+
+// GetXattr implements p9.File.GetXattr.
+func (ReadOnlyFile) GetXattr(attr string, buf []byte) (int, error) {
+	return 0, linux.ENOSYS
+}
+
+// ListXattrs implements p9.File.ListXattrs.
+func (ReadOnlyFile) ListXattrs(buf []byte) (int, error) {
+	return 0, linux.ENOSYS
+}
+
 // ReadOnlyDir denies any directory and file operations with EROFS
 //
 // Those operations are Create, Mkdir, Symlink, Link, Mknod, RenameAt,
@@ -158,6 +173,21 @@ func (ReadOnlyDir) Remove() error {
 // Rename implements p9.File.Rename.
 func (ReadOnlyDir) Rename(directory p9.File, name string) error {
 	return linux.EROFS
+}
+
+// SetXattr implements p9.File.SetXattr.
+func (ReadOnlyDir) SetXattr(attr string, data []byte, flags int) error {
+	return linux.ENOSYS
+}
+
+// GetXattr implements p9.File.GetXattr.
+func (ReadOnlyDir) GetXattr(attr string, buf []byte) (int, error) {
+	return 0, linux.ENOSYS
+}
+
+// ListXattrs implements p9.File.ListXattrs.
+func (ReadOnlyDir) ListXattrs(buf []byte) (int, error) {
+	return 0, linux.ENOSYS
 }
 
 // IsDir returns EISDIR for ReadAt and WriteAt.

@@ -688,19 +688,54 @@ func (t *tread) handle(cs *connState) message {
 	// Retain a reference to the full length of the buffer.
 	dataBuf := (*data)
 	if err := ref.safelyRead(func() (err error) {
-		// Has it been opened already?
-		openFlags, opened := ref.OpenFlags()
-		if !opened {
+		switch ref.pendingXattr.op {
+		case xattrNone:
+			// Has it been opened already?
+			openFlags, opened := ref.OpenFlags()
+			if !opened {
+				return linux.EINVAL
+			}
+
+			// Can it be read? Check permissions.
+			if openFlags&OpenFlagsModeMask == WriteOnly {
+				return linux.EPERM
+			}
+
+			n, err = ref.file.ReadAt(dataBuf[:t.Count], int64(t.Offset))
+			return err
+		case xattrWalk:
+			if t.Offset != 0 {
+				return linux.EINVAL
+			}
+
+			// Make sure we do not pass an empty buffer to GetXattr or ListXattrs.
+			// Both of them will return the required buffer length if
+			// the input buffer has length 0.
+			// tread means the caller already knows the required buffer length
+			// and wants to get the attribute value.
+			if t.Count == 0 {
+				n = 0
+				if ref.pendingXattr.size == 0 {
+					// the provided buffer has length 0 and
+					// the attribute value is also empty.
+					return nil
+				}
+				// buffer too small.
+				return linux.EINVAL
+			}
+
+			if len(ref.pendingXattr.name) > 0 {
+				n, err = ref.file.GetXattr(ref.pendingXattr.name, dataBuf[:t.Count])
+			} else {
+				n, err = ref.file.ListXattrs(dataBuf[:t.Count])
+			}
+			if err != nil {
+				return err
+			}
+			return nil
+		default:
 			return linux.EINVAL
 		}
-
-		// Can it be read? Check permissions.
-		if openFlags&OpenFlagsModeMask == WriteOnly {
-			return linux.EPERM
-		}
-
-		n, err = ref.file.ReadAt(dataBuf[:t.Count], int64(t.Offset))
-		return err
 	}); err != nil && err != io.EOF {
 		return newErr(err)
 	}
@@ -725,18 +760,32 @@ func (t *twrite) handle(cs *connState) message {
 
 	var n int
 	if err := ref.safelyRead(func() (err error) {
-		// Has it been opened already?
-		openFlags, opened := ref.OpenFlags()
-		if !opened {
+		switch ref.pendingXattr.op {
+		case xattrNone:
+			// Has it been opened already?
+			openFlags, opened := ref.OpenFlags()
+			if !opened {
+				return linux.EINVAL
+			}
+
+			// Can it be written? Check permissions.
+			if openFlags&OpenFlagsModeMask == ReadOnly {
+				return linux.EPERM
+			}
+
+			n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
+		case xattrCreate:
+			if t.Offset != 0 {
+				return linux.EINVAL
+			}
+			if uint64(len(t.Data)) != ref.pendingXattr.size {
+				return linux.EINVAL
+			}
+			err = ref.file.SetXattr(ref.pendingXattr.name, t.Data, int(ref.pendingXattr.flags))
+			n = int(ref.pendingXattr.size)
+		default:
 			return linux.EINVAL
 		}
-
-		// Can it be written? Check permissions.
-		if openFlags&OpenFlagsModeMask == ReadOnly {
-			return linux.EPERM
-		}
-
-		n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
 		return err
 	}); err != nil {
 		return newErr(err)
@@ -898,8 +947,38 @@ func (t *txattrwalk) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	// We don't support extended attributes.
-	return newErr(linux.ENODATA)
+	size := 0
+	if err := ref.safelyRead(func() (err error) {
+		if ref.isDeleted() {
+			return linux.EINVAL
+		}
+		// passing an empty buf to just get the size.
+		if len(t.Name) > 0 {
+			size, err = ref.file.GetXattr(t.Name, []byte{})
+		} else {
+			size, err = ref.file.ListXattrs([]byte{})
+		}
+		if err != nil || uint32(size) > maximumLength {
+			return linux.EINVAL
+		}
+		newRef := &fidRef{
+			server: cs.server,
+			file:   ref.file,
+			pendingXattr: pendingXattr{
+				op:   xattrWalk,
+				name: t.Name,
+				size: uint64(size),
+			},
+			pathNode: ref.pathNode,
+			parent:   ref.parent,
+			deleted:  ref.deleted,
+		}
+		cs.InsertFID(t.newFID, newRef)
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	return &rxattrwalk{Size: uint64(size)}
 }
 
 // handle implements handler.handle.
@@ -910,9 +989,21 @@ func (t *txattrcreate) handle(cs *connState) message {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
-
-	// We don't support extended attributes.
-	return newErr(linux.ENOSYS)
+	if err := ref.safelyWrite(func() error {
+		if ref.isDeleted() {
+			return linux.EINVAL
+		}
+		ref.pendingXattr = pendingXattr{
+			op:    xattrCreate,
+			name:  t.Name,
+			size:  t.AttrSize,
+			flags: t.Flags,
+		}
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	return &rxattrcreate{}
 }
 
 // handle implements handler.handle.
