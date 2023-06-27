@@ -119,6 +119,31 @@ type connState struct {
 	sendDone chan error
 }
 
+// xattrOp is the xattr related operations, walk or create.
+type xattrOp int
+
+const (
+	xattrNone   = 0
+	xattrCreate = 1
+	xattrWalk   = 2
+)
+
+type pendingXattr struct {
+	// the pending xattr-related operation
+	op xattrOp
+
+	// name is the attribute.
+	name string
+
+	// size of the attribute value, represents the
+	// length of the attribute value that is going to write to or read from a file.
+	size uint64
+
+	// flags associated with a txattrcreate message.
+	// generally Linux setxattr(2) flags.
+	flags uint32
+}
+
 // fidRef wraps a node and tracks references.
 type fidRef struct {
 	// server is the associated server.
@@ -126,6 +151,10 @@ type fidRef struct {
 
 	// file is the associated File.
 	file File
+
+	// pendingXattr is the xattr-related operations that are going to be done
+	// in a tread or twrite request.
+	pendingXattr pendingXattr
 
 	// refs is an active refence count.
 	//

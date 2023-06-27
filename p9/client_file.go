@@ -69,6 +69,56 @@ type clientFile struct {
 	closed uint32
 }
 
+// SetXattr implements p9.File.SetXattr.
+func (c *clientFile) SetXattr(attr string, data []byte, flags int) error {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return linux.EBADF
+	}
+	rxattrcreate := rxattrcreate{}
+
+	if err := c.client.sendRecv(&txattrcreate{fid: c.fid, Name: attr, AttrSize: uint64(len(data)), Flags: uint32(flags)}, &rxattrcreate); err != nil {
+		return err
+	}
+	rwrite := rwrite{}
+	if err := c.client.sendRecv(&twrite{fid: c.fid, Offset: 0, Data: data}, &rwrite); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetXattr implements p9.File.GetXattr.
+func (c *clientFile) GetXattr(attr string, buf []byte) (int, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return 0, linux.EBADF
+	}
+	newFID, ok := c.client.fidPool.Get()
+	if !ok {
+		return 0, ErrOutOfFIDs
+	}
+	rxattrwalk := rxattrwalk{}
+	if err := c.client.sendRecv(&txattrwalk{fid: c.fid, newFID: fid(newFID), Name: attr}, &rxattrwalk); err != nil {
+		c.client.fidPool.Put(newFID)
+		return 0, err
+	}
+	if len(buf) == 0 {
+		return int(rxattrwalk.Size), nil
+	}
+	if len(buf) < int(rxattrwalk.Size) {
+		return 0, linux.EFBIG
+	}
+	attrFile := clientFile{
+		client: c.client,
+		fid:    fid(newFID),
+		closed: c.closed,
+	}
+	return attrFile.readAt(buf[:rxattrwalk.Size], 0)
+}
+
+// ListXattrs implements p9.File.ListXattrs.
+func (c *clientFile) ListXattrs(buf []byte) (int, error) {
+	return c.GetXattr("", buf)
+}
+
 // Walk implements File.Walk.
 func (c *clientFile) Walk(names []string) ([]QID, File, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
