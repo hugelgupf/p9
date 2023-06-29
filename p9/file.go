@@ -127,6 +127,22 @@ type File interface {
 	// for additional requirements regarding lazy path resolution.
 	WriteAt(p []byte, offset int64) (int, error)
 
+	// XattrWalk walks an extended attribute, returns a file representing
+	// that attribute and the size of the attribute value. The returned file
+	// can be used in ReadAt() to get the actual attribute value.
+	//
+	// On the server, XattrWalk has a read concurrency guarantee.
+	XattrWalk(attr string) (File, uint64, error)
+
+	// XattrCreate creates an extended attribute on the file, and when it's
+	// done, the current File should refers to the extended attribute, not the
+	// file itself. The file can be later used in WriteAt() to write the
+	// attribute value.
+	// flags are implementation-specific, but are generally Linux setxattr(2) flags.
+	//
+	// On the server, XattrCreate has a write concurrency guarantee.
+	XattrCreate(attr string, size uint64, flags uint32) error
+
 	// FSync syncs this node. Open must be called first.
 	//
 	// On the server, FSync has a read concurrency guarantee.

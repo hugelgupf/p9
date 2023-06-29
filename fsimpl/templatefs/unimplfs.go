@@ -150,6 +150,16 @@ func (NoopFile) Readlink() (string, error) {
 	return "", linux.ENOSYS
 }
 
+// XattrWalk implements p9.FIle.XattrWalk
+func (NoopFile) XattrWalk(attr string) (p9.File, uint64, error) {
+	return nil, 0, linux.ENOSYS
+}
+
+// XattrCreate implements p9.File.XattrCreate
+func (NoopFile) XattrCreate(attr string, size uint64, flags uint32) error {
+	return linux.ENOSYS
+}
+
 type NotLockable struct{}
 
 // Lock implements p9.File.Lock.

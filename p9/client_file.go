@@ -69,6 +69,33 @@ type clientFile struct {
 	closed uint32
 }
 
+func (c *clientFile) XattrWalk(attr string) (File, uint64, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return nil, 0, linux.EBADF
+	}
+	id, ok := c.client.fidPool.Get()
+	if !ok {
+		return nil, 0, ErrOutOfFIDs
+	}
+	rxattrwalk := rxattrwalk{}
+	if err := c.client.sendRecv(&txattrwalk{fid: c.fid, newFID: fid(id), Name: attr}, &rxattrwalk); err != nil {
+		c.client.fidPool.Put(id)
+		return nil, 0, err
+	}
+	return c.client.newFile(fid(id)), rxattrwalk.Size, nil
+}
+
+func (c *clientFile) XattrCreate(attr string, size uint64, flags uint32) error {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return linux.EBADF
+	}
+	rxattrcreate := rxattrcreate{}
+	if err := c.client.sendRecv(&txattrcreate{fid: c.fid, Name: attr, AttrSize: size, Flags: flags}, &rxattrcreate); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Walk implements File.Walk.
 func (c *clientFile) Walk(names []string) ([]QID, File, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {

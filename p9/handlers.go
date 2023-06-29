@@ -898,8 +898,31 @@ func (t *txattrwalk) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	// We don't support extended attributes.
-	return newErr(linux.ENODATA)
+	size := uint64(0)
+	if err := ref.safelyRead(func() (err error) {
+		if ref.isDeleted() {
+			return linux.EINVAL
+		}
+		var xattrFile File
+		xattrFile, size, err = ref.file.XattrWalk(t.Name)
+		if err != nil {
+			return err
+		}
+		newRef := &fidRef{
+			server:    cs.server,
+			parent:    ref,
+			file:      xattrFile,
+			pathNode:  ref.pathNode,
+			deleted:   ref.deleted,
+			opened:    true,
+			openFlags: ReadOnly,
+		}
+		cs.InsertFID(t.newFID, newRef)
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	return &rxattrwalk{Size: size}
 }
 
 // handle implements handler.handle.
@@ -910,9 +933,20 @@ func (t *txattrcreate) handle(cs *connState) message {
 		return newErr(linux.EBADF)
 	}
 	defer ref.DecRef()
-
-	// We don't support extended attributes.
-	return newErr(linux.ENOSYS)
+	if err := ref.safelyWrite(func() error {
+		if ref.isDeleted() {
+			return linux.EINVAL
+		}
+		if err := ref.file.XattrCreate(t.Name, t.AttrSize, t.Flags); err != nil {
+			return err
+		}
+		ref.opened = true
+		ref.openFlags |= WriteOnly
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	return &rxattrcreate{}
 }
 
 // handle implements handler.handle.
