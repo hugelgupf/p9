@@ -139,6 +139,9 @@ type File interface {
 	// ListXattrs lists the extended attribute names of the file.
 	ListXattrs() ([]string, error)
 
+	// RemoveXattr removes the extended attribute attr from the file.
+	RemoveXattr(attr string) error
+
 	// FSync syncs this node. Open must be called first.
 	//
 	// On the server, FSync has a read concurrency guarantee.

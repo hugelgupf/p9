@@ -161,7 +161,6 @@ func TestMountHostDirectory(t *testing.T) {
 	})
 
 	t.Run("xattr-remove", func(t *testing.T) {
-		t.Skip("not yet working")
 		p := filepath.Join(targetDir, "xattrremove")
 		if err := ioutil.WriteFile(p, []byte("somecontent"), 0755); err != nil {
 			t.Fatal(err)

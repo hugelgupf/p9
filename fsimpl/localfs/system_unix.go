@@ -51,3 +51,7 @@ func (l *Local) ListXattrs() ([]string, error) {
 func (l *Local) GetXattr(attr string) ([]byte, error) {
 	return xattr.Get(l.path, attr)
 }
+
+func (l *Local) RemoveXattr(attr string) error {
+	return unix.Removexattr(l.path, attr)
+}

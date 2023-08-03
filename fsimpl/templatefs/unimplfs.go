@@ -165,6 +165,11 @@ func (NoopFile) ListXattrs() ([]string, error) {
 	return nil, linux.ENOSYS
 }
 
+// RemoveXattr implements p9.File.RemoveXattr.
+func (NoopFile) RemoveXattr(attr string) error {
+	return linux.ENOSYS
+}
+
 type NotLockable struct{}
 
 // Lock implements p9.File.Lock.
