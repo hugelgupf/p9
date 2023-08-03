@@ -38,3 +38,15 @@ func (l *Local) lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, l
 
 	return p9.LockStatusOK, nil
 }
+
+func (l *Local) SetXattr(attr string, data []byte, flags int) error {
+	return unix.Setxattr(l.path, attr, data, flags)
+}
+
+func (l *Local) ListXattrs(buf []byte) (int, error) {
+	return unix.Listxattr(l.path, buf)
+}
+
+func (l *Local) GetXattr(attr string, buf []byte) (int, error) {
+	return unix.Getxattr(l.path, attr, buf)
+}
