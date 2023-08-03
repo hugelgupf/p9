@@ -3,8 +3,10 @@
 package rwvmtests_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"os"
@@ -27,6 +29,43 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(m.Run())
+}
+
+func listXattrs(p string) ([]string, error) {
+	sz, err := unix.Listxattr(p, nil)
+	if err != nil {
+		return nil, &fs.PathError{
+			Op:   "listxattr-get-size",
+			Path: p,
+			Err:  err,
+		}
+	}
+
+	b := make([]byte, sz)
+	sz, err = unix.Listxattr(p, b)
+	if err != nil {
+		return nil, &fs.PathError{
+			Op:   "listxattr",
+			Path: p,
+			Err:  err,
+		}
+	}
+
+	return strings.Split(strings.Trim(string(b[:sz]), "\000"), "\000"), nil
+}
+
+func getxattr(p string, attr string) ([]byte, error) {
+	sz, err := unix.Getxattr(p, attr, nil)
+	if err != nil {
+		return nil, &fs.PathError{Op: "getxattr-get-size", Path: p, Err: err}
+	}
+
+	b := make([]byte, sz)
+	sz, err = unix.Getxattr(p, attr, b)
+	if err != nil {
+		return nil, &fs.PathError{Op: "getxattr", Path: p, Err: err}
+	}
+	return b[:sz], nil
 }
 
 func TestMountP9(t *testing.T) {
@@ -84,18 +123,11 @@ func TestMountP9(t *testing.T) {
 			t.Fatalf("Setxattr: %v", err)
 		}
 
-		sz, err := unix.Listxattr(p, nil)
-		if err != nil {
-			t.Fatalf("Listxattr(nil) = %v", err)
-		}
-
-		b := make([]byte, sz)
-		sz, err = unix.Listxattr(p, b)
+		xattrs, err := listXattrs(p)
 		if err != nil {
 			t.Fatalf("Listxattr() = %v", err)
 		}
 
-		xattrs := strings.Split(strings.Trim(string(b[:sz]), "\000"), "\000")
 		t.Logf("Xattrs: %v", xattrs)
 
 		want := []string{
@@ -149,19 +181,65 @@ func TestMountP9(t *testing.T) {
 			t.Fatalf("Setxattr = %v", err)
 		}
 
-		sz, err := unix.Getxattr(p, "user.p9.test", nil)
-		if err != nil {
-			t.Errorf("Getxattr() = %v", err)
-		}
-
-		b := make([]byte, sz)
-		sz, err = unix.Getxattr(p, "user.p9.test", b)
+		got, err := getxattr(p, "user.p9.test")
 		if err != nil {
 			t.Fatalf("Getxattr() = %v", err)
 		}
 
-		if got := string(b[:sz]); got != "y" {
-			t.Errorf("Getxattr = %v, want y", got)
+		if string(got) != "y" {
+			t.Errorf("Getxattr = %s, want y", got)
+		}
+	})
+
+	t.Run("xattr-set-large", func(t *testing.T) {
+		p := filepath.Join(targetDir, "xattrlargerthanmsize")
+		if err := ioutil.WriteFile(p, []byte("somecontent"), 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// msize on Linux is 8192
+		attr := bytes.Repeat([]byte("y"), 9000)
+		if err := unix.Setxattr(p, "user.p9.test", attr, 0); err != nil {
+			t.Fatalf("Setxattr = %v", err)
+		}
+
+		got, err := getxattr(p, "user.p9.test")
+		if err != nil {
+			t.Fatalf("Getxattr = %v", err)
+		}
+
+		if !bytes.Equal(got, attr) {
+			t.Errorf("Large getattr = got len %d, want len %d", len(got), len(attr))
+		}
+	})
+
+	t.Run("xattr-remove", func(t *testing.T) {
+		p := filepath.Join(targetDir, "xattrremove")
+		if err := ioutil.WriteFile(p, []byte("somecontent"), 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := unix.Setxattr(p, "user.p9.test", []byte("y"), 0); err != nil {
+			t.Fatalf("Setxattr: %v", err)
+		}
+		if err := unix.Setxattr(p, "user.p9.test2", []byte("y"), 0); err != nil {
+			t.Fatalf("Setxattr: %v", err)
+		}
+
+		if err := unix.Removexattr(p, "user.p9.test"); err != nil {
+			t.Errorf("Removexattr = %v", err)
+		}
+
+		xattrs, err := listXattrs(p)
+		if err != nil {
+			t.Fatalf("Listxattr() = %v", err)
+		}
+
+		want := []string{
+			"user.p9.test2",
+		}
+		if !reflect.DeepEqual(xattrs, want) {
+			t.Errorf("Listxattr = %v, want %v", xattrs, want)
 		}
 	})
 
