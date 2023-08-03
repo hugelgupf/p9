@@ -1,3 +1,5 @@
+//go:build unix && !openbsd && !solaris
+
 package xattr
 
 import (
