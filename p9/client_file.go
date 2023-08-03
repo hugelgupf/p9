@@ -70,7 +70,7 @@ type clientFile struct {
 }
 
 // SetXattr implements p9.File.SetXattr.
-func (c *clientFile) SetXattr(attr string, data []byte, flags int) error {
+func (c *clientFile) SetXattr(attr string, data []byte, flags XattrFlags) error {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return linux.EBADF
 	}

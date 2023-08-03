@@ -151,7 +151,7 @@ func (NoopFile) Readlink() (string, error) {
 }
 
 // SetXattr implements p9.File.SetXattr.
-func (NoopFile) SetXattr(attr string, data []byte, flags int) error {
+func (NoopFile) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
 	return linux.ENOSYS
 }
 

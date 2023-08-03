@@ -140,7 +140,7 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
 				return linux.EINVAL
 			}
-			return ref.file.SetXattr(ref.pendingXattr.name, ref.pendingXattr.buf, int(ref.pendingXattr.flags))
+			return ref.file.SetXattr(ref.pendingXattr.name, ref.pendingXattr.buf, ref.pendingXattr.flags)
 		}
 		return nil
 	}); err != nil {
@@ -1026,7 +1026,7 @@ func (t *txattrcreate) handle(cs *connState) message {
 			op:    xattrCreate,
 			name:  t.Name,
 			size:  t.AttrSize,
-			flags: t.Flags,
+			flags: XattrFlags(t.Flags),
 		}
 		return nil
 	}); err != nil {

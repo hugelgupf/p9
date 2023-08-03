@@ -82,6 +82,19 @@ func (o OpenFlags) String() string {
 	}
 }
 
+// XattrFlags are flags set on a setxattr operation.
+type XattrFlags int
+
+const (
+	// XattrCreate set on setxattr requires a pure create, which fails if
+	// the named attribute already exists.
+	XattrCreate XattrFlags = 1
+
+	// XattrReplace set on setxattr requires a pure replace, which fails if
+	// the named attribute does not already exist.
+	XattrReplace XattrFlags = 2
+)
+
 // tag is a message tag.
 type tag uint16
 
