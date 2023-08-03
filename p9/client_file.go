@@ -87,11 +87,12 @@ func (c *clientFile) SetXattr(attr string, data []byte, flags int) error {
 }
 
 // GetXattr implements p9.File.GetXattr.
-func (c *clientFile) GetXattr(attr string, buf []byte) (int, error) {
+func (c *clientFile) GetXattr(attr string) ([]byte, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
-		return 0, linux.EBADF
+		return nil, linux.EBADF
 	}
-	newFID, ok := c.client.fidPool.Get()
+	return nil, linux.ENOSYS
+	/*newFID, ok := c.client.fidPool.Get()
 	if !ok {
 		return 0, ErrOutOfFIDs
 	}
@@ -111,12 +112,13 @@ func (c *clientFile) GetXattr(attr string, buf []byte) (int, error) {
 		fid:    fid(newFID),
 		closed: c.closed,
 	}
-	return attrFile.readAt(buf[:rxattrwalk.Size], 0)
+	return attrFile.readAt(buf[:rxattrwalk.Size], 0)*/
 }
 
 // ListXattrs implements p9.File.ListXattrs.
-func (c *clientFile) ListXattrs(buf []byte) (int, error) {
-	return c.GetXattr("", buf)
+func (c *clientFile) ListXattrs() ([]string, error) {
+	return nil, linux.ENOSYS
+	//return c.GetXattr("", buf)
 }
 
 // Walk implements File.Walk.

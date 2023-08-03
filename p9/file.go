@@ -133,21 +133,11 @@ type File interface {
 	// generally Linux setxattr(2) flags.
 	SetXattr(attr string, data []byte, flags int) error
 
-	// GetXattr fetches the extended attribute of the file in buf and returns
-	// the size of the buf.
-	//
-	// If the input buf has size 0, GetXattr should return the current size
-	// of the corresponding attribute value. This can be used to determine
-	// the size of the buffer that should be supplied in a subsequent call.
-	GetXattr(attr string, buf []byte) (int, error)
+	// GetXattr fetches the extended attribute attr of the file.
+	GetXattr(attr string) ([]byte, error)
 
-	// ListXattr lists the extended attribute names of the file in buf and returns
-	// the size of the buf.
-	//
-	// If the input buf has size 0, ListXattr should return the current size
-	// of the attribute name list. This can be used to determine the size
-	// of the buffer that should be supplied in a subsequent call.
-	ListXattrs(buf []byte) (int, error)
+	// ListXattrs lists the extended attribute names of the file.
+	ListXattrs() ([]string, error)
 
 	// FSync syncs this node. Open must be called first.
 	//

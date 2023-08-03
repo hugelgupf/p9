@@ -100,13 +100,13 @@ func (ReadOnlyFile) SetXattr(attr string, data []byte, flags int) error {
 }
 
 // GetXattr implements p9.File.GetXattr.
-func (ReadOnlyFile) GetXattr(attr string, buf []byte) (int, error) {
-	return 0, linux.ENOSYS
+func (ReadOnlyFile) GetXattr(attr string) ([]byte, error) {
+	return nil, linux.ENOSYS
 }
 
 // ListXattrs implements p9.File.ListXattrs.
-func (ReadOnlyFile) ListXattrs(buf []byte) (int, error) {
-	return 0, linux.ENOSYS
+func (ReadOnlyFile) ListXattrs() ([]string, error) {
+	return nil, linux.ENOSYS
 }
 
 // ReadOnlyDir denies any directory and file operations with EROFS
@@ -181,13 +181,13 @@ func (ReadOnlyDir) SetXattr(attr string, data []byte, flags int) error {
 }
 
 // GetXattr implements p9.File.GetXattr.
-func (ReadOnlyDir) GetXattr(attr string, buf []byte) (int, error) {
-	return 0, linux.ENOSYS
+func (ReadOnlyDir) GetXattr(attr string) ([]byte, error) {
+	return nil, linux.ENOSYS
 }
 
 // ListXattrs implements p9.File.ListXattrs.
-func (ReadOnlyDir) ListXattrs(buf []byte) (int, error) {
-	return 0, linux.ENOSYS
+func (ReadOnlyDir) ListXattrs() ([]string, error) {
+	return nil, linux.ENOSYS
 }
 
 // IsDir returns EISDIR for ReadAt and WriteAt.

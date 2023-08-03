@@ -142,6 +142,11 @@ type pendingXattr struct {
 	// flags associated with a txattrcreate message.
 	// generally Linux setxattr(2) flags.
 	flags uint32
+
+	// saved up xattr operation value (for reads, listed / gotten buffer --
+	// ready for chunking; for writes, this is used to accumulate chunked
+	// values until a Tclunk actuates the operation)
+	buf []byte
 }
 
 // fidRef wraps a node and tracks references.
