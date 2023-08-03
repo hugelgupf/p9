@@ -131,7 +131,7 @@ type File interface {
 	//
 	// Flags are implementation-specific, but are
 	// generally Linux setxattr(2) flags.
-	SetXattr(attr string, data []byte, flags int) error
+	SetXattr(attr string, data []byte, flags XattrFlags) error
 
 	// GetXattr fetches the extended attribute attr of the file.
 	GetXattr(attr string) ([]byte, error)

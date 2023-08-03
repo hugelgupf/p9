@@ -95,7 +95,7 @@ func (ReadOnlyFile) Flush() error {
 }
 
 // SetXattr implements p9.File.SetXattr.
-func (ReadOnlyFile) SetXattr(attr string, data []byte, flags int) error {
+func (ReadOnlyFile) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
 	return linux.ENOSYS
 }
 
@@ -176,7 +176,7 @@ func (ReadOnlyDir) Rename(directory p9.File, name string) error {
 }
 
 // SetXattr implements p9.File.SetXattr.
-func (ReadOnlyDir) SetXattr(attr string, data []byte, flags int) error {
+func (ReadOnlyDir) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
 	return linux.ENOSYS
 }
 

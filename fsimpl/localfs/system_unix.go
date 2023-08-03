@@ -40,8 +40,8 @@ func (l *Local) lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, l
 	return p9.LockStatusOK, nil
 }
 
-func (l *Local) SetXattr(attr string, data []byte, flags int) error {
-	return unix.Setxattr(l.path, attr, data, flags)
+func (l *Local) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
+	return unix.Setxattr(l.path, attr, data, int(flags))
 }
 
 func (l *Local) ListXattrs() ([]string, error) {
