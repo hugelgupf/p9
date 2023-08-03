@@ -140,6 +140,9 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
 				return linux.EINVAL
 			}
+			if ref.pendingXattr.flags == XattrReplace && ref.pendingXattr.size == 0 {
+				return ref.file.RemoveXattr(ref.pendingXattr.name)
+			}
 			return ref.file.SetXattr(ref.pendingXattr.name, ref.pendingXattr.buf, ref.pendingXattr.flags)
 		}
 		return nil

@@ -86,6 +86,11 @@ func (c *clientFile) SetXattr(attr string, data []byte, flags XattrFlags) error 
 	return nil
 }
 
+// RemoveXattr implements p9.File.RemoveXattr.
+func (c *clientFile) RemoveXattr(attr string) error {
+	return linux.ENOSYS
+}
+
 // GetXattr implements p9.File.GetXattr.
 func (c *clientFile) GetXattr(attr string) ([]byte, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
