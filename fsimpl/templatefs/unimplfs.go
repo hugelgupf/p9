@@ -156,13 +156,13 @@ func (NoopFile) SetXattr(attr string, data []byte, flags int) error {
 }
 
 // GetXattr implements p9.File.GetXattr.
-func (NoopFile) GetXattr(attr string, buf []byte) (int, error) {
-	return 0, linux.ENOSYS
+func (NoopFile) GetXattr(attr string) ([]byte, error) {
+	return nil, linux.ENOSYS
 }
 
 // ListXattrs implements p9.File.ListXattrs.
-func (NoopFile) ListXattrs(buf []byte) (int, error) {
-	return 0, linux.ENOSYS
+func (NoopFile) ListXattrs() ([]string, error) {
+	return nil, linux.ENOSYS
 }
 
 type NotLockable struct{}

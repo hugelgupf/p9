@@ -127,10 +127,37 @@ func checkSafeName(name string) error {
 	return linux.EINVAL
 }
 
+func clunkHandleXattr(cs *connState, t *tclunk) message {
+	// Lookup the fid.
+	ref, ok := cs.LookupFID(t.fid)
+	if !ok {
+		return newErr(linux.EBADF)
+	}
+	defer ref.DecRef()
+
+	if err := ref.safelyRead(func() error {
+		if ref.pendingXattr.op == xattrCreate {
+			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
+				return linux.EINVAL
+			}
+			return ref.file.SetXattr(ref.pendingXattr.name, ref.pendingXattr.buf, int(ref.pendingXattr.flags))
+		}
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	return nil
+}
+
 // handle implements handler.handle.
 func (t *tclunk) handle(cs *connState) message {
+	cerr := clunkHandleXattr(cs, t)
+
 	if !cs.DeleteFID(t.fid) {
 		return newErr(linux.EBADF)
+	}
+	if cerr != nil {
+		return cerr
 	}
 	return &rclunk{}
 }
@@ -703,18 +730,14 @@ func (t *tread) handle(cs *connState) message {
 
 			n, err = ref.file.ReadAt(dataBuf[:t.Count], int64(t.Offset))
 			return err
-		case xattrWalk:
-			if t.Offset != 0 {
-				return linux.EINVAL
-			}
 
+		case xattrWalk:
 			// Make sure we do not pass an empty buffer to GetXattr or ListXattrs.
 			// Both of them will return the required buffer length if
 			// the input buffer has length 0.
 			// tread means the caller already knows the required buffer length
 			// and wants to get the attribute value.
 			if t.Count == 0 {
-				n = 0
 				if ref.pendingXattr.size == 0 {
 					// the provided buffer has length 0 and
 					// the attribute value is also empty.
@@ -724,14 +747,11 @@ func (t *tread) handle(cs *connState) message {
 				return linux.EINVAL
 			}
 
-			if len(ref.pendingXattr.name) > 0 {
-				n, err = ref.file.GetXattr(ref.pendingXattr.name, dataBuf[:t.Count])
-			} else {
-				n, err = ref.file.ListXattrs(dataBuf[:t.Count])
+			if t.Offset+uint64(t.Count) > uint64(len(ref.pendingXattr.buf)) {
+				return linux.EINVAL
 			}
-			if err != nil {
-				return err
-			}
+
+			n = copy(dataBuf[:t.Count], ref.pendingXattr.buf[t.Offset:])
 			return nil
 		default:
 			return linux.EINVAL
@@ -774,15 +794,17 @@ func (t *twrite) handle(cs *connState) message {
 			}
 
 			n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
+
 		case xattrCreate:
-			if t.Offset != 0 {
+			if uint64(len(ref.pendingXattr.buf)) != t.Offset {
 				return linux.EINVAL
 			}
-			if uint64(len(t.Data)) != ref.pendingXattr.size {
+			if t.Offset+uint64(len(t.Data)) > ref.pendingXattr.size {
 				return linux.EINVAL
 			}
-			err = ref.file.SetXattr(ref.pendingXattr.name, t.Data, int(ref.pendingXattr.flags))
-			n = int(ref.pendingXattr.size)
+			ref.pendingXattr.buf = append(ref.pendingXattr.buf, t.Data...)
+			n = len(t.Data)
+
 		default:
 			return linux.EINVAL
 		}
@@ -948,19 +970,25 @@ func (t *txattrwalk) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	size := 0
-	if err := ref.safelyRead(func() (err error) {
+	if err := ref.safelyRead(func() error {
 		if ref.isDeleted() {
 			return linux.EINVAL
 		}
-		// passing an empty buf to just get the size.
+		var buf []byte
+		var err error
 		if len(t.Name) > 0 {
-			size, err = ref.file.GetXattr(t.Name, []byte{})
+			buf, err = ref.file.GetXattr(t.Name)
 		} else {
-			size, err = ref.file.ListXattrs([]byte{})
+			var xattrs []string
+			xattrs, err = ref.file.ListXattrs()
+			if err == nil {
+				buf = []byte(strings.Join(xattrs, "\000") + "\000")
+			}
 		}
-		if err != nil || uint32(size) > maximumLength {
+		if err != nil || uint32(len(buf)) > maximumLength {
 			return linux.EINVAL
 		}
+		size = len(buf)
 		newRef := &fidRef{
 			server: cs.server,
 			file:   ref.file,
@@ -968,6 +996,7 @@ func (t *txattrwalk) handle(cs *connState) message {
 				op:   xattrWalk,
 				name: t.Name,
 				size: uint64(size),
+				buf:  buf,
 			},
 			pathNode: ref.pathNode,
 			parent:   ref.parent,
