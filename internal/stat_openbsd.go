@@ -1,6 +1,3 @@
-//go:build openbsd && !386
-// +build openbsd,!386
-
 package internal
 
 import (
