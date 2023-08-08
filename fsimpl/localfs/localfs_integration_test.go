@@ -49,18 +49,14 @@ func TestIntegration(t *testing.T) {
 			},
 		},
 		VMOptions: vmtest.VMOptions{
-			QEMUOpts: qemu.Options{
-				Devices: []qemu.Device{
-					vmdriver.HostNetwork{
-						Net: &net.IPNet{
-							// 192.168.0.0/24
-							IP:   net.IP{192, 168, 0, 0},
-							Mask: net.CIDRMask(24, 32),
-						},
-					},
-				},
-				KernelArgs: fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort),
-				Timeout:    30 * time.Second,
+			QEMUOpts: []qemu.Fn{
+				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+				// 192.168.0.0/24
+				vmdriver.HostNetwork(&net.IPNet{
+					IP:   net.IP{192, 168, 0, 0},
+					Mask: net.CIDRMask(24, 32),
+				}),
+				qemu.WithVMTimeout(30 * time.Second),
 			},
 		},
 	})
@@ -97,18 +93,14 @@ func TestBenchmark(t *testing.T) {
 			},
 		},
 		VMOptions: vmtest.VMOptions{
-			QEMUOpts: qemu.Options{
-				Devices: []qemu.Device{
-					vmdriver.HostNetwork{
-						Net: &net.IPNet{
-							// 192.168.0.0/24
-							IP:   net.IP{192, 168, 0, 0},
-							Mask: net.CIDRMask(24, 32),
-						},
-					},
-				},
-				KernelArgs: fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort),
-				Timeout:    30 * time.Second,
+			QEMUOpts: []qemu.Fn{
+				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+				// 192.168.0.0/24
+				vmdriver.HostNetwork(&net.IPNet{
+					IP:   net.IP{192, 168, 0, 0},
+					Mask: net.CIDRMask(24, 32),
+				}),
+				qemu.WithVMTimeout(30 * time.Second),
 			},
 		},
 	})
