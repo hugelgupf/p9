@@ -4,26 +4,26 @@ package vmdriver
 import (
 	"fmt"
 	"net"
+
+	"github.com/hugelgupf/vmtest/qemu"
 )
 
-// HostNetwork provides QEMU user-mode networking to the host. HostNetwork
-// implements u-root/pkg/qemu.Device.
-type HostNetwork struct {
-	// Net must be an IPv4 network.
-	Net *net.IPNet
-}
+// HostNetwork provides QEMU user-mode networking to the host.
+//
+// Net must be an IPv4 network.
+func HostNetwork(net *net.IPNet) qemu.Fn {
+	return func(alloc *qemu.IDAllocator, opts *qemu.Options) error {
+		if net.IP.To4() == nil {
+			return fmt.Errorf("HostNetwork must be configured with an IPv4 address")
+		}
 
-// Cmdline implements qemu.Device.Cmdline.
-func (h HostNetwork) Cmdline(string) []string {
-	return []string{
-		"-device", "e1000,netdev=host0",
-		"-netdev", fmt.Sprintf("user,id=host0,net=%s,dhcpstart=%s", h.Net, nthIP(h.Net, 8)),
+		netdevID := alloc.ID("netdev")
+		opts.AppendQEMU(
+			"-device", fmt.Sprintf("e1000,netdev=%s", netdevID),
+			"-netdev", fmt.Sprintf("user,id=%s,net=%s,dhcpstart=%s", netdevID, net, nthIP(net, 8)),
+		)
+		return nil
 	}
-}
-
-// KArgs implements qemu.Device.KArgs.
-func (h HostNetwork) KArgs() []string {
-	return nil
 }
 
 func inc(ip net.IP) {
