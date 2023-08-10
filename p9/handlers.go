@@ -15,6 +15,7 @@
 package p9
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -758,7 +759,7 @@ func (t *tread) handle(cs *connState) message {
 		default:
 			return linux.EINVAL
 		}
-	}); err != nil && err != io.EOF {
+	}); err != nil && !errors.Is(err, io.EOF) {
 		return newErr(err)
 	}
 
@@ -1060,7 +1061,7 @@ func (t *treaddir) handle(cs *connState) message {
 
 		// Read the entries.
 		entries, err = ref.file.Readdir(t.Offset, t.Count)
-		if err != nil && err != io.EOF {
+		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
 		return nil
@@ -1147,7 +1148,7 @@ func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, 
 	case getattr:
 		localQIDs, sf, valid, attr, err = from.WalkGetAttr(names)
 		// Can't put fallthrough in the if because Go.
-		if err != linux.ENOSYS {
+		if !errors.Is(err, linux.ENOSYS) {
 			break
 		}
 		fallthrough

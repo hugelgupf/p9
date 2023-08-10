@@ -10,8 +10,8 @@ import "fmt"
 type Errno uintptr
 
 func (e Errno) Error() string {
-	if 0 <= int(e) && int(e) < len(errors) {
-		s := errors[e]
+	if 0 <= int(e) && int(e) < len(errorTable) {
+		s := errorTable[e]
 		if s != "" {
 			return s
 		}
@@ -157,8 +157,7 @@ const (
 	EXFULL          = Errno(0x36)
 )
 
-// Error table
-var errors = [...]string{
+var errorTable = [...]string{
 	1:   "operation not permitted",
 	2:   "no such file or directory",
 	3:   "no such process",
