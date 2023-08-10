@@ -176,7 +176,7 @@ func NewClient(conn io.ReadWriteCloser, o ...ClientOpt) (*Client, error) {
 		err := c.sendRecv(&tversion{Version: versionString(version9P2000L, requested), MSize: c.messageSize}, &rversion)
 
 		// The server told us to try again with a lower version.
-		if err == linux.EAGAIN {
+		if errors.Is(err, linux.EAGAIN) {
 			if requested == lowestSupportedVersion {
 				return nil, ErrVersionsExhausted
 			}
@@ -311,12 +311,12 @@ func (c *Client) sendRecv(tm message, rm message) error {
 	err := send(c.log, c.conn, tag(t), tm)
 	c.sendMu.Unlock()
 	if err != nil {
-		return fmt.Errorf("send: %v", err)
+		return fmt.Errorf("send: %w", err)
 	}
 
 	// Co-ordinate with other receivers.
 	if err := c.waitAndRecv(resp.done); err != nil {
-		return fmt.Errorf("wait: %v", err)
+		return fmt.Errorf("wait: %w", err)
 	}
 
 	// Is it an error message?

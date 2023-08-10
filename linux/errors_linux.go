@@ -3,12 +3,15 @@
 
 package linux
 
-import "syscall"
+import (
+	"errors"
+	"syscall"
+)
 
 func sysErrno(err error) Errno {
-	se, ok := err.(syscall.Errno)
-	if ok {
-		return Errno(se)
+	var systemErr syscall.Errno
+	if errors.As(err, &systemErr) {
+		return Errno(systemErr)
 	}
 	return 0
 }
