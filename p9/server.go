@@ -15,6 +15,8 @@
 package p9
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -222,9 +224,16 @@ func (f *fidRef) IncRef() {
 }
 
 // DecRef should be called when you're finished with a fid.
-func (f *fidRef) DecRef() {
+func (f *fidRef) DecRef() error {
 	if atomic.AddInt64(&f.refs, -1) == 0 {
-		f.file.Close()
+		var (
+			errs []error
+			err  = f.file.Close()
+		)
+		if err != nil {
+			err = fmt.Errorf("file: %w", err)
+			errs = append(errs, err)
+		}
 
 		// Drop the parent reference.
 		//
@@ -232,12 +241,17 @@ func (f *fidRef) DecRef() {
 		// the references reach zero, we don't need to worry about
 		// clearing the parent.
 		if f.parent != nil {
-			// If we've been previously deleted, this removing this
+			// If we've been previously deleted, removing this
 			// ref is a no-op. That's expected.
 			f.parent.pathNode.removeChild(f)
-			f.parent.DecRef()
+			if pErr := f.parent.DecRef(); pErr != nil {
+				pErr = fmt.Errorf("parent: %w", pErr)
+				errs = append(errs, pErr)
+			}
 		}
+		return errors.Join(errs...)
 	}
+	return nil
 }
 
 // isDeleted returns true if this fidRef has been deleted.
@@ -390,16 +404,15 @@ func (cs *connState) InsertFID(fid fid, newRef *fidRef) {
 // Deletefid removes the given fid.
 //
 // This simply removes it from the map and drops a reference.
-func (cs *connState) DeleteFID(fid fid) bool {
+func (cs *connState) DeleteFID(fid fid) error {
 	cs.fidMu.Lock()
 	defer cs.fidMu.Unlock()
 	fidRef, ok := cs.fids[fid]
 	if !ok {
-		return false
+		return linux.EBADF
 	}
 	delete(cs.fids, fid)
-	fidRef.DecRef()
-	return true
+	return fidRef.DecRef()
 }
 
 // StartTag starts handling the tag.
