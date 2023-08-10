@@ -156,8 +156,8 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 func (t *tclunk) handle(cs *connState) message {
 	cerr := clunkHandleXattr(cs, t)
 
-	if !cs.DeleteFID(t.fid) {
-		return newErr(linux.EBADF)
+	if err := cs.DeleteFID(t.fid); err != nil {
+		return newErr(err)
 	}
 	if cerr != nil {
 		return cerr
@@ -214,8 +214,8 @@ func (t *tremove) handle(cs *connState) message {
 	// "It is correct to consider remove to be a clunk with the side effect
 	// of removing the file if permissions allow."
 	// https://swtch.com/plan9port/man/man9/remove.html
-	if !cs.DeleteFID(t.fid) {
-		return newErr(linux.EBADF)
+	if fidErr := cs.DeleteFID(t.fid); fidErr != nil {
+		return newErr(fidErr)
 	}
 	if err != nil {
 		return newErr(err)
