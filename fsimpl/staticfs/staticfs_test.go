@@ -15,8 +15,6 @@
 package staticfs
 
 import (
-	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/hugelgupf/p9/fsimpl/test"
@@ -40,52 +38,17 @@ func TestFilesMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	root, err := attacher.Attach()
-	if err != nil {
-		t.Fatalf("Failed to attach to %v: %v", attacher, err)
-	}
-
-	// Make sure Readdir lists the files we want to find.
-	if _, _, err := root.Open(p9.ReadOnly); err != nil {
-		t.Fatalf("Open(%v) = %v, want nil", root, err)
-	}
-	dirents, err := root.Readdir(0, 2)
-	if err != nil {
-		t.Fatalf("Readdir(%v) = %v, want nil", root, err)
-	}
-	if dirents.Find("foo.txt") == nil {
-		t.Errorf("Readdir(%v) = %v, does not contain foo.txt", root, dirents)
-	}
-	if dirents.Find("baz.txt") == nil {
-		t.Errorf("Readdir(%v) = %v, does not contain baz.txt", root, dirents)
-	}
-
-	files := map[string]string{
-		"foo.txt": "barbarbar",
-		"baz.txt": "barbarbarbar",
-	}
-	for name, wantCon := range files {
-		// Let's make sure the file content matches, at least twice.
-		_, f, err := root.Walk([]string{name})
-		if err != nil {
-			t.Fatalf("Walk(%s) = %v, want nil", name, err)
-		}
-		if _, _, err := f.Open(p9.ReadOnly); err != nil {
-			t.Fatalf("Open(%v) = %v, want nil", f, err)
-		}
-
-		for i := 0; i < 2; i++ {
-			con, err := ioutil.ReadAll(io.NewSectionReader(f, 0, 30))
-			if err != nil {
-				t.Fatalf("%d ReadAll(%v) = %v, want nil", i, f, err)
-			}
-			if got := string(con); got != wantCon {
-				t.Fatalf("%d ReadAll(%v) = %v, want %v", i, f, got, wantCon)
-			}
-		}
-
-		if err := f.Close(); err != nil {
-			t.Errorf("Close(%v) = %v, want nil", f, err)
-		}
-	}
+	test.TestReadOnlyFS(t, attacher,
+		test.WithFile("foo.txt", "barbarbar", p9.Attr{
+			Mode:      p9.ModeRegular | 0666,
+			Size:      9,
+			BlockSize: 4096,
+		}),
+		test.WithFile("baz.txt", "barbarbarbar", p9.Attr{
+			Mode:      p9.ModeRegular | 0666,
+			Size:      12,
+			BlockSize: 4096,
+		}),
+		test.WithDir("", "foo.txt", "baz.txt"),
+	)
 }
