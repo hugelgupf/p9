@@ -17,13 +17,14 @@ package staticfs
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/hugelgupf/p9/fsimpl/readdir"
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 // Option is a configurator for New.
@@ -33,14 +34,15 @@ type Option func(*attacher) error
 func WithFile(name, content string) Option {
 	return func(a *attacher) error {
 		if strings.Contains(name, "/") {
-			return fmt.Errorf("directories are not supported by simplefs")
+			return fmt.Errorf("directories are not supported by staticfs")
 		}
 		if _, ok := a.files[name]; ok {
 			return fmt.Errorf("file named %q already exists", name)
 		}
-		a.files[name] = content
-		a.names = append(a.names, name)
-		sort.Strings(a.names)
+
+		qid := a.qidGen.Get(p9.TypeRegular)
+		a.qids[name] = qid
+		a.files[name] = ReadOnlyFile(content, qid)
 		return nil
 	}
 }
@@ -51,8 +53,9 @@ func WithFile(name, content string) Option {
 // staticfs only supports one directory with regular files.
 func New(opts ...Option) (p9.Attacher, error) {
 	a := &attacher{
-		files: make(map[string]string),
-		qids:  &p9.QIDGenerator{},
+		files:  make(map[string]p9.File),
+		qids:   make(map[string]p9.QID),
+		qidGen: &p9.QIDGenerator{},
 	}
 	for _, o := range opts {
 		if err := o(a); err != nil {
@@ -64,19 +67,17 @@ func New(opts ...Option) (p9.Attacher, error) {
 
 type attacher struct {
 	// files maps filenames to file contents.
-	files map[string]string
+	files map[string]p9.File
+	qids  map[string]p9.QID
 
-	// names is a sorted list of the keys of files.
-	names []string
-
-	qids *p9.QIDGenerator
+	qidGen *p9.QIDGenerator
 }
 
 // Attach implements p9.Attacher.Attach.
 func (a *attacher) Attach() (p9.File, error) {
 	return &dir{
 		a:   a,
-		qid: a.qids.Get(p9.TypeDir),
+		qid: a.qidGen.Get(p9.TypeDir),
 	}, nil
 }
 
@@ -120,12 +121,12 @@ func (d *dir) Walk(names []string) ([]p9.QID, p9.File, error) {
 		return []p9.QID{d.qid}, d, nil
 
 	case 1:
-		content, ok := d.a.files[names[0]]
+		file, ok := d.a.files[names[0]]
 		if !ok {
 			return nil, nil, linux.ENOENT
 		}
-		qid := d.a.qids.Get(p9.TypeRegular)
-		return []p9.QID{qid}, ReadOnlyFile(content, qid), nil
+		return []p9.QID{d.a.qids[names[0]]}, file, nil
+
 	default:
 		return nil, nil, linux.ENOENT
 	}
@@ -143,11 +144,9 @@ func (d *dir) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 
 // Readdir implements p9.File.Readdir.
 func (d *dir) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
-	qids := make(map[string]p9.QID)
-	for _, name := range d.a.names {
-		qids[name] = d.a.qids.Get(p9.TypeRegular)
-	}
-	return readdir.Readdir(offset, count, d.a.names, qids)
+	names := maps.Keys(d.a.files)
+	slices.Sort(names)
+	return readdir.Readdir(offset, count, names, d.a.qids)
 }
 
 // ReadOnlyFile returns a read-only p9.File.
