@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hugelgupf/p9/fsimpl/readdir"
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
@@ -140,30 +141,13 @@ func (d *dir) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 	}, nil
 }
 
-func min(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // Readdir implements p9.File.Readdir.
 func (d *dir) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
-	if offset >= uint64(len(d.a.names)) {
-		return nil, nil
+	qids := make(map[string]p9.QID)
+	for _, name := range d.a.names {
+		qids[name] = d.a.qids.Get(p9.TypeRegular)
 	}
-
-	var dirents []p9.Dirent
-	end := int(min(offset+uint64(count), uint64(len(d.a.names))))
-	for i, name := range d.a.names[offset:end] {
-		dirents = append(dirents, p9.Dirent{
-			QID:    d.a.qids.Get(p9.TypeRegular),
-			Type:   p9.TypeRegular,
-			Offset: offset + uint64(i),
-			Name:   name,
-		})
-	}
-	return dirents, nil
+	return readdir.Readdir(offset, count, d.a.names, qids)
 }
 
 // ReadOnlyFile returns a read-only p9.File.
