@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,23 +31,37 @@ func TestLinuxClient(t *testing.T) {
 	defer serverSocket.Close()
 	serverPort := serverSocket.Addr().(*net.TCPAddr).Port
 
-	attacher, err := New(
+	wantRoot := []string{
+		"foo.txt",
+		"baz.txt",
+	}
+	longFileName := strings.Repeat("a", 200)
+	opts := []Option{
 		WithFile("foo.txt", "barbarbar"),
 		WithFile("baz.txt", "barbarbarbar"),
-	)
+	}
+	// At 4096 msize, 4072 bytes will be requested for Treaddir by Linux.
+	// With a file name of 200 characters, 4000 / 200 = 20 files is enough
+	// to have at least 2 Rreaddir chunks.
+	for i := 0; i < 20; i++ {
+		opts = append(opts, WithFile(fmt.Sprintf("%s%d.txt", longFileName, i), fmt.Sprintf("file%d", i)))
+		wantRoot = append(wantRoot, fmt.Sprintf("%s%d.txt", longFileName, i))
+	}
+	attacher, err := New(opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	want := rovmtests.Expectations{
 		Dirs: []rovmtests.Dir{
-			{Path: "", Members: []string{"foo.txt", "baz.txt"}},
+			{Path: "", Members: wantRoot},
 		},
 		Files: []rovmtests.File{
 			{Path: "foo.txt", Content: "barbarbar"},
 			{Path: "baz.txt", Content: "barbarbarbar"},
 		},
 	}
+
 	dir := t.TempDir()
 	wantB, err := json.Marshal(want)
 	if err != nil {
