@@ -81,10 +81,10 @@ func send(l ulog.Logger, w io.Writer, tag tag, m message) error {
 	data := dataPool.Get().(*[]byte)
 	dataBuf := buffer{data: (*data)[:0]}
 
-	l.Printf("send [w %p] [Tag %06d] %s", w, tag, m)
-
 	// Encode the message. The buffer will grow automatically.
 	m.encode(&dataBuf)
+
+	l.Printf("send [w %p] [Tag %06d] %s", w, tag, m)
 
 	// Get our vectors to send.
 	var hdr [headerLength]byte
