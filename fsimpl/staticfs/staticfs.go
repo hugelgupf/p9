@@ -108,7 +108,7 @@ type dir struct {
 
 // Open implements p9.File.Open.
 func (d *dir) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	if mode == p9.ReadOnly {
+	if mode.Mode() == p9.ReadOnly {
 		return d.qid, 4096, nil
 	}
 	return p9.QID{}, 0, linux.EROFS
@@ -183,7 +183,7 @@ func (f *file) Walk(names []string) ([]p9.QID, p9.File, error) {
 
 // Open implements p9.File.Open.
 func (f *file) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	if mode == p9.ReadOnly {
+	if mode.Mode() == p9.ReadOnly {
 		return f.qid, 4096, nil
 	}
 	return p9.QID{}, 0, linux.EROFS
