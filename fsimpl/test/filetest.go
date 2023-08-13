@@ -17,9 +17,13 @@ package test
 
 import (
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/hugelgupf/p9/p9"
+	"github.com/u-root/uio/uio"
+	"golang.org/x/exp/slices"
 )
 
 // TestFile tests attach for all expected p9.Attacher and p9.File behaviors.
@@ -36,9 +40,51 @@ func TestFile(t *testing.T, attach p9.Attacher) {
 	t.Run("readdir-walk", func(t *testing.T) { testReaddirWalk(t, root) })
 }
 
+type file struct {
+	content string
+	attr    p9.Attr
+}
+
+type dir struct {
+	members []string
+}
+
+type expect struct {
+	files map[string]file
+	dirs  map[string]dir
+}
+
+type Expect func(e *expect)
+
+func WithDir(path string, members ...string) Expect {
+	return func(e *expect) {
+		e.dirs[path] = dir{
+			members: members,
+		}
+	}
+}
+
+func WithFile(path string, content string, attr p9.Attr) Expect {
+	return func(e *expect) {
+		e.files[path] = file{
+			content: content,
+			attr:    attr,
+		}
+	}
+}
+
+func WithSymlink(path string, target string, attr p9.Attr) Expect {
+	return func(e *expect) {
+		e.files[path] = file{
+			content: target,
+			attr:    attr,
+		}
+	}
+}
+
 // TestReadOnlyFS tests attach for all expected p9.Attacher and p9.File
 // behaviors on read-only file systems.
-func TestReadOnlyFS(t *testing.T, attach p9.Attacher) {
+func TestReadOnlyFS(t *testing.T, attach p9.Attacher, expectations ...Expect) {
 	root, err := attach.Attach()
 	if err != nil {
 		t.Fatalf("Failed to attach to %v: %v", attach, err)
@@ -46,6 +92,117 @@ func TestReadOnlyFS(t *testing.T, attach p9.Attacher) {
 
 	t.Run("walk-self", func(t *testing.T) { testWalkSelf(t, root) })
 	t.Run("readdir-walk", func(t *testing.T) { testReaddirWalk(t, root) })
+
+	e := expect{
+		files: make(map[string]file),
+		dirs:  make(map[string]dir),
+	}
+	for _, exp := range expectations {
+		exp(&e)
+	}
+	for path, dir := range e.dirs {
+		t.Run(fmt.Sprintf("dir-%s", path), func(t *testing.T) { testDirContents(t, root, path, dir) })
+	}
+	for path, file := range e.files {
+		t.Run(fmt.Sprintf("file-%s", path), func(t *testing.T) { testIsFile(t, root, path, file) })
+	}
+}
+
+func testDirContents(t *testing.T, root p9.File, path string, d dir) {
+	var dest []string
+	if len(path) > 0 {
+		dest = strings.Split(path, "/")
+	}
+	_, f, err := root.Walk(dest)
+	if err != nil {
+		t.Fatalf("Walk(%s) failed: %s", path, err)
+	}
+
+	_, _, attr, err := f.GetAttr(p9.AttrMask{Mode: true})
+	if err != nil {
+		t.Fatalf("GetAttr = %v", err)
+	}
+	if !attr.Mode.IsDir() {
+		t.Fatalf("GetAttr mode = %v, wanted directory", attr.Mode)
+	}
+
+	if _, _, err := f.Open(p9.ReadOnly); err != nil {
+		t.Fatalf("Open = %v", err)
+	}
+
+	var dirents []p9.Dirent
+	var names []string
+	offset := uint64(0)
+	for {
+		d, err := f.Readdir(offset, 1)
+		if len(d) == 0 || err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Readdir: %v", err)
+		}
+		if len(d) > 1 {
+			t.Fatalf("Readdir returned %d entries, expected 1", len(d))
+		}
+		dirents = append(dirents, d...)
+		names = append(names, d[0].Name)
+		offset += 1
+	}
+
+	slices.Sort(d.members)
+	slices.Sort(names)
+	if !slices.Equal(names, d.members) {
+		t.Fatalf("Readdir = %v, wanted %v", names, d.members)
+	}
+
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close = %v", err)
+	}
+}
+
+func testIsFile(t *testing.T, root p9.File, path string, file file) {
+	_, f, err := root.Walk(strings.Split(path, "/"))
+	if err != nil {
+		t.Fatalf("Walk(%s) failed: %s", path, err)
+	}
+
+	_, _, attr, err := f.GetAttr(p9.AttrMaskAll)
+	if err != nil {
+		t.Fatalf("GetAttr = %v", err)
+	}
+	if attr != file.attr {
+		t.Fatalf("GetAttr = %v, want %v", attr, file.attr)
+	}
+
+	switch {
+	case file.attr.Mode.IsRegular():
+		if _, _, err := f.Open(p9.ReadOnly); err != nil {
+			t.Fatalf("Open = %v, want nil", err)
+		}
+
+		for i := 0; i < 2; i++ {
+			con, err := uio.ReadAll(f)
+			if err != nil {
+				t.Fatalf("ReadAll(%d) = %v, want nil", i, err)
+			}
+			if got := string(con); got != file.content {
+				t.Fatalf("ReadAll(%d) = %v, want %v", i, got, file.content)
+			}
+		}
+
+		if err := f.Close(); err != nil {
+			t.Errorf("Close = %v, want nil", err)
+		}
+
+	case file.attr.Mode.IsSymlink():
+		target, err := f.Readlink()
+		if err != nil {
+			t.Fatalf("Readlink = %v", err)
+		}
+		if target != file.content {
+			t.Fatalf("Readlink = %s, want %s", target, file.content)
+		}
+	}
 }
 
 func testCreate(t *testing.T, root p9.File) {
