@@ -131,22 +131,22 @@ func testDirContents(t *testing.T, root p9.File, path string, d dir) {
 	}
 
 	var dirents []p9.Dirent
-	var names []string
 	offset := uint64(0)
 	for {
-		d, err := f.Readdir(offset, 1)
+		d, err := f.Readdir(offset, 1000)
 		if len(d) == 0 || err == io.EOF {
 			break
 		}
 		if err != nil {
 			t.Fatalf("Readdir: %v", err)
 		}
-		if len(d) > 1 {
-			t.Fatalf("Readdir returned %d entries, expected 1", len(d))
-		}
 		dirents = append(dirents, d...)
-		names = append(names, d[0].Name)
-		offset += 1
+		offset = d[len(d)-1].Offset
+	}
+
+	var names []string
+	for _, entry := range dirents {
+		names = append(names, entry.Name)
 	}
 
 	slices.Sort(d.members)
