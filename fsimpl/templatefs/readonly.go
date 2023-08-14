@@ -61,8 +61,20 @@ func (NotDirectoryFile) Readdir(offset uint64, count uint32) (p9.Dirents, error)
 	return nil, linux.ENOTDIR
 }
 
-// ReadOnlyFile returns EROFS for FSync, SetAttr, Remove, Rename, WriteAt, and nil for Flush.
-type ReadOnlyFile struct{}
+// ReadOnlyFile returns default denials for all methods except Open, ReadAt,
+// Walk, Close, and GetAttr.
+//
+// Returns EROFS for most modifying operations, ENOTDIR for file creation ops
+// or readdir, EINVAL for readlink, xattr and lock operations return ENOSYS.
+//
+// Does nothing for Renamed.
+type ReadOnlyFile struct {
+	NotSymlinkFile
+	NotDirectoryFile
+	XattrUnimplemented
+	NoopRenamed
+	NotLockable
+}
 
 // FSync implements p9.File.FSync.
 func (ReadOnlyFile) FSync() error {
@@ -94,31 +106,19 @@ func (ReadOnlyFile) Flush() error {
 	return nil
 }
 
-// SetXattr implements p9.File.SetXattr.
-func (ReadOnlyFile) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
-	return linux.ENOSYS
-}
-
-// GetXattr implements p9.File.GetXattr.
-func (ReadOnlyFile) GetXattr(attr string) ([]byte, error) {
-	return nil, linux.ENOSYS
-}
-
-// ListXattrs implements p9.File.ListXattrs.
-func (ReadOnlyFile) ListXattrs() ([]string, error) {
-	return nil, linux.ENOSYS
-}
-
-// RemoveXattr implements p9.File.RemoveXattr.
-func (ReadOnlyFile) RemoveXattr(attr string) error {
-	return linux.ENOSYS
-}
-
-// ReadOnlyDir denies any directory and file operations with EROFS
+// ReadOnlyDir implements default denials for all methods except Walk, Open,
+// GetAttr, Readdir, Close.
 //
-// Those operations are Create, Mkdir, Symlink, Link, Mknod, RenameAt,
-// UnlinkAt, Readdir, Rename, SetAttr, FSync, and Remove.
-type ReadOnlyDir struct{}
+// Creation operations return EROFS. Read/write operations return EISDIR.
+// EINVAL for readlink. Renaming does nothing by default, xattr and locking are
+// unimplemented.
+type ReadOnlyDir struct {
+	NotSymlinkFile
+	IsDir
+	XattrUnimplemented
+	NoopRenamed
+	NotLockable
+}
 
 // Create implements p9.File.Create.
 func (ReadOnlyDir) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
@@ -178,26 +178,6 @@ func (ReadOnlyDir) Remove() error {
 // Rename implements p9.File.Rename.
 func (ReadOnlyDir) Rename(directory p9.File, name string) error {
 	return linux.EROFS
-}
-
-// SetXattr implements p9.File.SetXattr.
-func (ReadOnlyDir) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
-	return linux.ENOSYS
-}
-
-// GetXattr implements p9.File.GetXattr.
-func (ReadOnlyDir) GetXattr(attr string) ([]byte, error) {
-	return nil, linux.ENOSYS
-}
-
-// ListXattrs implements p9.File.ListXattrs.
-func (ReadOnlyDir) ListXattrs() ([]string, error) {
-	return nil, linux.ENOSYS
-}
-
-// RemoveXattr implements p9.File.RemoveXattr.
-func (ReadOnlyDir) RemoveXattr(attr string) error {
-	return linux.ENOSYS
 }
 
 // IsDir returns EISDIR for ReadAt and WriteAt.

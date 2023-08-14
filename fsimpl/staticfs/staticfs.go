@@ -95,16 +95,14 @@ func (statfs) StatFS() (p9.FSStat, error) {
 type dir struct {
 	statfs
 	p9.DefaultWalkGetAttr
-	templatefs.NotSymlinkFile
 	templatefs.ReadOnlyDir
-	templatefs.IsDir
 	templatefs.NilCloser
-	templatefs.NoopRenamed
-	templatefs.NotLockable
 
 	qid p9.QID
 	a   *attacher
 }
+
+var _ p9.File = &dir{}
 
 // Open implements p9.File.Open.
 func (d *dir) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
@@ -163,15 +161,13 @@ type file struct {
 	p9.DefaultWalkGetAttr
 	templatefs.ReadOnlyFile
 	templatefs.NilCloser
-	templatefs.NotDirectoryFile
-	templatefs.NotSymlinkFile
-	templatefs.NoopRenamed
-	templatefs.NotLockable
 
 	*strings.Reader
 
 	qid p9.QID
 }
+
+var _ p9.File = &file{}
 
 // Walk implements p9.File.Walk.
 func (f *file) Walk(names []string) ([]p9.QID, p9.File, error) {
