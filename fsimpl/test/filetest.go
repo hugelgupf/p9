@@ -43,6 +43,7 @@ func TestFile(t *testing.T, attach p9.Attacher) {
 type file struct {
 	content string
 	attr    p9.Attr
+	mask    p9.AttrMask
 }
 
 type dir struct {
@@ -64,20 +65,22 @@ func WithDir(path string, members ...string) Expect {
 	}
 }
 
-func WithFile(path string, content string, attr p9.Attr) Expect {
+func WithFile(path string, content string, attr p9.Attr, mask p9.AttrMask) Expect {
 	return func(e *expect) {
 		e.files[path] = file{
 			content: content,
 			attr:    attr,
+			mask:    mask,
 		}
 	}
 }
 
-func WithSymlink(path string, target string, attr p9.Attr) Expect {
+func WithSymlink(path string, target string, attr p9.Attr, mask p9.AttrMask) Expect {
 	return func(e *expect) {
 		e.files[path] = file{
 			content: target,
 			attr:    attr,
+			mask:    mask,
 		}
 	}
 }
@@ -155,6 +158,16 @@ func testDirContents(t *testing.T, root p9.File, path string, d dir) {
 		t.Fatalf("Readdir = %v, wanted %v", names, d.members)
 	}
 
+	for _, entry := range dirents {
+		qids, _, err := f.Walk([]string{entry.Name})
+		if err != nil {
+			t.Fatalf("Could not walk to %s: %v", entry.Name, err)
+		}
+		if qids[0] != entry.QID {
+			t.Fatalf("For %s: Readdir QID is %v, Walk QID is %v, expected same", entry.Name, entry.QID, qids[0])
+		}
+	}
+
 	if err := f.Close(); err != nil {
 		t.Fatalf("Close = %v", err)
 	}
@@ -166,12 +179,12 @@ func testIsFile(t *testing.T, root p9.File, path string, file file) {
 		t.Fatalf("Walk(%s) failed: %s", path, err)
 	}
 
-	_, _, attr, err := f.GetAttr(p9.AttrMaskAll)
+	_, _, attr, err := f.GetAttr(file.mask)
 	if err != nil {
 		t.Fatalf("GetAttr = %v", err)
 	}
-	if attr != file.attr {
-		t.Fatalf("GetAttr = %v, want %v", attr, file.attr)
+	if got := attr.WithMask(file.mask); got != file.attr {
+		t.Fatalf("GetAttr = %v, want %v", got, file.attr)
 	}
 
 	switch {
