@@ -125,8 +125,8 @@ func (q qidTransformFile) Mknod(name string, mode p9.FileMode, major uint32, min
 
 func (q qidTransformFile) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	dirents, err := q.File.Readdir(offset, count)
-	for _, entry := range dirents {
-		entry.QID = q.m.QIDFor(entry.QID)
+	for i := range dirents {
+		dirents[i].QID = q.m.QIDFor(dirents[i].QID)
 	}
 	return dirents, err
 }

@@ -771,6 +771,62 @@ func (a Attr) String() string {
 		a.Mode, a.UID, a.GID, a.NLink, a.RDev, a.Size, a.BlockSize, a.Blocks, a.ATimeSeconds, a.ATimeNanoSeconds, a.MTimeSeconds, a.MTimeNanoSeconds, a.CTimeSeconds, a.CTimeNanoSeconds, a.BTimeSeconds, a.BTimeNanoSeconds, a.Gen, a.DataVersion)
 }
 
+// Apply applies this to the given Attr.
+func (a Attr) WithMask(mask AttrMask) Attr {
+	var b Attr
+	if mask.Mode {
+		b.Mode = a.Mode
+	}
+	if mask.NLink {
+		b.NLink = a.NLink
+	}
+	if mask.UID {
+		b.UID = a.UID
+	}
+	if mask.GID {
+		b.GID = a.GID
+	}
+	if mask.RDev {
+		b.RDev = a.RDev
+	}
+	if mask.ATime {
+		b.ATimeSeconds = a.ATimeSeconds
+		b.ATimeNanoSeconds = a.ATimeNanoSeconds
+	}
+	if mask.MTime {
+		b.MTimeSeconds = a.MTimeSeconds
+		b.MTimeNanoSeconds = a.MTimeNanoSeconds
+	}
+	if mask.CTime {
+		b.CTimeSeconds = a.CTimeSeconds
+		b.CTimeNanoSeconds = a.CTimeNanoSeconds
+	}
+
+	// Unclear on mask.INo. It corresponds to the inode number, but the
+	// inode number really is subsumed in the QID's path field normally and
+	// not accessible via GetAttr anyway.
+
+	if mask.Size {
+		b.Size = a.Size
+	}
+	if mask.Blocks {
+		b.Blocks = a.Blocks
+		// I don't know if Size or Blocks fills in BlockSize.
+		b.BlockSize = a.BlockSize
+	}
+	if mask.BTime {
+		b.BTimeSeconds = a.BTimeSeconds
+		b.BTimeNanoSeconds = a.BTimeNanoSeconds
+	}
+	if mask.Gen {
+		b.Gen = a.Gen
+	}
+	if mask.DataVersion {
+		b.DataVersion = a.DataVersion
+	}
+	return b
+}
+
 // encode implements encoder.encode.
 func (a *Attr) encode(b *buffer) {
 	b.WriteFileMode(a.Mode)

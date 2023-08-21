@@ -12,33 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package staticfs
+package composefs
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/hugelgupf/p9/fsimpl/localfs"
+	"github.com/hugelgupf/p9/fsimpl/staticfs"
 	"github.com/hugelgupf/p9/fsimpl/test"
 	"github.com/hugelgupf/p9/p9"
 )
 
-func TestReadOnlyFS(t *testing.T) {
-	attacher, err := New(WithFile("foo", "barbarbar"))
-	if err != nil {
+func TestFilesMatch(t *testing.T) {
+	localfsTmp := t.TempDir()
+	setUmask()
+	// Windows permissions are always represented as 0666 when writable.
+	if err := os.WriteFile(filepath.Join(localfsTmp, "somefile"), []byte("hahaha"), 0666); err != nil {
 		t.Fatal(err)
 	}
-	test.TestReadOnlyFS(t, attacher)
-}
 
-func TestFilesMatch(t *testing.T) {
 	attacher, err := New(
-		WithFile("foo.txt", "barbarbar"),
-		WithFile("baz.txt", "barbarbarbar"),
+		WithFile("foo.txt", staticfs.ReadOnlyFile("barbarbar")),
+		WithFile("baz.txt", staticfs.ReadOnlyFile("barbarbarbar")),
+		WithMount("localfs", localfs.Attacher(localfsTmp)),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	test.TestReadOnlyFS(t, attacher,
+		test.WithDir("", "foo.txt", "baz.txt", "localfs"),
+		test.WithDir("localfs", "somefile"),
 		test.WithFile("foo.txt", "barbarbar", p9.Attr{
 			Mode:      p9.ModeRegular | 0666,
 			Size:      9,
@@ -49,6 +55,9 @@ func TestFilesMatch(t *testing.T) {
 			Size:      12,
 			BlockSize: 4096,
 		}, p9.AttrMaskAll),
-		test.WithDir("", "foo.txt", "baz.txt"),
+		test.WithFile("localfs/somefile", "hahaha", p9.Attr{
+			Mode: p9.ModeRegular | 0666,
+			Size: 6,
+		}, p9.AttrMask{Mode: true, Size: true}),
 	)
 }
