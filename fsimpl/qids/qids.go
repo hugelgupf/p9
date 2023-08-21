@@ -9,7 +9,8 @@ import (
 // A PathGenerator allocates paths for a 9P file system.
 //
 // Generally, QID paths must be unique in a 9P file system (i.e. for a
-// p9.Attacher). intro(5) states:
+// p9.Attacher). It achieves that by having path be a unique integer among all
+// files. intro(5) states:
 //
 //	The thirteen-byte qid fields hold a one-byte type, specifying whether
 //	the file is a directory, append-only file, etc., and two unsigned
