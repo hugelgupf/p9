@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hugelgupf/p9/fsimpl/qids"
 	"github.com/hugelgupf/p9/fsimpl/readdir"
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/linux"
@@ -40,6 +41,7 @@ type Opt func(fs *FS) error
 // FS is a p9.Attacher.
 type FS struct {
 	mounts map[string]p9.File
+	qids   *qids.PathGenerator
 }
 
 func WithMount(dir string, attacher p9.Attacher) Opt {
@@ -55,11 +57,12 @@ func WithMount(dir string, attacher p9.Attacher) Opt {
 		if err != nil {
 			return err
 		}
-		fs.mounts[dir] = f
+		fs.mounts[dir] = qids.NewWrapperFile(f, qids.NewMapper(fs.qids))
 		return nil
 	}
 }
 
+// WithDir creates a composefs from the given options and mounts it at dir.
 func WithDir(dir string, mounts ...Opt) Opt {
 	return func(fs *FS) error {
 		subfs, err := New(mounts...)
@@ -80,7 +83,7 @@ func WithFile(file string, f p9.File) Opt {
 			return fmt.Errorf("%w: %s", ErrFileExists, file)
 		}
 
-		fs.mounts[file] = f
+		fs.mounts[file] = qids.NewWrapperFile(f, qids.NewMapper(fs.qids))
 		return nil
 	}
 }
@@ -88,6 +91,7 @@ func WithFile(file string, f p9.File) Opt {
 func New(mounts ...Opt) (*FS, error) {
 	fs := &FS{
 		mounts: make(map[string]p9.File),
+		qids:   &qids.PathGenerator{},
 	}
 	for _, m := range mounts {
 		if err := m(fs); err != nil {
@@ -116,7 +120,8 @@ var (
 )
 
 var (
-	rootQID = p9.QID{Type: p9.TypeDir, Path: 1, Version: 0}
+	// PathGenerator leaves Path: 0 unused.
+	rootQID = p9.QID{Type: p9.TypeDir, Path: 0, Version: 0}
 )
 
 // Walk implements p9.File.Walk.
