@@ -38,8 +38,8 @@ func TestLinuxClient(t *testing.T) {
 	}
 
 	attacher, err := New(
-		WithFile("foo.txt", staticfs.ReadOnlyFile("barbarbar", p9.QID{Type: p9.TypeRegular, Version: 0, Path: 1})),
-		WithFile("baz.txt", staticfs.ReadOnlyFile("barbarbarbar", p9.QID{Type: p9.TypeRegular, Version: 0, Path: 1})),
+		WithFile("foo.txt", staticfs.ReadOnlyFile("barbarbar")),
+		WithFile("baz.txt", staticfs.ReadOnlyFile("barbarbarbar")),
 		WithMount("localfs", localfs.Attacher(localfsTmp)),
 	)
 	if err != nil {

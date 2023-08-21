@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hugelgupf/p9/fsimpl/qids"
 	"github.com/hugelgupf/p9/fsimpl/readdir"
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/linux"
@@ -40,9 +41,15 @@ func WithFile(name, content string) Option {
 			return fmt.Errorf("file named %q already exists", name)
 		}
 
-		qid := a.qidGen.Get(p9.TypeRegular)
+		f := qids.NewWrapperFile(ReadOnlyFile(content), qids.NewMapper(a.paths))
+		a.files[name] = f
+
+		// Precompute QID for Readdir.
+		qid, _, _, err := f.GetAttr(p9.AttrMask{Mode: true})
+		if err != nil {
+			return err
+		}
 		a.qids[name] = qid
-		a.files[name] = ReadOnlyFile(content, qid)
 		return nil
 	}
 }
@@ -53,9 +60,9 @@ func WithFile(name, content string) Option {
 // staticfs only supports one directory with regular files.
 func New(opts ...Option) (p9.Attacher, error) {
 	a := &attacher{
-		files:  make(map[string]p9.File),
-		qids:   make(map[string]p9.QID),
-		qidGen: &p9.QIDGenerator{},
+		files: make(map[string]p9.File),
+		qids:  make(map[string]p9.QID),
+		paths: &qids.PathGenerator{},
 	}
 	for _, o := range opts {
 		if err := o(a); err != nil {
@@ -70,15 +77,12 @@ type attacher struct {
 	files map[string]p9.File
 	qids  map[string]p9.QID
 
-	qidGen *p9.QIDGenerator
+	paths *qids.PathGenerator
 }
 
 // Attach implements p9.Attacher.Attach.
 func (a *attacher) Attach() (p9.File, error) {
-	return &dir{
-		a:   a,
-		qid: a.qidGen.Get(p9.TypeDir),
-	}, nil
+	return &dir{a: a}, nil
 }
 
 type statfs struct{}
@@ -98,16 +102,20 @@ type dir struct {
 	templatefs.ReadOnlyDir
 	templatefs.NilCloser
 
-	qid p9.QID
-	a   *attacher
+	a *attacher
 }
+
+var (
+	// PathGenerator leaves Path: 0 unused.
+	rootQID = p9.QID{Type: p9.TypeDir, Path: 0, Version: 0}
+)
 
 var _ p9.File = &dir{}
 
 // Open implements p9.File.Open.
 func (d *dir) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	if mode.Mode() == p9.ReadOnly {
-		return d.qid, 4096, nil
+		return rootQID, 4096, nil
 	}
 	return p9.QID{}, 0, linux.EROFS
 }
@@ -116,7 +124,7 @@ func (d *dir) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 func (d *dir) Walk(names []string) ([]p9.QID, p9.File, error) {
 	switch len(names) {
 	case 0:
-		return []p9.QID{d.qid}, d, nil
+		return []p9.QID{rootQID}, d, nil
 
 	case 1:
 		file, ok := d.a.files[names[0]]
@@ -132,7 +140,7 @@ func (d *dir) Walk(names []string) ([]p9.QID, p9.File, error) {
 
 // GetAttr implements p9.File.GetAttr.
 func (d *dir) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	return d.qid, req, p9.Attr{
+	return rootQID, req, p9.Attr{
 		Mode:  p9.ModeDirectory | 0666,
 		UID:   0,
 		GID:   0,
@@ -147,11 +155,15 @@ func (d *dir) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	return readdir.Readdir(offset, count, names, d.a.qids)
 }
 
-// ReadOnlyFile returns a read-only p9.File.
-func ReadOnlyFile(content string, qid p9.QID) p9.File {
+// ReadOnlyFile returns a read-only p9.File using a QID with path 0.
+func ReadOnlyFile(content string) p9.File {
 	return &file{
 		Reader: strings.NewReader(content),
-		qid:    qid,
+		qid: p9.QID{
+			Type:    p9.TypeRegular,
+			Version: 0,
+			Path:    0,
+		},
 	}
 }
 
