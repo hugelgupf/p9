@@ -127,15 +127,28 @@ var (
 // Walk implements p9.File.Walk.
 func (r *root) Walk(names []string) ([]p9.QID, p9.File, error) {
 	if len(names) == 0 {
-		return []p9.QID{rootQID}, &root{fs: r.fs}, nil
+		return nil, &root{fs: r.fs}, nil
 	}
 
 	file, ok := r.fs.mounts[names[0]]
 	if !ok {
 		return nil, nil, linux.ENOENT
 	}
-	// Let the file figure out its own QID.
-	return file.Walk(names[1:])
+	qid, _, _, err := file.GetAttr(p9.AttrMask{Mode: true})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	qids := []p9.QID{qid}
+	if len(names) == 1 {
+		return qids, file, nil
+	}
+
+	nextQIDs, file, err := file.Walk(names[1:])
+	if err != nil {
+		return nil, nil, err
+	}
+	return append(qids, nextQIDs...), file, nil
 }
 
 // Open implements p9.File.Open.
