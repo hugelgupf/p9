@@ -416,6 +416,26 @@ const (
 	TypeRegular QIDType = 0x00
 )
 
+var qidTypeString = map[QIDType]string{
+	TypeDir:        "QID Type Directory",
+	TypeAppendOnly: "QID Type Append Only",
+	TypeExclusive:  "QID Type Exclusive",
+	TypeMount:      "QID Type Mount",
+	TypeAuth:       "QID Type Auth",
+	TypeTemporary:  "QID Type Temporary",
+	TypeSymlink:    "QID Type Symlink",
+	TypeLink:       "QID Type Link",
+	TypeRegular:    "QID Type Regular",
+}
+
+func (q QIDType) String() string {
+	s, ok := qidTypeString[q]
+	if ok {
+		return s
+	}
+	return fmt.Sprintf("unknown QID type (%#x)", uint8(q))
+}
+
 // QID is a unique file identifier.
 //
 // This may be embedded in other requests and responses.
