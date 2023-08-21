@@ -124,7 +124,7 @@ func (d *dir) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 func (d *dir) Walk(names []string) ([]p9.QID, p9.File, error) {
 	switch len(names) {
 	case 0:
-		return []p9.QID{rootQID}, d, nil
+		return nil, d, nil
 
 	case 1:
 		file, ok := d.a.files[names[0]]
@@ -184,7 +184,7 @@ var _ p9.File = &file{}
 // Walk implements p9.File.Walk.
 func (f *file) Walk(names []string) ([]p9.QID, p9.File, error) {
 	if len(names) == 0 {
-		return []p9.QID{f.qid}, f, nil
+		return nil, f, nil
 	}
 	return nil, nil, linux.ENOTDIR
 }

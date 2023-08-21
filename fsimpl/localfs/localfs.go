@@ -104,11 +104,7 @@ func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 
 	// A walk with no names is a copy of self.
 	if len(names) == 0 {
-		qid, _, err := l.info()
-		if err != nil {
-			return nil, nil, err
-		}
-		return []p9.QID{qid}, last, nil
+		return nil, last, nil
 	}
 
 	for _, name := range names {
@@ -160,7 +156,9 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 // Close implements p9.File.Close.
 func (l *Local) Close() error {
 	if l.file != nil {
-		return l.file.Close()
+		err := l.file.Close()
+		l.file = nil
+		return err
 	}
 	return nil
 }

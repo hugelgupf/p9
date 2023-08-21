@@ -263,12 +263,9 @@ func readdir(dir p9.File) (p9.Dirents, error) {
 func testWalkSelf(t *testing.T, root p9.File) {
 	for _, names := range [][]string{nil, {}} {
 		t.Run(fmt.Sprintf("self-%#v", names), func(t *testing.T) {
-			qids, got, err := root.Walk(names)
+			_, got, err := root.Walk(names)
 			if err != nil {
 				t.Errorf("Walk(%v, %#v) = %v, want %v", root, names, err, nil)
-			}
-			if len(qids) != 1 {
-				t.Errorf("Walk(%v, %#v) = %d QIDs, want 1", root, names, len(qids))
 			}
 			testSameFile(t, root, got)
 		})
