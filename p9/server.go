@@ -177,12 +177,11 @@ type fidRef struct {
 	// The node above will be closed only when refs reaches zero.
 	refs int64
 
-	// openedMu protects opened and openFlags.
-	openedMu sync.Mutex
-
 	// opened indicates whether this has been opened already.
 	//
 	// This is updated in handlers.go.
+	//
+	// opened is protected by pathNode.opMu or renameMu (for write).
 	opened bool
 
 	// mode is the fidRef's mode from the walk. Only the type bits are
@@ -194,6 +193,8 @@ type fidRef struct {
 	// openFlags is the mode used in the open.
 	//
 	// This is updated in handlers.go.
+	//
+	// opened is protected by pathNode.opMu or renameMu (for write).
 	openFlags OpenFlags
 
 	// pathNode is the current pathNode for this fid.
@@ -213,13 +214,6 @@ type fidRef struct {
 	// isRoot should be used to check for root over looking at parent
 	// directly.
 	parent *fidRef
-}
-
-// OpenFlags returns the flags the file was opened with and true iff the fid was opened previously.
-func (f *fidRef) OpenFlags() (OpenFlags, bool) {
-	f.openedMu.Lock()
-	defer f.openedMu.Unlock()
-	return f.openFlags, f.opened
 }
 
 // IncRef increases the references on a fid.

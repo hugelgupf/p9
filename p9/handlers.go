@@ -308,19 +308,6 @@ func (t *tlopen) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	ref.openedMu.Lock()
-	defer ref.openedMu.Unlock()
-
-	// Has it been opened already?
-	if ref.opened || !CanOpen(ref.mode) {
-		return newErr(linux.EINVAL)
-	}
-
-	// Is this an attempt to open a directory as writable? Don't accept.
-	if ref.mode.IsDir() && t.Flags.Mode() != ReadOnly {
-		return newErr(linux.EINVAL)
-	}
-
 	var (
 		qid    QID
 		ioUnit uint32
@@ -329,6 +316,16 @@ func (t *tlopen) handle(cs *connState) message {
 		// Has it been deleted already?
 		if ref.isDeleted() {
 			return linux.EINVAL
+		}
+
+		// Has it been opened already?
+		if ref.opened || !CanOpen(ref.mode) {
+			return linux.EINVAL
+		}
+
+		// Is this an attempt to open a directory as writable? Don't accept.
+		if ref.mode.IsDir() && t.Flags.Mode() != ReadOnly {
+			return linux.EISDIR
 		}
 
 		// Do the open.
@@ -371,7 +368,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -442,7 +439,7 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -484,7 +481,7 @@ func (t *tlink) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -529,7 +526,7 @@ func (t *trenameat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -574,7 +571,7 @@ func (t *tunlinkat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -721,13 +718,12 @@ func (t *tread) handle(cs *connState) message {
 		switch ref.pendingXattr.op {
 		case xattrNone:
 			// Has it been opened already?
-			openFlags, opened := ref.OpenFlags()
-			if !opened {
+			if !ref.opened {
 				return linux.EINVAL
 			}
 
 			// Can it be read? Check permissions.
-			if openFlags&OpenFlagsModeMask == WriteOnly {
+			if ref.openFlags&OpenFlagsModeMask == WriteOnly {
 				return linux.EPERM
 			}
 
@@ -786,13 +782,12 @@ func (t *twrite) handle(cs *connState) message {
 		switch ref.pendingXattr.op {
 		case xattrNone:
 			// Has it been opened already?
-			openFlags, opened := ref.OpenFlags()
-			if !opened {
+			if !ref.opened {
 				return linux.EINVAL
 			}
 
 			// Can it be written? Check permissions.
-			if openFlags&OpenFlagsModeMask == ReadOnly {
+			if ref.openFlags&OpenFlagsModeMask == ReadOnly {
 				return linux.EPERM
 			}
 
@@ -849,7 +844,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -893,7 +888,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 		}
 
 		// Not allowed on open directories.
-		if _, opened := ref.OpenFlags(); opened {
+		if ref.opened {
 			return linux.EINVAL
 		}
 
@@ -1054,7 +1049,7 @@ func (t *treaddir) handle(cs *connState) message {
 		}
 
 		// Has it been opened already?
-		if _, opened := ref.OpenFlags(); !opened {
+		if !ref.opened {
 			return linux.EINVAL
 		}
 
@@ -1082,7 +1077,7 @@ func (t *tfsync) handle(cs *connState) message {
 
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
-		if _, opened := ref.OpenFlags(); !opened {
+		if !ref.opened {
 			return linux.EINVAL
 		}
 
@@ -1295,12 +1290,18 @@ func (t *twalk) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	// Has it been opened already?
-	// That as OK as long as newFID is different.
-	// Note this violates the spec, but the Linux client
-	// does too, so we have little choice.
-	if _, opened := ref.OpenFlags(); opened && t.fid == t.newFID {
-		return newErr(linux.EBUSY)
+	if err := ref.safelyRead(func() error {
+		// Has it been opened already?
+		//
+		// That as OK as long as newFID is different. Note this
+		// violates the spec, but the Linux client does too, so we have
+		// little choice.
+		if ref.opened && t.fid == t.newFID {
+			return linux.EBUSY
+		}
+		return nil
+	}); err != nil {
+		return newErr(err)
 	}
 
 	// Is this an empty list? Handle specially. We don't actually need to
@@ -1325,12 +1326,18 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	// Has it been opened already?
-	// That as OK as long as newFID is different.
-	// Note this violates the spec, but the Linux client
-	// does too, so we have little choice.
-	if _, opened := ref.OpenFlags(); opened && t.fid == t.newFID {
-		return newErr(linux.EBUSY)
+	if err := ref.safelyRead(func() error {
+		// Has it been opened already?
+		//
+		// That as OK as long as newFID is different. Note this
+		// violates the spec, but the Linux client does too, so we have
+		// little choice.
+		if ref.opened && t.fid == t.newFID {
+			return linux.EBUSY
+		}
+		return nil
+	}); err != nil {
+		return newErr(err)
 	}
 
 	// Is this an empty list? Handle specially. We don't actually need to
