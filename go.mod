@@ -3,13 +3,12 @@ module github.com/hugelgupf/p9
 go 1.20
 
 require (
-	github.com/hugelgupf/socketpair v0.0.0-20190730060125-05d35a94e714
+	github.com/hugelgupf/socketpair v0.0.0-20230822150718-707395b1939a
 	github.com/hugelgupf/vmtest v0.0.0-20230810222836-f8c8e381617c
 	github.com/u-root/u-root v0.11.1-0.20230807200058-f87ad7ccb594
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63
 	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
 	golang.org/x/sys v0.11.0
-	google.golang.org/grpc v1.53.0
 )
 
 require (
@@ -36,5 +35,6 @@ require (
 	golang.org/x/net v0.14.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/tools v0.12.0 // indirect
+	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
 	src.elv.sh v0.16.0-rc1.0.20220116211855-fda62502ad7f // indirect
 )
