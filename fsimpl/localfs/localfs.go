@@ -156,9 +156,10 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 // Close implements p9.File.Close.
 func (l *Local) Close() error {
 	if l.file != nil {
-		err := l.file.Close()
-		l.file = nil
-		return err
+		// We don't set l.file = nil, as Close is called by servers
+		// only in Clunk. Clunk should release the last (direct)
+		// reference to this file.
+		return l.file.Close()
 	}
 	return nil
 }
