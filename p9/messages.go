@@ -997,12 +997,12 @@ func (t *tread) String() string {
 	return fmt.Sprintf("Tread{FID: %d, Offset: %d, Count: %d}", t.fid, t.Offset, t.Count)
 }
 
-// rreadPayloader is the response for a Tread.
+// rreadServerPayloader is the response for a Tread by p9 servers.
 //
-// rreadPayloader exists so the fuzzer can fuzz rread -- however,
+// rreadServerPayloader exists so the fuzzer can fuzz rread -- however,
 // PayloadCleanup causes it to panic, and putting connState in the fuzzer seems
 // excessive.
-type rreadPayloader struct {
+type rreadServerPayloader struct {
 	rread
 
 	fullBuffer []byte
@@ -1038,22 +1038,39 @@ func (*rread) typ() msgType {
 }
 
 // FixedSize implements payloader.FixedSize.
-func (*rreadPayloader) FixedSize() uint32 {
+func (*rread) FixedSize() uint32 {
 	return 4
 }
 
 // Payload implements payloader.Payload.
-func (r *rreadPayloader) Payload() []byte {
+func (r *rread) Payload() []byte {
 	return r.Data
 }
 
 // SetPayload implements payloader.SetPayload.
-func (r *rreadPayloader) SetPayload(p []byte) {
+func (r *rread) SetPayload(p []byte) {
+	r.Data = p
+}
+
+func (*rread) PayloadCleanup() {}
+
+// FixedSize implements payloader.FixedSize.
+func (*rreadServerPayloader) FixedSize() uint32 {
+	return 4
+}
+
+// Payload implements payloader.Payload.
+func (r *rreadServerPayloader) Payload() []byte {
+	return r.Data
+}
+
+// SetPayload implements payloader.SetPayload.
+func (r *rreadServerPayloader) SetPayload(p []byte) {
 	r.Data = p
 }
 
 // PayloadCleanup implements payloader.PayloadCleanup.
-func (r *rreadPayloader) PayloadCleanup() {
+func (r *rreadServerPayloader) PayloadCleanup() {
 	// Fill it with zeros to not risk leaking previous files' data.
 	copy(r.Data, r.cs.pristineZeros)
 	r.cs.readBufPool.Put(&r.fullBuffer)

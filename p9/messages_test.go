@@ -273,7 +273,8 @@ func TestEncodeDecode(t *testing.T) {
 			Offset: 2,
 			Count:  3,
 		},
-		&rreadPayloader{
+		&rread{Data: []byte{'a'}},
+		&rreadServerPayloader{
 			rread: rread{Data: []byte{'a'}},
 		},
 		&twrite{
