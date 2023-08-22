@@ -77,13 +77,6 @@ type connState struct {
 	// server is the backing server.
 	server *Server
 
-	// sendMu is the send lock.
-	sendMu sync.Mutex
-
-	// t reads T messages and r write R messages
-	t io.ReadCloser
-	r io.WriteCloser
-
 	// fids is the set of active fids.
 	//
 	// This is used to find fids for files.
@@ -113,14 +106,26 @@ type connState struct {
 	// pendingWg counts requests that are still being handled.
 	pendingWg sync.WaitGroup
 
-	// recvOkay indicates that a receive may start.
-	recvOkay chan bool
+	// recvMu serializes receiving from t.
+	recvMu sync.Mutex
 
-	// recvDone is signalled when a message is received.
-	recvDone chan error
+	// recvIdle is the number of goroutines in handleRequests() attempting to
+	// lock recvMu so that they can receive from t. recvIdle is accessed
+	// using atomic memory operations.
+	recvIdle int32
 
-	// sendDone is signalled when a send is finished.
-	sendDone chan error
+	// If recvShutdown is true, at least one goroutine has observed a
+	// connection error while receiving from t, and all goroutines in
+	// handleRequests() should exit immediately. recvShutdown is protected
+	// by recvMu.
+	recvShutdown bool
+
+	// sendMu serializes sending to r.
+	sendMu sync.Mutex
+
+	// t reads T messages and r write R messages
+	t io.ReadCloser
+	r io.WriteCloser
 }
 
 // xattrOp is the xattr related operations, walk or create.
@@ -463,7 +468,19 @@ func (cs *connState) WaitTag(t tag) {
 //
 // The recvDone channel is signaled when recv is done (with a error if
 // necessary). The sendDone channel is signaled with the result of the send.
-func (cs *connState) handleRequest() {
+func (cs *connState) handleRequest() bool {
+	// Obtain the right to receive a message from cs.t.
+	atomic.AddInt32(&cs.recvIdle, 1)
+	cs.recvMu.Lock()
+	atomic.AddInt32(&cs.recvIdle, -1)
+
+	if cs.recvShutdown {
+		// Another goroutine already detected a connection problem; exit
+		// immediately.
+		cs.recvMu.Unlock()
+		return false
+	}
+
 	messageSize := atomic.LoadUint32(&cs.messageSize)
 	if messageSize == 0 {
 		// Default or not yet negotiated.
@@ -474,12 +491,17 @@ func (cs *connState) handleRequest() {
 	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgDotLRegistry.get)
 	if errSocket, ok := err.(ConnError); ok {
 		// Connection problem; stop serving.
-		cs.recvDone <- errSocket.error
-		return
+		cs.server.log.Printf("p9.recv: %v", errSocket.error)
+		cs.recvShutdown = true
+		cs.recvMu.Unlock()
+		return false
 	}
 
-	// Signal receive is done.
-	cs.recvDone <- nil
+	// Ensure that another goroutine is available to receive from cs.t.
+	if atomic.LoadInt32(&cs.recvIdle) == 0 {
+		go cs.handleRequests() // S/R-SAFE: Irrelevant.
+	}
+	cs.recvMu.Unlock()
 
 	// Deal with other errors.
 	if err != nil && err != io.EOF {
@@ -488,15 +510,16 @@ func (cs *connState) handleRequest() {
 		cs.sendMu.Lock()
 		err := send(cs.server.log, cs.r, tag, newErr(err))
 		cs.sendMu.Unlock()
-		cs.sendDone <- err
-		return
+		if err != nil {
+			cs.server.log.Printf("p9.send: %v", err)
+		}
+		return true
 	}
 
 	// Try to start the tag.
 	if !cs.StartTag(tag) {
 		// Nothing we can do at this point; client is bogus.
-		cs.sendDone <- ErrNoValidMessage
-		return
+		return true
 	}
 
 	// Handle the message.
@@ -511,11 +534,13 @@ func (cs *connState) handleRequest() {
 	cs.sendMu.Lock()
 	err = send(cs.server.log, cs.r, tag, r)
 	cs.sendMu.Unlock()
-	cs.sendDone <- err
+	if err != nil {
+		cs.server.log.Printf("p9.send: %v", err)
+	}
 
 	msgDotLRegistry.put(m)
 	m = nil // 'm' should not be touched after this point.
-	return
+	return true
 }
 
 func (cs *connState) handle(m message) (r message) {
@@ -547,8 +572,10 @@ func (cs *connState) handle(m message) (r message) {
 }
 
 func (cs *connState) handleRequests() {
-	for range cs.recvOkay {
-		cs.handleRequest()
+	for {
+		if !cs.handleRequest() {
+			return
+		}
 	}
 }
 
@@ -558,10 +585,9 @@ func (cs *connState) stop() {
 	// dump of the offending handler.
 	cs.pendingWg.Wait()
 
-	// Close all channels.
-	close(cs.recvOkay)
-	close(cs.recvDone)
-	close(cs.sendDone)
+	// Ensure the connection is closed.
+	cs.r.Close()
+	cs.t.Close()
 
 	for _, fidRef := range cs.fids {
 		// Drop final reference in the fid table. Note this should
@@ -569,61 +595,23 @@ func (cs *connState) stop() {
 		// handlers running via the wait for Pending => 0 below.
 		fidRef.DecRef()
 	}
-
-	// Ensure the connection is closed.
-	cs.r.Close()
-	cs.t.Close()
-}
-
-// service services requests concurrently.
-func (cs *connState) service() error {
-	// Start the first request handler.
-	go cs.handleRequests() // S/R-SAFE: Irrelevant.
-	cs.recvOkay <- true
-
-	// We loop and make sure there's always one goroutine waiting for a new
-	// request. We process all the data for a single request in one
-	// goroutine however, to ensure the best turnaround time possible.
-	for {
-		select {
-		case err := <-cs.recvDone:
-			if err != nil {
-				return err
-			}
-
-			// Kick the next receiver, or start a new handler
-			// if no receiver is currently waiting.
-			select {
-			case cs.recvOkay <- true:
-			default:
-				go cs.handleRequests() // S/R-SAFE: Irrelevant.
-				cs.recvOkay <- true
-			}
-
-		case <-cs.sendDone:
-			// Error sending a response? Nothing can be done.
-			//
-			// We don't terminate on a send error though, since
-			// we still have a pending receive. The error would
-			// have been logged above, we just ignore it here.
-		}
-	}
 }
 
 // Handle handles a single connection.
 func (s *Server) Handle(t io.ReadCloser, r io.WriteCloser) error {
 	cs := &connState{
-		server:   s,
-		t:        t,
-		r:        r,
-		fids:     make(map[fid]*fidRef),
-		tags:     make(map[tag]chan struct{}),
-		recvOkay: make(chan bool),
-		recvDone: make(chan error, 10),
-		sendDone: make(chan error, 10),
+		server: s,
+		t:      t,
+		r:      r,
+		fids:   make(map[fid]*fidRef),
+		tags:   make(map[tag]chan struct{}),
 	}
 	defer cs.stop()
-	return cs.service()
+
+	// Serve requests from t in the current goroutine; handleRequests()
+	// will create more goroutines as needed.
+	cs.handleRequests()
+	return nil
 }
 
 // Serve handles requests from the bound socket.
