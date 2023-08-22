@@ -134,21 +134,26 @@ func (r *root) Walk(names []string) ([]p9.QID, p9.File, error) {
 	if !ok {
 		return nil, nil, linux.ENOENT
 	}
-	qid, _, _, err := file.GetAttr(p9.AttrMask{Mode: true})
+
+	// Even if len(names) == 1, get a cloned p9.File. Never return the
+	// original root File from r.fs.mounts, because if the caller
+	// Clunks/Closes it, it may become unusable for walks (e.g. because
+	// Close closes the underlying os.File object, or whatever).
+	qids, file, err := file.Walk(names[1:])
 	if err != nil {
 		return nil, nil, err
 	}
 
-	qids := []p9.QID{qid}
-	if len(names) == 1 {
-		return qids, file, nil
+	// Clones may omit the QID. Since this is not actually a clone from the
+	// caller's perspective, get the QID.
+	if len(names) == 1 && len(qids) == 0 {
+		qid, _, _, err := file.GetAttr(p9.AttrMask{Mode: true})
+		if err != nil {
+			return nil, nil, err
+		}
+		qids = []p9.QID{qid}
 	}
-
-	nextQIDs, file, err := file.Walk(names[1:])
-	if err != nil {
-		return nil, nil, err
-	}
-	return append(qids, nextQIDs...), file, nil
+	return qids, file, nil
 }
 
 // Open implements p9.File.Open.
