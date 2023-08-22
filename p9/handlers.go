@@ -763,7 +763,7 @@ func (t *tread) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &rreadPayloader{
+	return &rreadServerPayloader{
 		rread: rread{
 			Data: dataBuf[:n],
 		},
