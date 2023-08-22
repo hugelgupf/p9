@@ -211,11 +211,6 @@ type fidRef struct {
 	// isRoot should be used to check for root over looking at parent
 	// directly.
 	parent *fidRef
-
-	// deleted indicates that the backing file has been deleted. We stop
-	// many operations at the API level if they are incompatible with a
-	// file that has already been unlinked.
-	deleted uint32
 }
 
 // OpenFlags returns the flags the file was opened with and true iff the fid was opened previously.
@@ -262,8 +257,11 @@ func (f *fidRef) DecRef() error {
 }
 
 // isDeleted returns true if this fidRef has been deleted.
+//
+// Precondition: this must be called via safelyRead, safelyWrite or
+// safelyGlobal.
 func (f *fidRef) isDeleted() bool {
-	return atomic.LoadUint32(&f.deleted) != 0
+	return atomic.LoadUint32(&f.pathNode.deleted) != 0
 }
 
 // isRoot indicates whether this is a root fid.
@@ -283,10 +281,7 @@ func (f *fidRef) maybeParent() *fidRef {
 //
 // Precondition: this must be called via safelyWrite or safelyGlobal.
 func notifyDelete(pn *pathNode) {
-	// Call on all local references.
-	pn.forEachChildRef(func(ref *fidRef, _ string) {
-		atomic.StoreUint32(&ref.deleted, 1)
-	})
+	atomic.StoreUint32(&pn.deleted, 1)
 
 	// Call on all subtrees.
 	pn.forEachChildNode(func(pn *pathNode) {
@@ -298,11 +293,7 @@ func notifyDelete(pn *pathNode) {
 //
 // Precondition: this must be called via safelyWrite or safelyGlobal.
 func (f *fidRef) markChildDeleted(name string) {
-	origPathNode := f.pathNode.removeWithName(name, func(ref *fidRef) {
-		atomic.StoreUint32(&ref.deleted, 1)
-	})
-
-	if origPathNode != nil {
+	if origPathNode := f.pathNode.removeWithName(name, nil); origPathNode != nil {
 		// Mark all children as deleted.
 		notifyDelete(origPathNode)
 	}
