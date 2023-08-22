@@ -15,11 +15,13 @@
 package p9
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -474,6 +476,9 @@ func (cs *connState) WaitTag(t tag) {
 // The recvDone channel is signaled when recv is done (with a error if
 // necessary). The sendDone channel is signaled with the result of the send.
 func (cs *connState) handleRequest() bool {
+	cs.pendingWg.Add(1)
+	defer cs.pendingWg.Done()
+
 	// Obtain the right to receive a message from cs.t.
 	atomic.AddInt32(&cs.recvIdle, 1)
 	cs.recvMu.Lock()
@@ -495,8 +500,10 @@ func (cs *connState) handleRequest() bool {
 	// Receive a message.
 	tag, m, err := recv(cs.server.log, cs.t, messageSize, msgDotLRegistry.get)
 	if errSocket, ok := err.(ConnError); ok {
-		// Connection problem; stop serving.
-		cs.server.log.Printf("p9.recv: %v", errSocket.error)
+		if errSocket.error != io.EOF {
+			// Connection problem; stop serving.
+			cs.server.log.Printf("p9.recv: %v", errSocket.error)
+		}
 		cs.recvShutdown = true
 		cs.recvMu.Unlock()
 		return false
@@ -523,6 +530,7 @@ func (cs *connState) handleRequest() bool {
 
 	// Try to start the tag.
 	if !cs.StartTag(tag) {
+		cs.server.log.Printf("no valid tag [%05d]", tag)
 		// Nothing we can do at this point; client is bogus.
 		return true
 	}
@@ -549,9 +557,7 @@ func (cs *connState) handleRequest() bool {
 }
 
 func (cs *connState) handle(m message) (r message) {
-	cs.pendingWg.Add(1)
 	defer func() {
-		cs.pendingWg.Done()
 		if r == nil {
 			// Don't allow a panic to propagate.
 			err := recover()
@@ -585,9 +591,9 @@ func (cs *connState) handleRequests() {
 }
 
 func (cs *connState) stop() {
-	// Wait for completion of all inflight requests. If a request is stuck,
-	// something has the opportunity to kill us with SIGABRT to get a stack
-	// dump of the offending handler.
+	// Wait for completion of all inflight request goroutines.. If a
+	// request is stuck, something has the opportunity to kill us with
+	// SIGABRT to get a stack dump of the offending handler.
 	cs.pendingWg.Wait()
 
 	// Ensure the connection is closed.
@@ -619,19 +625,56 @@ func (s *Server) Handle(t io.ReadCloser, r io.WriteCloser) error {
 	return nil
 }
 
+func isErrClosing(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
 // Serve handles requests from the bound socket.
 //
 // The passed serverSocket _must_ be created in packet mode.
 func (s *Server) Serve(serverSocket net.Listener) error {
+	return s.ServeContext(nil, serverSocket)
+}
+
+var errAlreadyClosed = errors.New("already closed")
+
+// ServeContext handles requests from the bound socket.
+//
+// The passed serverSocket _must_ be created in packet mode.
+//
+// When the context is done, the listener is closed and serve returns once
+// every request has been handled.
+func (s *Server) ServeContext(ctx context.Context, serverSocket net.Listener) error {
 	var wg sync.WaitGroup
 	defer wg.Wait()
+
+	var cancelCause context.CancelCauseFunc
+	if ctx != nil {
+		ctx, cancelCause = context.WithCancelCause(ctx)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-ctx.Done()
+
+			// Only close the server socket if it wasn't already closed.
+			if err := ctx.Err(); errors.Is(err, errAlreadyClosed) {
+				return
+			}
+			serverSocket.Close()
+		}()
+	}
 
 	for {
 		conn, err := serverSocket.Accept()
 		if err != nil {
+			if cancelCause != nil {
+				cancelCause(errAlreadyClosed)
+			}
+			if isErrClosing(err) {
+				return nil
+			}
 			// Something went wrong.
-			//
-			// Socket closed?
 			return err
 		}
 

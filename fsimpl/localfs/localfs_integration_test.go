@@ -4,6 +4,7 @@
 package localfs
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -20,22 +21,15 @@ import (
 )
 
 func TestIntegration(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "localfs-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tempDir)
-
 	serverSocket, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("err binding: %v", err)
 	}
-	defer serverSocket.Close()
 	serverPort := serverSocket.Addr().(*net.TCPAddr).Port
 
 	// Run the server.
+	tempDir := t.TempDir()
 	s := p9.NewServer(Attacher(tempDir), p9.WithServerLogger(ulogtest.Logger{TB: t}))
-	go s.Serve(serverSocket)
 
 	// Run the read-write tests from fsimpl/test/rwvm.
 	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"}, &vmtest.UrootFSOptions{
@@ -57,6 +51,9 @@ func TestIntegration(t *testing.T) {
 					Mask: net.CIDRMask(24, 32),
 				}),
 				qemu.WithVMTimeout(30 * time.Second),
+				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+					return s.ServeContext(ctx, serverSocket)
+				}),
 			},
 		},
 	})
@@ -74,12 +71,10 @@ func TestBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err binding: %v", err)
 	}
-	defer serverSocket.Close()
 	serverPort := serverSocket.Addr().(*net.TCPAddr).Port
 
 	// Run the server. No logger -- slows down the benchmark.
 	s := p9.NewServer(Attacher(tempDir)) //, p9.WithServerLogger(ulogtest.Logger{TB: t}))
-	go s.Serve(serverSocket)
 
 	// Run the read-write tests from fsimpl/test/rwvm.
 	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/benchmark"}, &vmtest.UrootFSOptions{
@@ -101,6 +96,9 @@ func TestBenchmark(t *testing.T) {
 					Mask: net.CIDRMask(24, 32),
 				}),
 				qemu.WithVMTimeout(30 * time.Second),
+				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+					return s.ServeContext(ctx, serverSocket)
+				}),
 			},
 		},
 	})

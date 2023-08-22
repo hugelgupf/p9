@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/hugelgupf/p9/fsimpl/localfs"
@@ -209,12 +210,18 @@ func TestGuestServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err binding: %v", err)
 	}
-	defer serverSocket.Close()
 	serverPort := serverSocket.Addr().(*net.TCPAddr).Port
 
 	// Run the server.
 	s := p9.NewServer(localfs.Attacher(tmp), p9.WithServerLogger(ulogtest.Logger{TB: t}))
-	go s.Serve(serverSocket)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		s.Serve(serverSocket)
+		wg.Done()
+	}()
+	defer wg.Wait()
+	defer serverSocket.Close()
 
 	targetDir := "/guesttarget"
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
@@ -278,5 +285,4 @@ func TestGuestServer(t *testing.T) {
 			t.Errorf("Listxattr = %v, want %v", xattrs, attrs)
 		}
 	})
-
 }

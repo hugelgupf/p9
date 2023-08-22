@@ -4,6 +4,7 @@
 package composefs
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -29,7 +30,6 @@ func TestLinuxClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err binding: %v", err)
 	}
-	defer serverSocket.Close()
 	serverPort := serverSocket.Addr().(*net.TCPAddr).Port
 
 	localfsTmp := t.TempDir()
@@ -69,7 +69,6 @@ func TestLinuxClient(t *testing.T) {
 
 	// Run the server.
 	s := p9.NewServer(attacher, p9.WithServerLogger(ulogtest.Logger{TB: t}))
-	go s.Serve(serverSocket)
 
 	// Run the read tests from fsimpl/test/rovmtests.
 	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rovmtests"}, &vmtest.UrootFSOptions{
@@ -90,6 +89,9 @@ func TestLinuxClient(t *testing.T) {
 					Mask: net.CIDRMask(24, 32),
 				}),
 				qemu.WithVMTimeout(30 * time.Second),
+				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+					return s.ServeContext(ctx, serverSocket)
+				}),
 			},
 		},
 	})
