@@ -1003,7 +1003,6 @@ func (t *txattrwalk) handle(cs *connState) message {
 			},
 			pathNode: ref.pathNode,
 			parent:   ref.parent,
-			deleted:  ref.deleted,
 		}
 		cs.InsertFID(t.newFID, newRef)
 		return nil
@@ -1209,11 +1208,6 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 				file:     sf,
 				mode:     ref.mode,
 				pathNode: ref.pathNode,
-
-				// For the clone case, the cloned fid must
-				// preserve the deleted property of the
-				// original fid.
-				deleted: ref.deleted,
 			}
 			if !ref.isRoot() {
 				if !newRef.isDeleted() {
