@@ -15,25 +15,34 @@
 package p9
 
 import (
+	"sync"
 	"testing"
 
+	"github.com/hugelgupf/socketpair"
 	"github.com/u-root/uio/ulog/ulogtest"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 // TestVersion tests the version negotiation.
 func TestVersion(t *testing.T) {
 	// First, create a new server and connection.
-	l := bufconn.Listen(int(DefaultMessageSize))
+	l := socketpair.Listen()
 
 	// Create a new server and client.
 	s := NewServer(nil, WithServerLogger(ulogtest.Logger{TB: t}))
-	go s.Serve(l)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.Serve(l)
+	}()
+	defer wg.Wait()
+	defer l.Close()
 
 	client, err := l.Dial()
 	if err != nil {
 		t.Fatalf("got %v, expected nil", err)
 	}
+	defer client.Close()
 
 	// NewClient does a Tversion exchange, so this is our test for success.
 	c, err := NewClient(client,
