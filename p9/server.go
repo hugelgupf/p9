@@ -110,6 +110,9 @@ type connState struct {
 	// version 0 implies 9P2000.L.
 	version uint32
 
+	// pendingWg counts requests that are still being handled.
+	pendingWg sync.WaitGroup
+
 	// recvOkay indicates that a receive may start.
 	recvOkay chan bool
 
@@ -497,32 +500,42 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Handle the message.
-	var r message // r is the response.
+	r := cs.handle(m)
+
+	// Clear the tag before sending. That's because as soon as this
+	// hits the wire, the client can legally send another message
+	// with the same tag.
+	cs.ClearTag(tag)
+
+	// Send back the result.
+	cs.sendMu.Lock()
+	err = send(cs.server.log, cs.r, tag, r)
+	cs.sendMu.Unlock()
+	cs.sendDone <- err
+
+	msgDotLRegistry.put(m)
+	m = nil // 'm' should not be touched after this point.
+	return
+}
+
+func (cs *connState) handle(m message) (r message) {
+	cs.pendingWg.Add(1)
 	defer func() {
+		cs.pendingWg.Done()
 		if r == nil {
 			// Don't allow a panic to propagate.
-			rec := recover()
+			err := recover()
 
 			// Include a useful log message.
-			cs.server.log.Printf("panic in handler - %v: %s", rec, debug.Stack())
+			cs.server.log.Printf("panic in handler - %v: %s", err, debug.Stack())
 
 			// Wrap in an EFAULT error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
 			r = newErr(linux.EFAULT)
 		}
-
-		// Clear the tag before sending. That's because as soon as this
-		// hits the wire, the client can legally send another message
-		// with the same tag.
-		cs.ClearTag(tag)
-
-		// Send back the result.
-		cs.sendMu.Lock()
-		err = send(cs.server.log, cs.r, tag, r)
-		cs.sendMu.Unlock()
-		cs.sendDone <- err
 	}()
+
 	if handler, ok := m.(handler); ok {
 		// Call the message handler.
 		r = handler.handle(cs)
@@ -530,8 +543,7 @@ func (cs *connState) handleRequest() {
 		// Produce an ENOSYS error.
 		r = newErr(linux.ENOSYS)
 	}
-	msgDotLRegistry.put(m)
-	m = nil // 'm' should not be touched after this point.
+	return
 }
 
 func (cs *connState) handleRequests() {
@@ -541,6 +553,11 @@ func (cs *connState) handleRequests() {
 }
 
 func (cs *connState) stop() {
+	// Wait for completion of all inflight requests. If a request is stuck,
+	// something has the opportunity to kill us with SIGABRT to get a stack
+	// dump of the offending handler.
+	cs.pendingWg.Wait()
+
 	// Close all channels.
 	close(cs.recvOkay)
 	close(cs.recvDone)
@@ -560,11 +577,6 @@ func (cs *connState) stop() {
 
 // service services requests concurrently.
 func (cs *connState) service() error {
-	// Pending is the number of handlers that have finished receiving but
-	// not finished processing requests. These must be waiting on properly
-	// below. See the next comment for an explanation of the loop.
-	pending := 0
-
 	// Start the first request handler.
 	go cs.handleRequests() // S/R-SAFE: Irrelevant.
 	cs.recvOkay <- true
@@ -576,15 +588,8 @@ func (cs *connState) service() error {
 		select {
 		case err := <-cs.recvDone:
 			if err != nil {
-				// Wait for pending handlers.
-				for i := 0; i < pending; i++ {
-					<-cs.sendDone
-				}
 				return err
 			}
-
-			// This handler is now pending.
-			pending++
 
 			// Kick the next receiver, or start a new handler
 			// if no receiver is currently waiting.
@@ -596,9 +601,6 @@ func (cs *connState) service() error {
 			}
 
 		case <-cs.sendDone:
-			// This handler is finished.
-			pending--
-
 			// Error sending a response? Nothing can be done.
 			//
 			// We don't terminate on a send error though, since
