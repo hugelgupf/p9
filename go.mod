@@ -8,7 +8,7 @@ require (
 	github.com/u-root/u-root v0.11.1-0.20230807200058-f87ad7ccb594
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63
 	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
-	golang.org/x/sys v0.11.0
+	golang.org/x/sys v0.13.0
 )
 
 require (
@@ -32,7 +32,7 @@ require (
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	golang.org/x/mod v0.12.0 // indirect
-	golang.org/x/net v0.14.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/tools v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
