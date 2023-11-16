@@ -315,3 +315,33 @@ func testSameFile(t *testing.T, f1, f2 p9.File) {
 		t.Errorf("Attributes of same files do not match: %v and %v", f1Attr, f2Attr)
 	}
 }
+
+func TestReadWriteFS(t *testing.T, attach p9.Attacher) {
+	root, err := attach.Attach()
+	if err != nil {
+		t.Fatalf("Failed to attach to %v: %v", attach, err)
+	}
+	defer root.Close()
+
+	// Create a dummy file to unlink
+	const dummyFileName = "dummy_file.txt"
+	f, _, _, err := root.Create(dummyFileName, p9.ReadWrite, 0666, p9.NoUID, p9.NoGID)
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	f.Close()
+
+	// Attempt to unlink the file
+	if err := root.UnlinkAt(dummyFileName, 0); err != nil {
+		t.Errorf("Unlinkat failed: %v", err)
+	}
+	// Check that it does not exist anymore
+	dirents, err := readdir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file2dirent := dirents.Find(dummyFileName)
+	if file2dirent != nil {
+		t.Errorf("Dirents(%v).Find(file2) = %v, but should be nil", dirents, file2dirent)
+	}
+}
