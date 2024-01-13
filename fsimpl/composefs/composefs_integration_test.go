@@ -71,28 +71,26 @@ func TestLinuxClient(t *testing.T) {
 	s := p9.NewServer(attacher, p9.WithServerLogger(ulogtest.Logger{TB: t}))
 
 	// Run the read tests from fsimpl/test/rovmtests.
-	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rovmtests"}, &vmtest.UrootFSOptions{
-		BuildOpts: uroot.Opts{
+	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rovmtests"},
+		vmtest.WithMergedInitramfs(uroot.Opts{
 			Commands: uroot.BusyBoxCmds(
 				"github.com/u-root/u-root/cmds/core/dhclient",
 			),
 			ExtraFiles: []string{
 				fmt.Sprintf("%s:etc/want.json", filepath.Join(dir, "want.json")),
 			},
-		},
-		VMOptions: vmtest.VMOptions{
-			QEMUOpts: []qemu.Fn{
-				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
-				// 192.168.0.0/24
-				vmdriver.HostNetwork(&net.IPNet{
-					IP:   net.IP{192, 168, 0, 0},
-					Mask: net.CIDRMask(24, 32),
-				}),
-				qemu.WithVMTimeout(30 * time.Second),
-				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
-					return s.ServeContext(ctx, serverSocket)
-				}),
-			},
-		},
-	})
+		}),
+		vmtest.WithQEMUFn(
+			qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+			// 192.168.0.0/24
+			vmdriver.HostNetwork(&net.IPNet{
+				IP:   net.IP{192, 168, 0, 0},
+				Mask: net.CIDRMask(24, 32),
+			}),
+			qemu.WithVMTimeout(30*time.Second),
+			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+				return s.ServeContext(ctx, serverSocket)
+			}),
+		),
+	)
 }

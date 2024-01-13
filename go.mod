@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/hugelgupf/socketpair v0.0.0-20230822150718-707395b1939a
-	github.com/hugelgupf/vmtest v0.0.0-20230810222836-f8c8e381617c
+	github.com/hugelgupf/vmtest v0.0.0-20231218014634-279c76daf0d0
 	github.com/u-root/u-root v0.11.1-0.20230807200058-f87ad7ccb594
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63
 	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad

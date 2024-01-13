@@ -30,4 +30,6 @@ func TestLocalFS(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	test.TestFile(t, Attacher(tempDir))
+	test.TestReadOnlyFS(t, Attacher(tempDir))
+	test.TestReadWriteFS(t, Attacher(tempDir))
 }
