@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -31,6 +32,11 @@ func TestIntegration(t *testing.T) {
 	tempDir := t.TempDir()
 	s := p9.NewServer(Attacher(tempDir), p9.WithServerLogger(ulogtest.Logger{TB: t}))
 
+	dd, err := exec.LookPath("dd")
+	if err != nil {
+		t.Errorf("Cannot run test without dd binary")
+	}
+
 	// Run the read-write tests from fsimpl/test/rwvm.
 	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"},
 		vmtest.WithMergedInitramfs(uroot.Opts{
@@ -39,7 +45,7 @@ func TestIntegration(t *testing.T) {
 				"github.com/u-root/u-root/cmds/core/dhclient",
 			),
 			ExtraFiles: []string{
-				"/usr/bin/dd:bin/dd",
+				dd + ":bin/dd",
 			},
 		}),
 		vmtest.WithQEMUFn(
