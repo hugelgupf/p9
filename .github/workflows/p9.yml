@@ -12,8 +12,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build_and_test:
+  build:
     name: Build
+    strategy:
+      matrix:
+        goos: ['linux', 'windows', 'openbsd', 'freebsd', 'netbsd']
+        goarch: ['386', 'amd64', 'arm', 'arm64']
+        include:
+          - goos: 'darwin'
+            goarch: 'arm64'
+          - goos: 'solaris'
+            goarch: 'amd64'
+          - goos: 'linux'
+            goarch: 'mips'
+          - goos: 'linux'
+            goarch: 'mips64'
+          - goos: 'linux'
+            goarch: 'mipsle'
+          - goos: 'linux'
+            goarch: 'mips64le'
+          - goos: 'linux'
+            goarch: 'ppc64'
+          - goos: 'linux'
+            goarch: 'ppc64le'
+          - goos: 'linux'
+            goarch: 'riscv64'
+        exclude:
+          - goos: 'netbsd'
+            goarch: 'arm64'
+
+    runs-on: ubuntu-latest
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21.x'
+      - name: Build
+        run: go build -v ./...
+
+  test:
+    name: Unit test
     strategy:
       matrix:
         go-version: ['1.21.x']
@@ -75,6 +117,7 @@ jobs:
           path: ./out/artifacts
 
   vmtest:
+    name: VM tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
