@@ -19,9 +19,9 @@ import (
 	"github.com/hugelgupf/p9/fsimpl/localfs"
 	"github.com/hugelgupf/p9/fsimpl/xattr"
 	"github.com/hugelgupf/p9/p9"
+	"github.com/hugelgupf/vmtest/guest"
 	"github.com/u-root/u-root/pkg/mount"
 	"github.com/u-root/u-root/pkg/sh"
-	"github.com/u-root/u-root/pkg/testutil"
 	"github.com/u-root/uio/ulog/ulogtest"
 	"golang.org/x/sys/unix"
 )
@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMountHostDirectory(t *testing.T) {
-	testutil.SkipIfNotRoot(t)
+	guest.SkipIfNotInVM(t)
 
 	targetDir := "/target"
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
@@ -197,7 +197,7 @@ func TestMountHostDirectory(t *testing.T) {
 }
 
 func TestGuestServer(t *testing.T) {
-	testutil.SkipIfNotRoot(t)
+	guest.SkipIfNotInVM(t)
 
 	tmp := t.TempDir()
 	mp, err := mount.Mount("", tmp, "tmpfs", "", 0)
