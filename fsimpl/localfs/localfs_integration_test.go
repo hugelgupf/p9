@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -64,6 +65,9 @@ func TestIntegration(t *testing.T) {
 }
 
 func TestBenchmark(t *testing.T) {
+	// Uses host's dd binary.
+	vmtest.SkipIfNotArch(t, qemu.Arch(runtime.GOARCH))
+
 	// Needs to definitely be in a tmpfs for performance testing.
 	tempDir, err := ioutil.TempDir("/dev/shm", "localfs-")
 	if err != nil {
