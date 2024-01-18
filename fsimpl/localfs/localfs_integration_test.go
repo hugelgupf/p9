@@ -40,26 +40,28 @@ func TestIntegration(t *testing.T) {
 
 	// Run the read-write tests from fsimpl/test/rwvm.
 	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"},
-		vmtest.WithMergedInitramfs(uroot.Opts{
-			Commands: uroot.BusyBoxCmds(
-				"github.com/u-root/u-root/cmds/core/ls",
-				"github.com/u-root/u-root/cmds/core/dhclient",
+		vmtest.WithVMOpt(
+			vmtest.WithMergedInitramfs(uroot.Opts{
+				Commands: uroot.BusyBoxCmds(
+					"github.com/u-root/u-root/cmds/core/ls",
+					"github.com/u-root/u-root/cmds/core/dhclient",
+				),
+				ExtraFiles: []string{
+					dd + ":bin/dd",
+				},
+			}),
+			vmtest.WithQEMUFn(
+				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+				// 192.168.0.0/24
+				vmdriver.HostNetwork(&net.IPNet{
+					IP:   net.IP{192, 168, 0, 0},
+					Mask: net.CIDRMask(24, 32),
+				}),
+				qemu.WithVMTimeout(30*time.Second),
+				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+					return s.ServeContext(ctx, serverSocket)
+				}),
 			),
-			ExtraFiles: []string{
-				dd + ":bin/dd",
-			},
-		}),
-		vmtest.WithQEMUFn(
-			qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
-			// 192.168.0.0/24
-			vmdriver.HostNetwork(&net.IPNet{
-				IP:   net.IP{192, 168, 0, 0},
-				Mask: net.CIDRMask(24, 32),
-			}),
-			qemu.WithVMTimeout(30*time.Second),
-			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
-				return s.ServeContext(ctx, serverSocket)
-			}),
 		),
 	)
 }
@@ -86,26 +88,28 @@ func TestBenchmark(t *testing.T) {
 
 	// Run the read-write tests from fsimpl/test/rwvm.
 	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/benchmark"},
-		vmtest.WithMergedInitramfs(uroot.Opts{
-			Commands: uroot.BusyBoxCmds(
-				"github.com/u-root/u-root/cmds/core/ls",
-				"github.com/u-root/u-root/cmds/core/dhclient",
+		vmtest.WithVMOpt(
+			vmtest.WithMergedInitramfs(uroot.Opts{
+				Commands: uroot.BusyBoxCmds(
+					"github.com/u-root/u-root/cmds/core/ls",
+					"github.com/u-root/u-root/cmds/core/dhclient",
+				),
+				ExtraFiles: []string{
+					"/usr/bin/dd:bin/dd",
+				},
+			}),
+			vmtest.WithQEMUFn(
+				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+				// 192.168.0.0/24
+				vmdriver.HostNetwork(&net.IPNet{
+					IP:   net.IP{192, 168, 0, 0},
+					Mask: net.CIDRMask(24, 32),
+				}),
+				qemu.WithVMTimeout(30*time.Second),
+				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+					return s.ServeContext(ctx, serverSocket)
+				}),
 			),
-			ExtraFiles: []string{
-				"/usr/bin/dd:bin/dd",
-			},
-		}),
-		vmtest.WithQEMUFn(
-			qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
-			// 192.168.0.0/24
-			vmdriver.HostNetwork(&net.IPNet{
-				IP:   net.IP{192, 168, 0, 0},
-				Mask: net.CIDRMask(24, 32),
-			}),
-			qemu.WithVMTimeout(30*time.Second),
-			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
-				return s.ServeContext(ctx, serverSocket)
-			}),
 		),
 	)
 }
