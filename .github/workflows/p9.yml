@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: '1.21.x'
       - name: Build
@@ -64,7 +64,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -75,15 +75,15 @@ jobs:
         run: go test -v -covermode atomic -coverpkg ./... -coverprofile cover.out ./...
 
       - name: Archive coverage artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: coverage
+          name: coverage-${{ matrix.platform }}
           path: cover.out
 
       - name: Race
         run: go test -race -timeout 15m -v ./...
 
-      - uses: codecov/codecov-action@v4-beta
+      - uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: '19f1ec66-d755-4010-bc76-0c8091d231c3'
         with:
@@ -110,7 +110,7 @@ jobs:
           dry-run: false
 
       - name: Upload Crash
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         if: failure() && steps.build.outcome == 'success'
         with:
           name: artifacts
@@ -137,7 +137,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -152,7 +152,7 @@ jobs:
             go test -v -coverpkg=./... -covermode=atomic \
             -coverprofile=coverage.txt ./...
 
-      - uses: codecov/codecov-action@v4-beta
+      - uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: '19f1ec66-d755-4010-bc76-0c8091d231c3'
         with:
