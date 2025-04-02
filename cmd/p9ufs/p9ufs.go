@@ -51,7 +51,7 @@ func main() {
 	}
 
 	if len(flag.Args()) != 1 {
-		log.Fatalf("usage: %s <bind-addr>", os.Args[0])
+		log.Fatalf("usage: %s <bind-addr:port>", os.Args[0])
 	}
 
 	// Bind and listen on the socket.
