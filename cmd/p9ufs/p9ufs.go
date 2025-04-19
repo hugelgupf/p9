@@ -25,7 +25,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	"fmt"
 	"net"
 	"os"
 
@@ -40,8 +40,36 @@ var (
 	unix    = flag.Bool("unix", false, "use unix domain socket instead of TCP")
 )
 
+// Prints custom help to document addr:port argument
+func Usage() {
+	fmt.Print("p9ufs - local 9P2000.L server in userspace\n\n")
+	fmt.Printf("usage: %s [options] <bind-addr:port>\n\noptions:\n", os.Args[0])
+	// print options to stdout
+	flag.CommandLine.SetOutput(os.Stdout)
+	flag.PrintDefaults()
+}
+
 func main() {
-	flag.Parse()
+	// 'flag' setup
+	// - disable flag usage to avoid printing it after errors
+	flag.Usage = func() {}
+	// - return errors to handle them manually
+	flag.CommandLine.Init("p9ufs", flag.ContinueOnError)
+	err := flag.CommandLine.Parse(os.Args[1:])
+	if err != nil {
+		// error is already printed to stderr at this point
+		if err == flag.ErrHelp {
+			// process -h, --help
+			Usage()
+			os.Exit(0)
+		}
+		os.Exit(1)
+	}
+	// - print usage if no params given
+	if len(flag.Args()) != 1 {
+		Usage()
+		os.Exit(0)
+	}
 
 	var network string
 	if *unix {
@@ -50,14 +78,11 @@ func main() {
 		network = "tcp"
 	}
 
-	if len(flag.Args()) != 1 {
-		log.Fatalf("usage: %s <bind-addr:port>", os.Args[0])
-	}
-
 	// Bind and listen on the socket.
 	serverSocket, err := net.Listen(network, flag.Args()[0])
 	if err != nil {
-		log.Fatalf("err binding: %v", err)
+		fmt.Fprintf(os.Stderr, "err binding: %v\n", err)
+		os.Exit(2)
 	}
 
 	var opts []p9.ServerOpt
