@@ -28,7 +28,7 @@ type Stat_t struct {
 
 // InfoToStat takes a platform native FileInfo and converts it into a 9P2000.L compatible Stat_t
 func InfoToStat(fi os.FileInfo) *Stat_t {
-	t := Timespec{Sec: int64(fi.ModTime().Second())}
+	t := Timespec{Sec: fi.ModTime().Unix()}
 	return &Stat_t{
 		Dev:     0,
 		Ino:     0,
