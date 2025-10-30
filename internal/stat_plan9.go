@@ -28,6 +28,7 @@ type Stat_t struct {
 
 // InfoToStat takes a platform native FileInfo and converts it into a 9P2000.L compatible Stat_t
 func InfoToStat(fi os.FileInfo) *Stat_t {
+	const blockSize = 8192
 	t := Timespec{Sec: fi.ModTime().Unix()}
 	return &Stat_t{
 		Dev:     0,
@@ -38,8 +39,8 @@ func InfoToStat(fi os.FileInfo) *Stat_t {
 		Gid:     0,
 		Rdev:    0,
 		Size:    fi.Size(),
-		Blksize: 8192,
-		Blocks:  fi.Size() / 8192,
+		Blksize: blockSize,
+		Blocks:  fi.Size() / blockSize,
 		Atim:    t,
 		Mtim:    t,
 		Ctim:    t,
