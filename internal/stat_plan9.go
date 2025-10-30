@@ -6,8 +6,8 @@ import (
 
 // NOTE: taken from amd64 Linux
 type Timespec struct {
-        Sec  int64
-        Nsec int64
+	Sec  int64
+	Nsec int64
 }
 
 type Stat_t struct {
