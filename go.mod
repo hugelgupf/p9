@@ -5,6 +5,7 @@ go 1.23
 require (
 	github.com/hugelgupf/socketpair v0.0.0-20230822150718-707395b1939a
 	github.com/hugelgupf/vmtest v0.0.0-20240115033909-46506b2af5ea
+	github.com/rogpeppe/go-internal v1.14.1
 	github.com/u-root/u-root v0.12.1-0.20240114161452-ab3534910ced
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63
 	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
@@ -26,7 +27,6 @@ require (
 	github.com/mdlayher/packet v1.1.2 // indirect
 	github.com/mdlayher/socket v0.5.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/u-root/gobusybox/src v0.0.0-20231228173702-b69f654846aa // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
