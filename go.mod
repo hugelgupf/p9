@@ -1,16 +1,15 @@
 module github.com/hugelgupf/p9
 
-go 1.21
-
-toolchain go1.21.0
+go 1.23
 
 require (
 	github.com/hugelgupf/socketpair v0.0.0-20230822150718-707395b1939a
 	github.com/hugelgupf/vmtest v0.0.0-20240115033909-46506b2af5ea
+	github.com/rogpeppe/go-internal v1.14.1
 	github.com/u-root/u-root v0.12.1-0.20240114161452-ab3534910ced
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63
 	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
-	golang.org/x/sys v0.15.0
+	golang.org/x/sys v0.26.0
 )
 
 require (
@@ -33,9 +32,9 @@ require (
 	github.com/ulikunitz/xz v0.5.11 // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	golang.org/x/mod v0.14.0 // indirect
-	golang.org/x/net v0.19.0 // indirect
-	golang.org/x/sync v0.5.0 // indirect
-	golang.org/x/tools v0.16.1 // indirect
+	golang.org/x/mod v0.21.0 // indirect
+	golang.org/x/net v0.30.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/tools v0.26.0 // indirect
 	src.elv.sh v0.16.0-rc1.0.20220116211855-fda62502ad7f // indirect
 )
