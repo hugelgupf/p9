@@ -57,7 +57,6 @@ func (a *attacher) Attach() (p9.File, error) {
 
 // Local is a p9.File.
 type Local struct {
-	p9.DefaultWalkGetAttr
 	templatefs.NoopFile
 
 	path string
@@ -295,6 +294,18 @@ func (l *Local) UnlinkAt(name string, flags uint32) error {
 
 	// Remove the file or directory
 	return os.Remove(fullPath)
+}
+
+func (l *Local) WalkGetAttr(names []string) ([]p9.QID, p9.File, p9.AttrMask, p9.Attr, error) {
+	qids, file, err := l.Walk(names)
+	if err != nil {
+		return nil, nil, p9.AttrMask{}, p9.Attr{}, err
+	}
+	_, valid, attr, err := file.GetAttr(p9.AttrMaskAll)
+	if err != nil {
+		err = errors.Join(err, file.Close())
+	}
+	return qids, file, valid, attr, err
 }
 
 func translateError(err error) error {
