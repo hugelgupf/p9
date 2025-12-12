@@ -69,6 +69,10 @@ var (
 	_ p9.File = &Local{}
 )
 
+func (l *Local) StatFS() (p9.FSStat, error) {
+	return statFSForPath(l.path)
+}
+
 // info constructs a QID for this file.
 func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	var (

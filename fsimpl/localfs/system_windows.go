@@ -2,6 +2,7 @@ package localfs
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
@@ -47,4 +48,39 @@ func localToQid(path string, info os.FileInfo) (uint64, error) {
 // it does on Linux (pid? really? what were they thinking?)
 func (l *Local) lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
 	return p9.LockStatusOK, linux.ENOSYS
+}
+
+func statFSForPath(p string) (p9.FSStat, error) {
+	lpDirectoryName, err := windows.UTF16PtrFromString(filepath.Dir(p))
+	if err != nil {
+		return p9.FSStat{}, err
+	}
+	var freeAvail, totalBytes, totalFree uint64
+	if err = windows.GetDiskFreeSpaceEx(lpDirectoryName, &freeAvail, &totalBytes, &totalFree); err != nil {
+		return p9.FSStat{}, err
+	}
+	// r1, _, e := windows.GetDiskFreeSpaceEx(lpDirectoryName, &freeAvail, &totalBytes, &totalFree)
+	// if r1 == 0 {
+	// 	if e != nil {
+	// 		return p9.FSStat{}, e
+	// 	}
+	// 	return p9.FSStat{}, windows.ERROR_GEN_FAILURE
+	// }
+
+	// Derive a block size; Windows API doesn’t give it directly.
+	// You can call GetDiskFreeSpace for sectors/cluster, but we’ll pick 4096 as a typical size.
+	const blockSize = 4096
+
+	return p9.FSStat{
+		Type:            0, // not meaningful on Windows
+		BlockSize:       blockSize,
+		Blocks:          totalBytes / blockSize,
+		BlocksFree:      totalFree / blockSize,
+		BlocksAvailable: freeAvail / blockSize,
+		Files:           0, // Windows doesn’t expose inode counts
+		FilesFree:       0,
+		FSID:            0, // optional; could hash volume serial number if desired
+		// FIXME: fetch this. Long names might be enabled.
+		NameLength: 255,
+	}, nil
 }
