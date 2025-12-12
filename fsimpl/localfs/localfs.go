@@ -106,24 +106,27 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 
 // Walk implements p9.File.Walk.
 func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
-	var qids []p9.QID
-	last := &Local{path: l.path}
-
-	// A walk with no names is a copy of self.
-	if len(names) == 0 {
-		return nil, last, nil
-	}
-
-	for _, name := range names {
-		c := &Local{path: path.Join(last.path, name)}
-		qid, _, err := c.info()
-		if err != nil {
-			return nil, nil, err
+	var (
+		last = &Local{path: l.path}
+		qids []p9.QID
+		err  error
+	)
+	if len(names) > 0 {
+		qids = make([]p9.QID, len(names))
+		for i, name := range names {
+			component := &Local{
+				path: path.Join(last.path, name),
+			}
+			var qid p9.QID
+			if qid, _, err = component.info(); err != nil {
+				qids = qids[:i]
+				break
+			}
+			qids[i] = qid
+			last = component
 		}
-		qids = append(qids, qid)
-		last = c
 	}
-	return qids, last, nil
+	return qids, last, err
 }
 
 // FSync implements p9.File.FSync.
