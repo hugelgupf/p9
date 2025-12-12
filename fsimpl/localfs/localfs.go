@@ -95,7 +95,7 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	qid.Type = p9.ModeFromOS(fi.Mode()).QIDType()
 
 	// Save the path from the Ino.
-	ninePath, err := localToQid(l.path, fi)
+	ninePath, err := localToQid(l.path, fi, l.file)
 	if err != nil {
 		return qid, nil, err
 	}

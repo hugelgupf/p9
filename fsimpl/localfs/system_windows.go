@@ -13,33 +13,43 @@ func umask(_ int) int {
 	return 0
 }
 
-func localToQid(path string, info os.FileInfo) (uint64, error) {
-	pathPtr, err := windows.UTF16PtrFromString(path)
-	if err != nil {
+func localToQid(path string, info os.FileInfo, f *os.File) (uint64, error) {
+	var handle windows.Handle
+	if f != nil {
+		handle = windows.Handle(f.Fd())
+	} else {
+		name, err := windows.UTF16PtrFromString(path)
+		if err != nil {
+			return 0, err
+		}
+		const (
+			access = 0 // none; we only need metadata.
+			mode   = windows.FILE_SHARE_READ |
+				windows.FILE_SHARE_WRITE |
+				windows.FILE_SHARE_DELETE
+			createmode   = windows.OPEN_EXISTING
+			templatefile = 0
+		)
+		var attrs uint32 = windows.FILE_ATTRIBUTE_NORMAL
+		if info.IsDir() {
+			attrs = windows.FILE_FLAG_BACKUP_SEMANTICS
+		}
+		handle, err = windows.CreateFile(
+			name, access, mode,
+			nil, createmode, attrs,
+			templatefile)
+		if err != nil {
+			return 0, err
+		}
+		defer windows.CloseHandle(handle) // FIXME: dropped error; join it.
+	}
+	var fiByHandle windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &fiByHandle); err != nil {
 		return 0, err
 	}
-
-	var (
-		access     uint32 // none; we only need metadata
-		sharemode  uint32
-		createmode uint32 = windows.OPEN_EXISTING
-		attribute  uint32 = windows.FILE_ATTRIBUTE_NORMAL
-	)
-	if info.IsDir() {
-		attribute = windows.FILE_FLAG_BACKUP_SEMANTICS
-	}
-	fd, err := windows.CreateFile(pathPtr, access, sharemode, nil, createmode, attribute, 0)
-	if err != nil {
-		return 0, err
-	}
-
-	fi := &windows.ByHandleFileInformation{}
-	if err = windows.GetFileInformationByHandle(fd, fi); err != nil {
-		return 0, err
-	}
-
-	x := uint64(fi.FileIndexHigh)<<32 | uint64(fi.FileIndexLow)
-	return x, nil
+	fileIndex := uint64(fiByHandle.FileIndexHigh)<<32 |
+		uint64(fiByHandle.FileIndexLow)
+	return fileIndex, nil
 }
 
 // lock implements p9.File.Lock.
