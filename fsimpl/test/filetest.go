@@ -252,7 +252,7 @@ func readdir(dir p9.File) (p9.Dirents, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Readdir(dir) = %v, want nil", err)
 	}
-	return dirents, nil
+	return dirents, dirCopy.Close()
 }
 
 func testWalkSelf(t *testing.T, root p9.File) {
