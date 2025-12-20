@@ -16,10 +16,12 @@
 package test
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
 	"github.com/u-root/uio/uio"
 	"golang.org/x/exp/slices"
@@ -212,24 +214,29 @@ func testCreate(t *testing.T, root p9.File) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, _, _, err = f1.Create("file2", p9.ReadWrite, 0777, p9.NoUID, p9.NoGID)
+	const (
+		name        = "file2"
+		flags       = p9.ReadWrite
+		permissions = 0o777
+		uid, gid    = p9.NoUID, p9.NoGID
+	)
+	_, _, _, err = f1.Create(name, flags, permissions, uid, gid)
 	if err != nil {
-		t.Errorf("Create(file2) = %v, want nil", err)
+		t.Errorf("Create(%s) = %v, want nil", name, err)
 	}
 
-	_, _, _, err = f1.Create("file2", p9.ReadWrite, 0777, p9.NoUID, p9.NoGID)
-	if err == nil {
-		t.Errorf("Create(file2) (2nd time) = %v, want EEXIST", err)
+	_, _, _, err = f1.Create(name, flags, permissions, uid, gid)
+	if !errors.Is(err, linux.EEXIST) {
+		t.Errorf("Create(%s) (2nd time) = %v, want EEXIST", name, err)
 	}
 
 	dirents, err := readdir(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	file2dirent := dirents.Find("file2")
+	file2dirent := dirents.Find(name)
 	if file2dirent == nil {
-		t.Errorf("Dirents(%v).Find(file2) = nil, but should be there", dirents)
+		t.Errorf("Dirents(%v).Find(%s) = nil, but should be there", name, dirents)
 	}
 }
 
