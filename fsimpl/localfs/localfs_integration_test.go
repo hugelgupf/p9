@@ -6,7 +6,6 @@ package localfs
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -71,7 +70,7 @@ func TestBenchmark(t *testing.T) {
 	vmtest.SkipIfNotArch(t, qemu.Arch(runtime.GOARCH))
 
 	// Needs to definitely be in a tmpfs for performance testing.
-	tempDir, err := ioutil.TempDir("/dev/shm", "localfs-")
+	tempDir, err := os.MkdirTemp("/dev/shm", "localfs-")
 	if err != nil {
 		t.Fatal(err)
 	}

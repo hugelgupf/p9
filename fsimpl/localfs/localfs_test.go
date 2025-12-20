@@ -15,7 +15,6 @@
 package localfs
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -23,7 +22,7 @@ import (
 )
 
 func TestLocalFS(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "localfs-")
+	tempDir, err := os.MkdirTemp("", "localfs-")
 	if err != nil {
 		t.Fatal(err)
 	}
