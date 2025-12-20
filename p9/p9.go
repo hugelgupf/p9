@@ -31,9 +31,6 @@ import (
 	"github.com/hugelgupf/p9/linux"
 )
 
-// Debug can be assigned to log.Printf to print messages received and sent.
-var Debug = func(fmt string, v ...interface{}) {}
-
 const (
 	// DefaultMessageSize is a sensible default.
 	DefaultMessageSize uint32 = 64 << 10
