@@ -60,6 +60,7 @@ type Local struct {
 
 	path string
 	file *os.File
+	directoryPage
 }
 
 var (
