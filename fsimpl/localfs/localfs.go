@@ -16,6 +16,8 @@
 package localfs
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -289,4 +291,15 @@ func (l *Local) UnlinkAt(name string, flags uint32) error {
 
 	// Remove the file or directory
 	return os.Remove(fullPath)
+}
+
+func translateError(err error) error {
+	switch {
+	case errors.Is(err, fs.ErrExist):
+		return linux.EEXIST
+	case errors.Is(err, fs.ErrNotExist):
+		return linux.ENOENT
+	default:
+		return linux.EIO
+	}
 }
