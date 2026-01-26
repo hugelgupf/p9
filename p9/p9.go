@@ -20,6 +20,7 @@
 package p9
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -27,10 +28,8 @@ import (
 	"sync/atomic"
 
 	"github.com/hugelgupf/p9/internal"
+	"github.com/hugelgupf/p9/linux"
 )
-
-// Debug can be assigned to log.Printf to print messages received and sent.
-var Debug = func(fmt string, v ...interface{}) {}
 
 const (
 	// DefaultMessageSize is a sensible default.
@@ -1164,4 +1163,64 @@ func (d *Dirent) encode(b *buffer) {
 	b.Write64(d.Offset)
 	b.WriteQIDType(d.Type)
 	b.WriteString(d.Name)
+}
+
+// DirentSize returns the encoded
+// byte count of this entry.
+// Particularly useful when calling [File.Readdir].
+func DirentSize(name string) uint32 {
+	return direntSize(uint32(len(name)))
+}
+
+func direntSize(nameLen uint32) uint32 {
+	// 9P2000.L defines a directory entry as:
+	// qid[13] offset[8] type[1] name[s]
+	// Strings are length prefixed / Pascal strings.
+	// length[2] string[length]
+	const (
+		qid    = 13
+		offset = 8
+		typ    = 1
+		prefix = 2
+		header = qid + offset + typ + prefix
+	)
+	return header + nameLen
+}
+
+// TODO: document; full read of a directory; unsorted.
+// TODO: reconsider API. Typically my libraries take in a FID
+// and perform a whole sequence such as
+// FID -> open -> readdir -> close; where close is guaranteed on all returns.
+// The caller will typically clone the FID, pass it to our method, and not have to think about anything else.
+// The current implementation below, expects the caller to pass in an open FID and close it themselves
+// I.e. we /just/ do the read loop.
+func ReadDir(file File) (Dirents, error) {
+	var maxName uint32
+	fsinfo, err := file.StatFS()
+	if err == nil {
+		maxName = fsinfo.NameLength
+	} else if !errors.Is(err, linux.ENOSYS) {
+		return nil, err // StatFS is a bonus, not a requirement.
+	}
+	if maxName == 0 { // Fallback regardless of stat call,
+		const fallback = 255 // as `0` may represent `∞`.
+		maxName = fallback
+	}
+	const wantEntryCount = 32 // This is an estimate / request desire.
+	var (
+		maximum = direntSize(maxName)
+		count   = uint32(wantEntryCount * maximum)
+		entries Dirents
+		offset  uint64
+	)
+	for {
+		var batch Dirents
+		if batch, err = file.Readdir(offset, count); err != nil ||
+			len(batch) == 0 {
+			break
+		}
+		entries = append(entries, batch...)
+		offset = batch[len(batch)-1].Offset
+	}
+	return entries, err
 }

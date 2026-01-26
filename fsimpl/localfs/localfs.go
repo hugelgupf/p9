@@ -16,6 +16,8 @@
 package localfs
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -55,16 +57,20 @@ func (a *attacher) Attach() (p9.File, error) {
 
 // Local is a p9.File.
 type Local struct {
-	p9.DefaultWalkGetAttr
 	templatefs.NoopFile
 
 	path string
 	file *os.File
+	directoryPage
 }
 
 var (
 	_ p9.File = &Local{}
 )
+
+func (l *Local) StatFS() (p9.FSStat, error) {
+	return statFSForPath(l.path)
+}
 
 // info constructs a QID for this file.
 func (l *Local) info() (p9.QID, os.FileInfo, error) {
@@ -88,7 +94,7 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	qid.Type = p9.ModeFromOS(fi.Mode()).QIDType()
 
 	// Save the path from the Ino.
-	ninePath, err := localToQid(l.path, fi)
+	ninePath, err := localToQid(l.path, fi, l.file)
 	if err != nil {
 		return qid, nil, err
 	}
@@ -100,24 +106,27 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 
 // Walk implements p9.File.Walk.
 func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
-	var qids []p9.QID
-	last := &Local{path: l.path}
-
-	// A walk with no names is a copy of self.
-	if len(names) == 0 {
-		return nil, last, nil
-	}
-
-	for _, name := range names {
-		c := &Local{path: path.Join(last.path, name)}
-		qid, _, err := c.info()
-		if err != nil {
-			return nil, nil, err
+	var (
+		last = &Local{path: l.path}
+		qids []p9.QID
+		err  error
+	)
+	if len(names) > 0 {
+		qids = make([]p9.QID, len(names))
+		for i, name := range names {
+			component := &Local{
+				path: path.Join(last.path, name),
+			}
+			var qid p9.QID
+			if qid, _, err = component.info(); err != nil {
+				qids = qids[:i]
+				break
+			}
+			qids[i] = qid
+			last = component
 		}
-		qids = append(qids, qid)
-		last = c
 	}
-	return qids, last, nil
+	return qids, last, err
 }
 
 // FSync implements p9.File.FSync.
@@ -202,7 +211,7 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 	newName := path.Join(l.path, name)
 	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
 	if err != nil {
-		return nil, p9.QID{}, 0, err
+		return nil, p9.QID{}, 0, translateError(err)
 	}
 
 	l2 := &Local{path: newName, file: f}
@@ -288,4 +297,27 @@ func (l *Local) UnlinkAt(name string, flags uint32) error {
 
 	// Remove the file or directory
 	return os.Remove(fullPath)
+}
+
+func (l *Local) WalkGetAttr(names []string) ([]p9.QID, p9.File, p9.AttrMask, p9.Attr, error) {
+	qids, file, err := l.Walk(names)
+	if err != nil {
+		return nil, nil, p9.AttrMask{}, p9.Attr{}, err
+	}
+	_, valid, attr, err := file.GetAttr(p9.AttrMaskAll)
+	if err != nil {
+		err = errors.Join(err, file.Close())
+	}
+	return qids, file, valid, attr, err
+}
+
+func translateError(err error) error {
+	switch {
+	case errors.Is(err, fs.ErrExist):
+		return linux.EEXIST
+	case errors.Is(err, fs.ErrNotExist):
+		return linux.ENOENT
+	default:
+		return linux.EIO
+	}
 }
