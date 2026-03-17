@@ -505,7 +505,11 @@ func (cs *connState) handleRequest() bool {
 
 	// Ensure that another goroutine is available to receive from cs.t.
 	if atomic.LoadInt32(&cs.recvIdle) == 0 {
-		go cs.handleRequests() // S/R-SAFE: Irrelevant.
+		cs.pendingWg.Add(1)
+		go func() {
+			defer cs.pendingWg.Done()
+			cs.handleRequests() // S/R-SAFE: Irrelevant.
+		}()
 	}
 	cs.recvMu.Unlock()
 
