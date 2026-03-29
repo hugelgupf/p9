@@ -997,7 +997,6 @@ func (t *txattrwalk) handle(cs *connState) message {
 				buf:  buf,
 			},
 			pathNode: ref.pathNode,
-			parent:   ref.parent,
 		}
 		cs.InsertFID(t.newFID, newRef)
 		return nil
