@@ -120,10 +120,10 @@ var nextQid atomic.Uint64 // set to 1 << 63 in init()
 
 func localToQid(_ string, fi os.FileInfo) (uint64, error) {
 	stat := fi.Sys().(*syscall.Stat_t)
-	if q, ok := encodeLikely(stat.Dev, stat.Ino); ok {
+	if q, ok := encodeLikely(uint64(stat.Dev), stat.Ino); ok {
 		return q, nil
 	}
-	di := &devino{stat.Dev, stat.Ino}
+	di := &devino{uint64(stat.Dev), stat.Ino}
 	if q, ok := qids.Load(di); ok {
 		return q.(uint64), nil
 	}
