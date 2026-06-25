@@ -1,0 +1,2 @@
+! exec p9ufs
+stderr p9ufs
