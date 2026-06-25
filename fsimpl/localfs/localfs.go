@@ -16,6 +16,8 @@
 package localfs
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -60,6 +62,7 @@ type Local struct {
 
 	path string
 	file *os.File
+	directoryPage
 }
 
 var (
@@ -202,7 +205,7 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 	newName := path.Join(l.path, name)
 	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
 	if err != nil {
-		return nil, p9.QID{}, 0, err
+		return nil, p9.QID{}, 0, translateError(err)
 	}
 
 	l2 := &Local{path: newName, file: f}
@@ -288,4 +291,15 @@ func (l *Local) UnlinkAt(name string, flags uint32) error {
 
 	// Remove the file or directory
 	return os.Remove(fullPath)
+}
+
+func translateError(err error) error {
+	switch {
+	case errors.Is(err, fs.ErrExist):
+		return linux.EEXIST
+	case errors.Is(err, fs.ErrNotExist):
+		return linux.ENOENT
+	default:
+		return linux.EIO
+	}
 }
