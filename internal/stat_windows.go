@@ -52,6 +52,17 @@ const (
 	ModeNamedPipe              = 010000
 )
 
+// execBits are the execute permission bits for owner, group and others.
+const execBits = 0111
+
+// modeFromOS converts a Windows os.FileMode into 9P2000.L mode bits.
+//
+// Windows has no execute permission bit, and Go reports every regular file
+// as 0666 (or 0444 when read-only). Go already adds the execute bits to
+// directories, so we do the same for regular files. Otherwise a 9P client
+// can never run a binary or script from the share, and chmod cannot help
+// because Windows has nowhere to store the bit. This matches what the WSL
+// 9P server reports for Windows files by default.
 func modeFromOS(mode os.FileMode) uint32 {
 	m := uint32(mode.Perm())
 	switch {
@@ -68,7 +79,7 @@ func modeFromOS(mode os.FileMode) uint32 {
 	case mode&os.ModeDevice != 0:
 		m |= ModeBlockDevice
 	default:
-		m |= ModeRegular
+		m |= ModeRegular | execBits
 	}
 	return m
 }
