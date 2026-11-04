@@ -30,7 +30,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/u-root/gobusybox/src v0.0.0-20231228173702-b69f654846aa // indirect
-	github.com/ulikunitz/xz v0.5.11 // indirect
+	github.com/ulikunitz/xz v0.5.14 // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	golang.org/x/mod v0.14.0 // indirect
