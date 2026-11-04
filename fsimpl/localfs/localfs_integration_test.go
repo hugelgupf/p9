@@ -15,9 +15,9 @@ import (
 
 	"github.com/hugelgupf/p9/fsimpl/test/vmdriver"
 	"github.com/hugelgupf/p9/p9"
-	"github.com/hugelgupf/vmtest"
+	"github.com/hugelgupf/vmtest/govmtest"
 	"github.com/hugelgupf/vmtest/qemu"
-	"github.com/u-root/u-root/pkg/uroot"
+	"github.com/u-root/mkuimage/uimage"
 	"github.com/u-root/uio/ulog/ulogtest"
 )
 
@@ -38,36 +38,33 @@ func TestIntegration(t *testing.T) {
 	}
 
 	// Run the read-write tests from fsimpl/test/rwvm.
-	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rwvmtests"},
-		vmtest.WithVMOpt(
-			vmtest.WithMergedInitramfs(uroot.Opts{
-				Commands: uroot.BusyBoxCmds(
-					"github.com/u-root/u-root/cmds/core/ls",
-					"github.com/u-root/u-root/cmds/core/dhclient",
-				),
-				ExtraFiles: []string{
-					dd + ":bin/dd",
-				},
-			}),
-			vmtest.WithQEMUFn(
-				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
-				// 192.168.0.0/24
-				vmdriver.HostNetwork(&net.IPNet{
-					IP:   net.IP{192, 168, 0, 0},
-					Mask: net.CIDRMask(24, 32),
-				}),
-				qemu.WithVMTimeout(30*time.Second),
-				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
-					return s.ServeContext(ctx, serverSocket)
-				}),
+	govmtest.Run(t, "localfs",
+		govmtest.WithPackageToTest("github.com/hugelgupf/p9/fsimpl/test/rwvmtests"),
+		govmtest.WithUimage(
+			uimage.WithBusyboxCommands(
+				"github.com/u-root/u-root/cmds/core/ls",
+				"github.com/u-root/u-root/cmds/core/dhclient",
 			),
+			uimage.WithFiles(dd+":bin/dd"),
+		),
+		govmtest.WithQEMUFn(
+			qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+			// 192.168.0.0/24
+			vmdriver.HostNetwork(&net.IPNet{
+				IP:   net.IP{192, 168, 0, 0},
+				Mask: net.CIDRMask(24, 32),
+			}),
+			qemu.WithVMTimeout(30*time.Second),
+			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+				return s.ServeContext(ctx, serverSocket)
+			}),
 		),
 	)
 }
 
 func TestBenchmark(t *testing.T) {
 	// Uses host's dd binary.
-	vmtest.SkipIfNotArch(t, qemu.Arch(runtime.GOARCH))
+	qemu.SkipIfNotArch(t, qemu.Arch(runtime.GOARCH))
 
 	// Needs to definitely be in a tmpfs for performance testing.
 	tempDir, err := ioutil.TempDir("/dev/shm", "localfs-")
@@ -86,29 +83,26 @@ func TestBenchmark(t *testing.T) {
 	s := p9.NewServer(Attacher(tempDir)) //, p9.WithServerLogger(ulogtest.Logger{TB: t}))
 
 	// Run the read-write tests from fsimpl/test/rwvm.
-	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/benchmark"},
-		vmtest.WithVMOpt(
-			vmtest.WithMergedInitramfs(uroot.Opts{
-				Commands: uroot.BusyBoxCmds(
-					"github.com/u-root/u-root/cmds/core/ls",
-					"github.com/u-root/u-root/cmds/core/dhclient",
-				),
-				ExtraFiles: []string{
-					"/usr/bin/dd:bin/dd",
-				},
-			}),
-			vmtest.WithQEMUFn(
-				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
-				// 192.168.0.0/24
-				vmdriver.HostNetwork(&net.IPNet{
-					IP:   net.IP{192, 168, 0, 0},
-					Mask: net.CIDRMask(24, 32),
-				}),
-				qemu.WithVMTimeout(30*time.Second),
-				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
-					return s.ServeContext(ctx, serverSocket)
-				}),
+	govmtest.Run(t, "localfs-benchmark",
+		govmtest.WithPackageToTest("github.com/hugelgupf/p9/fsimpl/test/benchmark"),
+		govmtest.WithUimage(
+			uimage.WithBusyboxCommands(
+				"github.com/u-root/u-root/cmds/core/ls",
+				"github.com/u-root/u-root/cmds/core/dhclient",
 			),
+			uimage.WithFiles("/usr/bin/dd:bin/dd"),
+		),
+		govmtest.WithQEMUFn(
+			qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+			// 192.168.0.0/24
+			vmdriver.HostNetwork(&net.IPNet{
+				IP:   net.IP{192, 168, 0, 0},
+				Mask: net.CIDRMask(24, 32),
+			}),
+			qemu.WithVMTimeout(30*time.Second),
+			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+				return s.ServeContext(ctx, serverSocket)
+			}),
 		),
 	)
 }
