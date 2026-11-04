@@ -40,6 +40,10 @@ jobs:
         exclude:
           - goos: 'netbsd'
             goarch: 'arm64'
+          # Go 1.26 no longer supports 32-bit ARM on Windows:
+          # "unsupported GOOS/GOARCH pair windows/arm".
+          - goos: 'windows'
+            goarch: 'arm'
 
     runs-on: ubuntu-latest
     env:
