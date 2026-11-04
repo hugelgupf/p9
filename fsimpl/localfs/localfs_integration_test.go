@@ -55,6 +55,10 @@ func TestIntegration(t *testing.T) {
 				Mask: net.CIDRMask(24, 32),
 			}),
 			qemu.WithVMTimeout(30*time.Second),
+			// The old vmtest.RunGoTestsInVM added this by default.
+			// Without it the guest blocks on entropy and dhclient
+			// never gets as far as sending a request.
+			qemu.VirtioRandom(),
 			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
 				return s.ServeContext(ctx, serverSocket)
 			}),
@@ -100,6 +104,10 @@ func TestBenchmark(t *testing.T) {
 				Mask: net.CIDRMask(24, 32),
 			}),
 			qemu.WithVMTimeout(30*time.Second),
+			// The old vmtest.RunGoTestsInVM added this by default.
+			// Without it the guest blocks on entropy and dhclient
+			// never gets as far as sending a request.
+			qemu.VirtioRandom(),
 			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
 				return s.ServeContext(ctx, serverSocket)
 			}),
