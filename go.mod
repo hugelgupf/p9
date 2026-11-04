@@ -1,8 +1,6 @@
 module github.com/hugelgupf/p9
 
-go 1.21
-
-toolchain go1.21.0
+go 1.26.0
 
 require (
 	github.com/hugelgupf/socketpair v0.0.0-20230822150718-707395b1939a
@@ -11,7 +9,7 @@ require (
 	github.com/u-root/u-root v0.12.1-0.20240114161452-ab3534910ced
 	github.com/u-root/uio v0.0.0-20240209044354-b3d14b93376a
 	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
-	golang.org/x/sys v0.16.0
+	golang.org/x/sys v0.49.0
 )
 
 require (
@@ -29,8 +27,8 @@ require (
 	github.com/u-root/gobusybox/src v0.0.0-20240212035024-44ff0bf359ad // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	golang.org/x/mod v0.14.0 // indirect
-	golang.org/x/net v0.20.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/tools v0.17.0 // indirect
+	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
 )
