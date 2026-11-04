@@ -1,8 +1,6 @@
 module github.com/hugelgupf/p9
 
-go 1.21
-
-toolchain go1.21.0
+go 1.24
 
 require (
 	github.com/hugelgupf/socketpair v0.0.0-20230822150718-707395b1939a
@@ -22,7 +20,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/insomniacslk/dhcp v0.0.0-20231206064809-8c70d406f6d2 // indirect
 	github.com/josharian/native v1.1.0 // indirect
-	github.com/klauspost/compress v1.17.4 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mdlayher/packet v1.1.2 // indirect
