@@ -40,6 +40,10 @@ jobs:
         exclude:
           - goos: 'netbsd'
             goarch: 'arm64'
+          # Go 1.26 no longer supports 32-bit ARM on Windows:
+          # "unsupported GOOS/GOARCH pair windows/arm".
+          - goos: 'windows'
+            goarch: 'arm'
 
     runs-on: ubuntu-latest
     env:
@@ -50,7 +54,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21.x'
+          go-version: '1.26.x'
       - name: Build
         run: go build -v ./...
 
@@ -58,7 +62,7 @@ jobs:
     name: Unit test
     strategy:
       matrix:
-        go-version: ['1.21.x']
+        go-version: ['1.26.x']
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
@@ -121,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ '1.21.x' ]
+        go-version: [ '1.26.x' ]
         vmarch: [ 'amd64', 'arm', 'arm64' ]
         include:
           # QEMU's -M virt only supports GOARM=5, so add goarm=5 only for

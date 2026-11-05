@@ -17,9 +17,9 @@ import (
 	"github.com/hugelgupf/p9/fsimpl/test/rovmtests"
 	"github.com/hugelgupf/p9/fsimpl/test/vmdriver"
 	"github.com/hugelgupf/p9/p9"
-	"github.com/hugelgupf/vmtest"
+	"github.com/hugelgupf/vmtest/govmtest"
 	"github.com/hugelgupf/vmtest/qemu"
-	"github.com/u-root/u-root/pkg/uroot"
+	"github.com/u-root/mkuimage/uimage"
 	"github.com/u-root/uio/ulog/ulogtest"
 )
 
@@ -70,28 +70,29 @@ func TestLinuxClient(t *testing.T) {
 	s := p9.NewServer(attacher, p9.WithServerLogger(ulogtest.Logger{TB: t}))
 
 	// Run the read tests from fsimpl/test/rovmtests.
-	vmtest.RunGoTestsInVM(t, []string{"github.com/hugelgupf/p9/fsimpl/test/rovmtests"},
-		vmtest.WithVMOpt(
-			vmtest.WithMergedInitramfs(uroot.Opts{
-				Commands: uroot.BusyBoxCmds(
-					"github.com/u-root/u-root/cmds/core/dhclient",
-				),
-				ExtraFiles: []string{
-					fmt.Sprintf("%s:etc/want.json", filepath.Join(dir, "want.json")),
-				},
-			}),
-			vmtest.WithQEMUFn(
-				qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
-				// 192.168.0.0/24
-				vmdriver.HostNetwork(&net.IPNet{
-					IP:   net.IP{192, 168, 0, 0},
-					Mask: net.CIDRMask(24, 32),
-				}),
-				qemu.WithVMTimeout(30*time.Second),
-				qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
-					return s.ServeContext(ctx, serverSocket)
-				}),
+	govmtest.Run(t, "composefs",
+		govmtest.WithPackageToTest("github.com/hugelgupf/p9/fsimpl/test/rovmtests"),
+		govmtest.WithUimage(
+			uimage.WithBusyboxCommands(
+				"github.com/u-root/u-root/cmds/core/dhclient",
 			),
+			uimage.WithFiles(fmt.Sprintf("%s:etc/want.json", filepath.Join(dir, "want.json"))),
+		),
+		govmtest.WithQEMUFn(
+			qemu.WithAppendKernel(fmt.Sprintf("P9_PORT=%d P9_TARGET=192.168.0.2", serverPort)),
+			// 192.168.0.0/24
+			vmdriver.HostNetwork(&net.IPNet{
+				IP:   net.IP{192, 168, 0, 0},
+				Mask: net.CIDRMask(24, 32),
+			}),
+			qemu.WithVMTimeout(30*time.Second),
+			// The old vmtest.RunGoTestsInVM added this by default.
+			// Without it the guest blocks on entropy and dhclient
+			// never gets as far as sending a request.
+			qemu.VirtioRandom(),
+			qemu.WithTask(func(ctx context.Context, n *qemu.Notifications) error {
+				return s.ServeContext(ctx, serverSocket)
+			}),
 		),
 	)
 }
