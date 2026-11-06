@@ -174,7 +174,12 @@ func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 	}
 
 	// Do the actual open.
-	f, err := os.OpenFile(l.path, int(mode), 0)
+	var f *os.File
+	if qid.Type&p9.TypeDir == 0 {
+		f, err = openRegular(l.path, int(mode), 0)
+	} else {
+		f, err = os.OpenFile(l.path, int(mode), 0)
+	}
 	if err != nil {
 		return qid, 0, err
 	}
@@ -201,7 +206,7 @@ func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
 // Create implements p9.File.Create.
 func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
 	newName := path.Join(l.path, name)
-	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
+	f, err := openRegular(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
 	if err != nil {
 		return nil, p9.QID{}, 0, err
 	}
@@ -251,7 +256,7 @@ func (l *Local) RenameAt(oldName string, newDir p9.File, newName string) error {
 	oldPath := path.Join(l.path, oldName)
 	newPath := path.Join(newDir.(*Local).path, newName)
 
-	return os.Rename(oldPath, newPath)
+	return rename(oldPath, newPath)
 }
 
 // Readlink implements p9.File.Readlink.
