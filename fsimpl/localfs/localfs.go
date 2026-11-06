@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
 	"github.com/hugelgupf/p9/internal"
@@ -267,16 +268,52 @@ func (l *Local) Renamed(parent p9.File, newName string) {
 
 // SetAttr implements p9.File.SetAttr.
 func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
-	// When truncate(2) is called on Linux, Linux will try to set time & size. Fake it. Sorry.
-	supported := p9.SetAttrMask{Size: true, MTime: true, CTime: true, ATime: true}
+	// CTime cannot be set, but Linux sends it along with other fields --
+	// e.g. when truncate(2) is called -- so accept and ignore it.
+	supported := p9.SetAttrMask{
+		Permissions:        true,
+		Size:               true,
+		MTime:              true,
+		CTime:              true,
+		ATime:              true,
+		ATimeNotSystemTime: true,
+		MTimeNotSystemTime: true,
+	}
 	if !valid.IsSubsetOf(supported) {
 		return linux.ENOSYS
 	}
 
+	if valid.Permissions {
+		// OSMode moves the setuid, setgid and sticky bits into the
+		// positions os.Chmod expects.
+		if err := os.Chmod(l.path, attr.Permissions.Permissions().OSMode()); err != nil {
+			return err
+		}
+	}
 	if valid.Size {
-		// If more than one thing is ever implemented, we can't just
-		// return an error here.
-		return os.Truncate(l.path, int64(attr.Size))
+		if err := os.Truncate(l.path, int64(attr.Size)); err != nil {
+			return err
+		}
+	}
+	if valid.ATime || valid.MTime {
+		// Chtimes leaves a time unchanged if it is the zero time.
+		var atime, mtime time.Time
+		now := time.Now()
+		if valid.ATime {
+			atime = now
+			if valid.ATimeNotSystemTime {
+				atime = time.Unix(int64(attr.ATimeSeconds), int64(attr.ATimeNanoSeconds))
+			}
+		}
+		if valid.MTime {
+			mtime = now
+			if valid.MTimeNotSystemTime {
+				mtime = time.Unix(int64(attr.MTimeSeconds), int64(attr.MTimeNanoSeconds))
+			}
+		}
+		if err := os.Chtimes(l.path, atime, mtime); err != nil {
+			return err
+		}
 	}
 	return nil
 }
