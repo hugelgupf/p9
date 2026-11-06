@@ -15,6 +15,8 @@
 package p9
 
 import (
+	"context"
+
 	"github.com/hugelgupf/p9/linux"
 )
 
@@ -263,6 +265,17 @@ type File interface {
 	//
 	// On the server, Renamed has a global concurrency guarantee.
 	Renamed(newDir File, newName string)
+}
+
+// ContextLocker is a File whose Lock may wait, for a request with
+// LockFlagsBlock, until the lock is free. The context ends when the
+// client flushes the request or the connection ends. LockContext should
+// then return promptly, since the Rflush and the end of the connection
+// wait for it. A client may still take the answer to a request it
+// flushed, so it must say truly whether the lock was taken. A File that
+// isn't one gets Lock.
+type ContextLocker interface {
+	LockContext(ctx context.Context, pid int, locktype LockType, flags LockFlags, start, length uint64, client string) (LockStatus, error)
 }
 
 // DefaultWalkGetAttr implements File.WalkGetAttr to return ENOSYS for server-side Files.

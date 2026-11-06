@@ -15,6 +15,7 @@
 package p9
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +42,13 @@ type handler interface {
 	// message which will be sent back to the client. It may be useful to
 	// use newErr to automatically extract an error message.
 	handle(cs *connState) message
+}
+
+// contextHandler is a handler of a message whose request may wait, such as
+// for a lock, and so needs the context of the request, which a Tflush of
+// its tag or the end of the connection cancels.
+type contextHandler interface {
+	handleContext(ctx context.Context, cs *connState) message
 }
 
 // handle implements handler.handle.
@@ -115,6 +123,9 @@ func (t *tversion) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *tflush) handle(cs *connState) message {
+	// End the request first: one that waits, such as for a lock, would
+	// otherwise keep the flush from ever answering.
+	cs.CancelTag(t.OldTag)
 	cs.WaitTag(t.OldTag)
 	return &rflush{}
 }
@@ -1113,8 +1124,8 @@ func (t *tstatfs) handle(cs *connState) message {
 	return &rstatfs{st}
 }
 
-// handle implements handler.handle.
-func (t *tlock) handle(cs *connState) message {
+// handleContext implements contextHandler.handleContext.
+func (t *tlock) handleContext(ctx context.Context, cs *connState) message {
 	// Lookup the fid.
 	ref, ok := cs.LookupFID(t.fid)
 	if !ok {
@@ -1122,7 +1133,15 @@ func (t *tlock) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	status, err := ref.file.Lock(int(t.PID), t.Type, t.Flags, t.Start, t.Length, t.Client)
+	var (
+		status LockStatus
+		err    error
+	)
+	if locker, ok := ref.file.(ContextLocker); ok {
+		status, err = locker.LockContext(ctx, int(t.PID), t.Type, t.Flags, t.Start, t.Length, t.Client)
+	} else {
+		status, err = ref.file.Lock(int(t.PID), t.Type, t.Flags, t.Start, t.Length, t.Client)
+	}
 	if err != nil {
 		return newErr(err)
 	}
