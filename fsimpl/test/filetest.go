@@ -17,7 +17,6 @@ package test
 
 import (
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -133,20 +132,10 @@ func testDirContents(t *testing.T, root p9.File, path string, d dir) {
 		t.Fatalf("Open = %v", err)
 	}
 
-	var dirents []p9.Dirent
-	offset := uint64(0)
-	for {
-		d, err := f.Readdir(offset, 1000)
-		if len(d) == 0 || err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatalf("Readdir: %v", err)
-		}
-		dirents = append(dirents, d...)
-		offset = d[len(d)-1].Offset
+	dirents, err := p9.ReadDir(f)
+	if err != nil {
+		t.Fatalf("Readdir: %v", err)
 	}
-
 	var names []string
 	for _, entry := range dirents {
 		names = append(names, entry.Name)
@@ -253,11 +242,17 @@ func readdir(dir p9.File) (p9.Dirents, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dir(%v).Open(ReadOnly) = %v, want nil (directory must be open-able to readdir)", dir, err)
 	}
-	dirents, err := dirCopy.Readdir(0, 10)
+	// TODO: add test for errno "invalid argument"
+	// The standard defines this to mean something like
+	// "requested buffer too small".
+	// We'll want to calculate the smallest possible entry size
+	// and request less than than.
+	// dirents, err := dirCopy.Readdir(offset, count)
+	dirents, err := p9.ReadDir(dirCopy)
 	if err != nil {
 		return nil, fmt.Errorf("Readdir(dir) = %v, want nil", err)
 	}
-	return dirents, nil
+	return dirents, dirCopy.Close()
 }
 
 func testWalkSelf(t *testing.T, root p9.File) {
