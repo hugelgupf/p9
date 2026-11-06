@@ -265,6 +265,16 @@ type File interface {
 	Renamed(newDir File, newName string)
 }
 
+// LockGetter is implemented by Files that can test for POSIX record locks,
+// answering Tgetlock (fcntl(F_GETLK) on a Linux client).
+//
+// GetLock returns the first lock that would conflict with the one described,
+// or a lock of type Unlock if there is none. A server-side File that does not
+// implement it answers every Tgetlock with Unlock.
+type LockGetter interface {
+	GetLock(pid int, locktype LockType, start, length uint64, client string) (LockType, uint64, uint64, int, string, error)
+}
+
 // DefaultWalkGetAttr implements File.WalkGetAttr to return ENOSYS for server-side Files.
 type DefaultWalkGetAttr struct{}
 

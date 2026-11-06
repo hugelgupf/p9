@@ -1129,6 +1129,27 @@ func (t *tlock) handle(cs *connState) message {
 	return &rlock{Status: status}
 }
 
+// handle implements handler.handle.
+func (t *tgetlock) handle(cs *connState) message {
+	// Lookup the fid.
+	ref, ok := cs.LookupFID(t.fid)
+	if !ok {
+		return newErr(linux.EBADF)
+	}
+	defer ref.DecRef()
+
+	g, ok := ref.file.(LockGetter)
+	if !ok {
+		// Nothing tracks locks for this file, so nothing can conflict.
+		return &rgetlock{Type: Unlock, Start: t.Start, Length: t.Length, PID: t.PID, Client: t.Client}
+	}
+	typ, start, length, pid, client, err := g.GetLock(int(t.PID), t.Type, t.Start, t.Length, t.Client)
+	if err != nil {
+		return newErr(err)
+	}
+	return &rgetlock{Type: typ, Start: start, Length: length, PID: int32(pid), Client: client}
+}
+
 // walkOne walks zero or one path elements.
 //
 // The slice passed as qids is append and returned.

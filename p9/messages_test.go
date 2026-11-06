@@ -365,6 +365,20 @@ func TestEncodeDecode(t *testing.T) {
 		&rlock{
 			Status: 0x54,
 		},
+		&tgetlock{
+			Type:   0x1,
+			Start:  0x67893456,
+			Length: 0x33333333,
+			PID:    0x9876,
+			Client: "client",
+		},
+		&rgetlock{
+			Type:   0x1,
+			Start:  0x12345678,
+			Length: 0x44444444,
+			PID:    0x1234,
+			Client: "holder",
+		},
 	}
 
 	for _, enc := range objs {
