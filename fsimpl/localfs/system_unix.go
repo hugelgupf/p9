@@ -123,7 +123,7 @@ func localToQid(_ string, fi os.FileInfo) (uint64, error) {
 	if q, ok := encodeLikely(uint64(stat.Dev), stat.Ino); ok {
 		return q, nil
 	}
-	di := &devino{uint64(stat.Dev), stat.Ino}
+	di := devino{uint64(stat.Dev), stat.Ino}
 	if q, ok := qids.Load(di); ok {
 		return q.(uint64), nil
 	}
