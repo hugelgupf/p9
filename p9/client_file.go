@@ -270,6 +270,7 @@ func (c *clientFile) Lock(pid int, locktype LockType, flags LockFlags, start, le
 
 	r := rlock{}
 	err := c.client.sendRecv(&tlock{
+		fid:    c.fid,
 		Type:   locktype,
 		Flags:  flags,
 		Start:  start,
