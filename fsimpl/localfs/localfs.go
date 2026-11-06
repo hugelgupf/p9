@@ -294,6 +294,14 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		if err := os.Truncate(l.path, int64(attr.Size)); err != nil {
 			return err
 		}
+		// Linux drops setuid and setgid on truncate, so a request that
+		// set them and resized in one call would lose them. Chmod runs
+		// first because truncate needs the write bit it may be adding.
+		if valid.Permissions {
+			if err := os.Chmod(l.path, attr.Permissions.Permissions().OSMode()); err != nil {
+				return err
+			}
+		}
 	}
 	if valid.ATime || valid.MTime {
 		// Chtimes leaves a time unchanged if it is the zero time.
