@@ -16,11 +16,12 @@
 package test
 
 import (
+	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
+	"github.com/hugelgupf/p9/linux"
 	"github.com/hugelgupf/p9/p9"
 	"github.com/u-root/uio/uio"
 	"golang.org/x/exp/slices"
@@ -133,20 +134,10 @@ func testDirContents(t *testing.T, root p9.File, path string, d dir) {
 		t.Fatalf("Open = %v", err)
 	}
 
-	var dirents []p9.Dirent
-	offset := uint64(0)
-	for {
-		d, err := f.Readdir(offset, 1000)
-		if len(d) == 0 || err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatalf("Readdir: %v", err)
-		}
-		dirents = append(dirents, d...)
-		offset = d[len(d)-1].Offset
+	dirents, err := p9.ReadDir(f)
+	if err != nil {
+		t.Fatalf("Readdir: %v", err)
 	}
-
 	var names []string
 	for _, entry := range dirents {
 		names = append(names, entry.Name)
@@ -223,24 +214,29 @@ func testCreate(t *testing.T, root p9.File) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, _, _, err = f1.Create("file2", p9.ReadWrite, 0777, p9.NoUID, p9.NoGID)
+	const (
+		name        = "file2"
+		flags       = p9.ReadWrite
+		permissions = 0o777
+		uid, gid    = p9.NoUID, p9.NoGID
+	)
+	_, _, _, err = f1.Create(name, flags, permissions, uid, gid)
 	if err != nil {
-		t.Errorf("Create(file2) = %v, want nil", err)
+		t.Errorf("Create(%s) = %v, want nil", name, err)
 	}
 
-	_, _, _, err = f1.Create("file2", p9.ReadWrite, 0777, p9.NoUID, p9.NoGID)
-	if err == nil {
-		t.Errorf("Create(file2) (2nd time) = %v, want EEXIST", err)
+	_, _, _, err = f1.Create(name, flags, permissions, uid, gid)
+	if !errors.Is(err, linux.EEXIST) {
+		t.Errorf("Create(%s) (2nd time) = %v, want EEXIST", name, err)
 	}
 
 	dirents, err := readdir(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	file2dirent := dirents.Find("file2")
+	file2dirent := dirents.Find(name)
 	if file2dirent == nil {
-		t.Errorf("Dirents(%v).Find(file2) = nil, but should be there", dirents)
+		t.Errorf("Dirents(%v).Find(%s) = nil, but should be there", name, dirents)
 	}
 }
 
@@ -253,11 +249,17 @@ func readdir(dir p9.File) (p9.Dirents, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dir(%v).Open(ReadOnly) = %v, want nil (directory must be open-able to readdir)", dir, err)
 	}
-	dirents, err := dirCopy.Readdir(0, 10)
+	// TODO: add test for errno "invalid argument"
+	// The standard defines this to mean something like
+	// "requested buffer too small".
+	// We'll want to calculate the smallest possible entry size
+	// and request less than than.
+	// dirents, err := dirCopy.Readdir(offset, count)
+	dirents, err := p9.ReadDir(dirCopy)
 	if err != nil {
 		return nil, fmt.Errorf("Readdir(dir) = %v, want nil", err)
 	}
-	return dirents, nil
+	return dirents, dirCopy.Close()
 }
 
 func testWalkSelf(t *testing.T, root p9.File) {
