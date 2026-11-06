@@ -31,6 +31,7 @@ func localToQid(path string, info os.FileInfo) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	defer windows.CloseHandle(fd)
 
 	fi := &windows.ByHandleFileInformation{}
 	if err = windows.GetFileInformationByHandle(fd, fi); err != nil {
