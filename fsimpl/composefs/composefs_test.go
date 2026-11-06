@@ -17,6 +17,7 @@ package composefs
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/hugelgupf/p9/fsimpl/localfs"
@@ -56,8 +57,21 @@ func TestFilesMatch(t *testing.T) {
 			BlockSize: 4096,
 		}, p9.AttrMaskAll),
 		test.WithFile("localfs/somefile", "hahaha", p9.Attr{
-			Mode: p9.ModeRegular | 0666,
+			Mode: p9.ModeRegular | localfsPerm(),
 			Size: 6,
 		}, p9.AttrMask{Mode: true, Size: true}),
 	)
+}
+
+// localfsPerm is the mode localfs reports for a writable regular file.
+//
+// Windows has no execute bit, so internal.modeFromOS reports regular files
+// with the execute bits set, the way Go already does for directories. The
+// staticfs files above are unaffected: they synthesise their own modes rather
+// than reading one off the host.
+func localfsPerm() p9.FileMode {
+	if runtime.GOOS == "windows" {
+		return 0777
+	}
+	return 0666
 }
