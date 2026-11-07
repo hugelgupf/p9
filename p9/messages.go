@@ -2182,18 +2182,90 @@ func (r *rlock) String() string {
 	return fmt.Sprintf("Rlock{Status: %s}", r.Status)
 }
 
-// Let's wait until we need this? POSIX locks over a network make 0 sense.
-// getlock - test for the existence of a POSIX record lock
+// tgetlock tests for the existence of a POSIX record lock, with semantics
+// similar to Linux fcntl(F_GETLK).
+//
 // size[4] Tgetlock tag[2] fid[4] type[1] start[8] length[8] proc_id[4] client_id[s]
-// size[4] Rgetlock tag[2] type[1] start[8] length[8] proc_id[4] client_id[s]
-// getlock tests for the existence of a POSIX record lock and has semantics similar to Linux fcntl(F_GETLK).
+type tgetlock struct {
+	// fid is the fid to test.
+	fid fid
 
-// As with lock, type has one of the values defined above, and start,
-// length, and proc_id correspond to the analogous fields in struct
-// flock passed to Linux fcntl(F_GETLK), and client_Id is an
-// additional mechanism for uniquely identifying the lock requester
-// and is set to the nodename by the Linux v9fs client.  tusymlink is
-// a Tsymlink message that includes a UID.
+	Type   LockType // Type of lock: F_RDLCK or F_WRLCK
+	Start  uint64   // Starting offset for lock
+	Length uint64   // Number of bytes to lock
+	PID    int32    // PID of the requesting process
+	Client string   // Client id, the nodename for the Linux v9fs client
+}
+
+// decode implements encoder.decode.
+func (t *tgetlock) decode(b *buffer) {
+	t.fid = b.ReadFID()
+	t.Type = LockType(b.Read8())
+	t.Start = b.Read64()
+	t.Length = b.Read64()
+	t.PID = int32(b.Read32())
+	t.Client = b.ReadString()
+}
+
+// encode implements encoder.encode.
+func (t *tgetlock) encode(b *buffer) {
+	b.WriteFID(t.fid)
+	b.Write8(uint8(t.Type))
+	b.Write64(t.Start)
+	b.Write64(t.Length)
+	b.Write32(uint32(t.PID))
+	b.WriteString(t.Client)
+}
+
+// typ implements message.typ.
+func (*tgetlock) typ() msgType {
+	return msgTgetlock
+}
+
+// String implements fmt.Stringer.
+func (t *tgetlock) String() string {
+	return fmt.Sprintf("Tgetlock{FID: %d, Type: %s, Start: %d, Length: %d, PID: %d, Client: %s}", t.fid, t.Type, t.Start, t.Length, t.PID, t.Client)
+}
+
+// rgetlock is a getlock response. Type is Unlock if the lock could be
+// placed; otherwise the fields describe a lock that conflicts with it.
+//
+// size[4] Rgetlock tag[2] type[1] start[8] length[8] proc_id[4] client_id[s]
+type rgetlock struct {
+	Type   LockType
+	Start  uint64
+	Length uint64
+	PID    int32
+	Client string
+}
+
+// decode implements encoder.decode.
+func (r *rgetlock) decode(b *buffer) {
+	r.Type = LockType(b.Read8())
+	r.Start = b.Read64()
+	r.Length = b.Read64()
+	r.PID = int32(b.Read32())
+	r.Client = b.ReadString()
+}
+
+// encode implements encoder.encode.
+func (r *rgetlock) encode(b *buffer) {
+	b.Write8(uint8(r.Type))
+	b.Write64(r.Start)
+	b.Write64(r.Length)
+	b.Write32(uint32(r.PID))
+	b.WriteString(r.Client)
+}
+
+// typ implements message.typ.
+func (*rgetlock) typ() msgType {
+	return msgRgetlock
+}
+
+// String implements fmt.Stringer.
+func (r *rgetlock) String() string {
+	return fmt.Sprintf("Rgetlock{Type: %s, Start: %d, Length: %d, PID: %d, Client: %s}", r.Type, r.Start, r.Length, r.PID, r.Client)
+}
 
 /// END LOCK
 
@@ -2311,6 +2383,8 @@ func init() {
 	msgDotLRegistry.register(msgRlink, func() message { return &rlink{} })
 	msgDotLRegistry.register(msgTlock, func() message { return &tlock{} })
 	msgDotLRegistry.register(msgRlock, func() message { return &rlock{} })
+	msgDotLRegistry.register(msgTgetlock, func() message { return &tgetlock{} })
+	msgDotLRegistry.register(msgRgetlock, func() message { return &rgetlock{} })
 	msgDotLRegistry.register(msgTmkdir, func() message { return &tmkdir{} })
 	msgDotLRegistry.register(msgRmkdir, func() message { return &rmkdir{} })
 	msgDotLRegistry.register(msgTrenameat, func() message { return &trenameat{} })

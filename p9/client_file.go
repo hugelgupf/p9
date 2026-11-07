@@ -281,6 +281,24 @@ func (c *clientFile) Lock(pid int, locktype LockType, flags LockFlags, start, le
 	return r.Status, err
 }
 
+// GetLock implements LockGetter.GetLock.
+func (c *clientFile) GetLock(pid int, locktype LockType, start, length uint64, client string) (LockType, uint64, uint64, int, string, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return Unlock, 0, 0, 0, "", linux.EBADF
+	}
+
+	r := rgetlock{}
+	err := c.client.sendRecv(&tgetlock{
+		fid:    c.fid,
+		Type:   locktype,
+		Start:  start,
+		Length: length,
+		PID:    int32(pid),
+		Client: client,
+	}, &r)
+	return r.Type, r.Start, r.Length, int(r.PID), r.Client, err
+}
+
 // Remove implements File.Remove.
 //
 // N.B. This method is no longer part of the file interface and should be
