@@ -71,13 +71,67 @@ type clientFile struct {
 }
 
 // SetXattr implements p9.File.SetXattr.
+//
+// Txattrcreate binds a new fid to the attribute, the value is written to that
+// fid, and the server performs the setxattr(2) when the fid is clunked -- so
+// the error of the underlying operation is the error of that clunk.
 func (c *clientFile) SetXattr(attr string, data []byte, flags XattrFlags) error {
-	return linux.ENOSYS
+	xattrFile, err := c.xattrCreate(attr, uint64(len(data)), flags)
+	if err != nil {
+		return err
+	}
+	if len(data) > 0 {
+		// A short write is not an error from WriteAt, but the server
+		// rejects the clunk if it did not receive the whole value, so
+		// report it here rather than as an opaque EINVAL later.
+		n, err := xattrFile.WriteAt(data, 0)
+		if err == nil && n != len(data) {
+			err = io.ErrShortWrite
+		}
+		if err != nil {
+			xattrFile.Close()
+			return err
+		}
+	}
+	return xattrFile.Close()
 }
 
 // RemoveXattr implements p9.File.RemoveXattr.
 func (c *clientFile) RemoveXattr(attr string) error {
-	return linux.ENOSYS
+	// A zero-sized Txattrcreate with XattrReplace is a removal.
+	return c.SetXattr(attr, nil, XattrReplace)
+}
+
+// xattrCreate walks to a new fid -- leaving c's fid alone, since Txattrcreate
+// turns the fid it names into an attribute fid -- and binds that new fid to
+// attr, ready for the value to be written to it.
+func (c *clientFile) xattrCreate(attr string, size uint64, flags XattrFlags) (*clientFile, error) {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return nil, linux.EBADF
+	}
+
+	id, ok := c.client.fidPool.Get()
+	if !ok {
+		return nil, ErrOutOfFIDs
+	}
+
+	rwalk := rwalk{}
+	if err := c.client.sendRecv(&twalk{fid: c.fid, newFID: fid(id)}, &rwalk); err != nil {
+		c.client.fidPool.Put(id)
+		return nil, err
+	}
+
+	xattrFile := c.client.newFile(fid(id))
+	if err := c.client.sendRecv(&txattrcreate{
+		fid:      xattrFile.fid,
+		Name:     attr,
+		AttrSize: size,
+		Flags:    uint32(flags),
+	}, &rxattrcreate{}); err != nil {
+		xattrFile.Close()
+		return nil, err
+	}
+	return xattrFile, nil
 }
 
 // GetXattr implements p9.File.GetXattr.
