@@ -3,9 +3,12 @@
 package localfs
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/hugelgupf/p9/p9"
 	"golang.org/x/sys/unix"
 )
 
@@ -87,5 +90,47 @@ func TestEncodeLikely(t *testing.T) {
 				t.Errorf("encodeLikely() got = %d, want %d", got, tt.wantResult)
 			}
 		})
+	}
+}
+
+func TestLock(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "lockfile")
+	if err := os.WriteFile(path, []byte("lockdata"), 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(tempDir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, f, err := root.Walk([]string{"lockfile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	// Locking before Open returns EBADF.
+	if status, err := f.Lock(os.Getpid(), p9.WriteLock, 0, 0, 4, "test"); err == nil || status != p9.LockStatusError {
+		t.Fatalf("Lock before Open = (%v, %v), want (LockStatusError, EBADF)", status, err)
+	}
+
+	if _, _, err := f.Open(p9.ReadWrite); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := f.Lock(os.Getpid(), p9.ReadLock, p9.LockFlagsBlock, 0, 4, "test"); err != nil || status != p9.LockStatusOK {
+		t.Fatalf("Lock(ReadLock, Block) = (%v, %v), want (LockStatusOK, nil)", status, err)
+	}
+	if status, err := f.Lock(os.Getpid(), p9.WriteLock, 0, 0, 4, "test"); err != nil || status != p9.LockStatusOK {
+		t.Fatalf("Lock(WriteLock) = (%v, %v), want (LockStatusOK, nil)", status, err)
+	}
+	if status, err := f.Lock(os.Getpid(), p9.Unlock, 0, 0, 4, "test"); err != nil || status != p9.LockStatusOK {
+		t.Fatalf("Lock(Unlock) = (%v, %v), want (LockStatusOK, nil)", status, err)
+	}
+	if status, err := f.Lock(os.Getpid(), p9.WriteLock, p9.LockFlagsReclaim, 0, 4, "test"); err == nil || status != p9.LockStatusError {
+		t.Fatalf("Lock(Reclaim) = (%v, %v), want error", status, err)
+	}
+	if status, err := f.Lock(os.Getpid(), p9.LockType(99), 0, 0, 4, "test"); err == nil || status != p9.LockStatusError {
+		t.Fatalf("Lock(invalid type) = (%v, %v), want error", status, err)
 	}
 }
