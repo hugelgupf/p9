@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -120,6 +121,121 @@ func TestSetAttr(t *testing.T) {
 	}
 	if got := info.ModTime(); !got.Equal(mtime) {
 		t.Errorf("mtime after setting atime = %v, want %v", got, mtime)
+	}
+
+	if runtime.GOOS != "windows" {
+		_, _, ga, err := file.GetAttr(p9.AttrMaskAll)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := file.SetAttr(
+			p9.SetAttrMask{UID: true, GID: true},
+			p9.SetAttr{UID: ga.UID, GID: ga.GID},
+		); err != nil {
+			t.Fatalf("SetAttr(UID, GID) = %v, want nil", err)
+		}
+
+		// Truncating and setting permissions to 0 in a single SetAttr
+		// call must succeed (truncate runs before chmod 0).
+		if err := file.SetAttr(
+			p9.SetAttrMask{Size: true, Permissions: true},
+			p9.SetAttr{Size: 2, Permissions: 0},
+		); err != nil {
+			t.Fatalf("SetAttr(Size=2, Permissions=0) = %v, want nil", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+		info, err = os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Size(); got != 2 {
+			t.Errorf("size = %d, want 2", got)
+		}
+		if got := info.Mode().Perm(); got != 0 {
+			t.Errorf("perm = %#o, want 0", got)
+		}
+	}
+}
+
+func TestWriteAtAppend(t *testing.T) {
+	tempDir := t.TempDir()
+	path := filepath.Join(tempDir, "append.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(tempDir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, file, err := root.Walk([]string{"append.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	if _, _, err := file.Open(p9.WriteOnly | p9.OpenFlags(os.O_APPEND)); err != nil {
+		t.Fatalf("Open(O_APPEND) = %v", err)
+	}
+	if _, err := file.WriteAt([]byte(" world"), 0); err != nil {
+		t.Fatalf("WriteAt on O_APPEND file = %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "hello world" {
+		t.Errorf("got %q, want %q", string(got), "hello world")
+	}
+}
+
+func TestReaddirPagination(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), []byte(name), 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	root, err := Attacher(tempDir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	if _, _, err := root.Open(p9.ReadOnly); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	var offset uint64
+	for {
+		ents, err := root.Readdir(offset, 2)
+		if err != nil {
+			t.Fatalf("Readdir(offset=%d) = %v", offset, err)
+		}
+		if len(ents) == 0 {
+			break
+		}
+		for _, e := range ents {
+			got = append(got, e.Name)
+		}
+		offset = ents[len(ents)-1].Offset
+	}
+	if want := []string{"a", "b", "c", "d", "e"}; !slices.Equal(got, want) {
+		t.Fatalf("paginated Readdir got %v, want %v", got, want)
+	}
+
+	// Out-of-range offset (including high bit set) must return empty
+	// without panicking.
+	for _, off := range []uint64{5, 100, 1 << 63} {
+		ents, err := root.Readdir(off, 2)
+		if err != nil {
+			t.Fatalf("Readdir(offset=%d) = %v", off, err)
+		}
+		if len(ents) != 0 {
+			t.Fatalf("Readdir(offset=%d) = %v, want empty", off, ents)
+		}
 	}
 }
 
