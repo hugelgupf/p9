@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
@@ -195,7 +196,11 @@ func (l *Local) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, l
 
 // WriteAt implements p9.File.WriteAt.
 func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
-	return l.file.WriteAt(p, offset)
+	n, err := l.file.WriteAt(p, offset)
+	if err != nil && strings.Contains(err.Error(), "os: invalid use of WriteAt on file opened with O_APPEND") {
+		return l.file.Write(p)
+	}
+	return n, err
 }
 
 // Create implements p9.File.Create.
@@ -272,6 +277,8 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	// e.g. when truncate(2) is called -- so accept and ignore it.
 	supported := p9.SetAttrMask{
 		Permissions:        true,
+		UID:                true,
+		GID:                true,
 		Size:               true,
 		MTime:              true,
 		CTime:              true,
@@ -283,22 +290,47 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		return linux.ENOSYS
 	}
 
-	if valid.Permissions {
-		// OSMode moves the setuid, setgid and sticky bits into the
-		// positions os.Chmod expects.
-		if err := os.Chmod(l.path, attr.Permissions.Permissions().OSMode()); err != nil {
+	if valid.Size || valid.ATime || valid.MTime || valid.UID || valid.GID || valid.Permissions {
+		fi, err := os.Lstat(l.path)
+		if err != nil {
 			return err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			if valid.Size || valid.ATime || valid.MTime || valid.Permissions {
+				return linux.EOPNOTSUPP
+			}
+			if valid.UID || valid.GID {
+				uid, gid := -1, -1
+				if valid.UID {
+					uid = int(attr.UID)
+				}
+				if valid.GID {
+					gid = int(attr.GID)
+				}
+				return os.Lchown(l.path, uid, gid)
+			}
+			return nil
 		}
 	}
+
+	// Perform Size, ATime/MTime, and UID/GID before Permissions so that:
+	// 1. A single SetAttr call that both modifies size/timestamps and
+	//    removes write permissions (e.g., chmod 0) does not fail its own
+	//    truncate or chtimes.
+	// 2. Chmod runs last so setuid/setgid bits are not cleared by truncate
+	//    or chown.
+	// If truncate fails when valid.Permissions is also set (for instance,
+	// when chmod is adding the write bit needed by truncate), chmod first
+	// and retry truncate, then re-apply chmod at the end.
 	if valid.Size {
 		if err := os.Truncate(l.path, int64(attr.Size)); err != nil {
-			return err
-		}
-		// Linux drops setuid and setgid on truncate, so a request that
-		// set them and resized in one call would lose them. Chmod runs
-		// first because truncate needs the write bit it may be adding.
-		if valid.Permissions {
+			if !valid.Permissions {
+				return err
+			}
 			if err := os.Chmod(l.path, attr.Permissions.Permissions().OSMode()); err != nil {
+				return err
+			}
+			if err := os.Truncate(l.path, int64(attr.Size)); err != nil {
 				return err
 			}
 		}
@@ -323,7 +355,31 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 			return err
 		}
 	}
+	if valid.UID || valid.GID {
+		uid, gid := -1, -1
+		if valid.UID {
+			uid = int(attr.UID)
+		}
+		if valid.GID {
+			gid = int(attr.GID)
+		}
+		if err := os.Chown(l.path, uid, gid); err != nil {
+			return err
+		}
+	}
+	if valid.Permissions {
+		// OSMode moves the setuid, setgid and sticky bits into the
+		// positions os.Chmod expects.
+		if err := os.Chmod(l.path, attr.Permissions.Permissions().OSMode()); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// Remove implements p9.File.Remove.
+func (l *Local) Remove() error {
+	return os.Remove(l.path)
 }
 
 // UnlinkAt implements p9.File.UnlinkAt
