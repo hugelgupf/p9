@@ -3,6 +3,7 @@
 package localfs
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -132,5 +133,48 @@ func TestLock(t *testing.T) {
 	}
 	if status, err := f.Lock(os.Getpid(), p9.LockType(99), 0, 0, 4, "test"); err == nil || status != p9.LockStatusError {
 		t.Fatalf("Lock(invalid type) = (%v, %v), want error", status, err)
+	}
+}
+
+func TestReaddirUnixSpecialTypes(t *testing.T) {
+	// Prefer /tmp directly so the Unix socket path stays well below 104
+	// bytes on macOS and BSDs even when $TMPDIR is long.
+	shortDir, err := os.MkdirTemp("/tmp", "p9dt-")
+	if err != nil {
+		shortDir, err = os.MkdirTemp("", "p9dt-")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(shortDir) })
+
+	if err := unix.Mkfifo(filepath.Join(shortDir, "fifo"), 0600); err != nil {
+		t.Fatalf("Mkfifo: %v", err)
+	}
+	ln, err := net.Listen("unix", filepath.Join(shortDir, "sock"))
+	if err != nil {
+		t.Fatalf("Listen(unix): %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	root := serveLocalFS(t, shortDir)
+	if _, _, err := root.Open(p9.ReadOnly); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := root.Readdir(0, 8192)
+	if err != nil {
+		t.Fatalf("Readdir = %v", err)
+	}
+	want := map[string]p9.QIDType{
+		"fifo": dtFIFO,
+		"sock": dtSock,
+	}
+	if len(ents) != len(want) {
+		t.Fatalf("got %d entries (%v), want %d", len(ents), ents, len(want))
+	}
+	for _, e := range ents {
+		if got := e.Type; got != want[e.Name] {
+			t.Errorf("entry %q: Dirent.Type = %#x, want %#x", e.Name, uint8(got), uint8(want[e.Name]))
+		}
 	}
 }

@@ -239,8 +239,8 @@ type File interface {
 
 	// Readdir reads directory entries.
 	//
-	// offset is the entry offset, and count the number of entries to
-	// return.
+	// offset is the entry offset, and count is the maximum number of
+	// encoded bytes to return.
 	//
 	// This may return io.EOF in addition to linux.Errno values.
 	//

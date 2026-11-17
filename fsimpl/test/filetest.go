@@ -253,7 +253,7 @@ func readdir(dir p9.File) (p9.Dirents, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dir(%v).Open(ReadOnly) = %v, want nil (directory must be open-able to readdir)", dir, err)
 	}
-	dirents, err := dirCopy.Readdir(0, 10)
+	dirents, err := dirCopy.Readdir(0, 8192)
 	if err != nil {
 		return nil, fmt.Errorf("Readdir(dir) = %v, want nil", err)
 	}

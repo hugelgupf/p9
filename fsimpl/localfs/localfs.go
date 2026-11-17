@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
@@ -62,6 +63,9 @@ type Local struct {
 	path string
 	file *os.File
 	mode p9.OpenFlags
+
+	readdirMu      sync.Mutex
+	readdirEntries []os.DirEntry
 }
 
 var (
@@ -158,6 +162,9 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 
 // Close implements p9.File.Close.
 func (l *Local) Close() error {
+	l.readdirMu.Lock()
+	l.readdirEntries = nil
+	l.readdirMu.Unlock()
 	if l.file != nil {
 		// We don't set l.file = nil, as Close is called by servers
 		// only in Clunk. Clunk should release the last (direct)
