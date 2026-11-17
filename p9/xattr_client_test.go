@@ -17,6 +17,7 @@ package p9_test
 import (
 	"errors"
 	"net"
+	"slices"
 	"sort"
 	"testing"
 
@@ -143,19 +144,35 @@ func TestClientGetXattr(t *testing.T) {
 
 // TestClientListXattrs round-trips the attribute name list through the client.
 func TestClientListXattrs(t *testing.T) {
-	root := &xattrFile{xattrs: map[string][]byte{
-		"user.a": []byte("1"),
-		"user.b": []byte("2"),
-	}}
-	f, cleanup := serveXattr(t, root)
-	defer cleanup()
+	t.Run("NonEmpty", func(t *testing.T) {
+		root := &xattrFile{xattrs: map[string][]byte{
+			"user.a": []byte("1"),
+			"user.b": []byte("2"),
+		}}
+		f, cleanup := serveXattr(t, root)
+		defer cleanup()
 
-	got, err := f.ListXattrs()
-	if err != nil {
-		t.Fatalf("ListXattrs: got = %v, want = nil", err)
-	}
-	sort.Strings(got)
-	if len(got) != 2 || got[0] != "user.a" || got[1] != "user.b" {
-		t.Errorf("ListXattrs: got = %v, want = [user.a user.b]", got)
-	}
+		got, err := f.ListXattrs()
+		if err != nil {
+			t.Fatalf("ListXattrs: got = %v, want = nil", err)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, []string{"user.a", "user.b"}) {
+			t.Errorf("ListXattrs: got = %v, want = [user.a user.b]", got)
+		}
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		root := &xattrFile{}
+		f, cleanup := serveXattr(t, root)
+		defer cleanup()
+
+		got, err := f.ListXattrs()
+		if err != nil {
+			t.Fatalf("ListXattrs empty: got = %v, want = nil", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("ListXattrs empty: got = %q, want empty", got)
+		}
+	})
 }

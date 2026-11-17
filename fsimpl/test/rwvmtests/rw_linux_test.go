@@ -191,6 +191,95 @@ func TestMountHostDirectory(t *testing.T) {
 		}
 	})
 
+	t.Run("xattr-list-empty", func(t *testing.T) {
+		p := filepath.Join(targetDir, "xattrempty")
+		if err := os.WriteFile(p, []byte("somecontent"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		sz, err := unix.Listxattr(p, nil)
+		if err != nil {
+			t.Fatalf("Listxattr(nil) = %v", err)
+		}
+		if sz != 0 {
+			t.Errorf("Listxattr(nil) size = %d, want 0", sz)
+		}
+
+		xattrs, err := xattr.List(p)
+		if err != nil {
+			t.Fatalf("xattr.List() = %v", err)
+		}
+		if len(xattrs) != 0 {
+			t.Errorf("xattr.List() = %q, want empty", xattrs)
+		}
+	})
+
+	t.Run("xattr-while-open", func(t *testing.T) {
+		p := filepath.Join(targetDir, "xattropen")
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+
+		if _, err := f.Write([]byte("hello")); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		if err := unix.Fsetxattr(int(f.Fd()), "user.p9.open", []byte("ok"), 0); err != nil {
+			t.Fatalf("Fsetxattr: %v", err)
+		}
+		val := make([]byte, 16)
+		n, err := unix.Fgetxattr(int(f.Fd()), "user.p9.open", val)
+		if err != nil {
+			t.Fatalf("Fgetxattr: %v", err)
+		}
+		if string(val[:n]) != "ok" {
+			t.Errorf("Fgetxattr = %q, want %q", val[:n], "ok")
+		}
+
+		if _, err := f.WriteAt([]byte(" world"), 5); err != nil {
+			t.Fatalf("WriteAt after Fgetxattr: %v", err)
+		}
+		if err := f.Sync(); err != nil {
+			t.Fatalf("Sync after Fgetxattr: %v", err)
+		}
+		got := make([]byte, 11)
+		if _, err := f.ReadAt(got, 0); err != nil {
+			t.Fatalf("ReadAt after Fgetxattr: %v", err)
+		}
+		if string(got) != "hello world" {
+			t.Errorf("ReadAt = %q, want %q", got, "hello world")
+		}
+	})
+
+	t.Run("xattr-symlink-nofollow", func(t *testing.T) {
+		target := filepath.Join(targetDir, "xattrsymtarget")
+		if err := os.WriteFile(target, []byte("secret"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := unix.Setxattr(target, "user.p9.secret", []byte("s"), 0); err != nil {
+			t.Fatalf("Setxattr: %v", err)
+		}
+		sym := filepath.Join(targetDir, "xattrsym")
+		if err := os.Symlink("xattrsymtarget", sym); err != nil {
+			t.Fatal(err)
+		}
+		dangling := filepath.Join(targetDir, "xattrdangling")
+		if err := os.Symlink("nonexistent-xattr-target", dangling); err != nil {
+			t.Fatal(err)
+		}
+
+		if sz, err := unix.Llistxattr(sym, nil); err != nil || sz != 0 {
+			t.Errorf("Llistxattr(sym) = (%d, %v), want (0, nil)", sz, err)
+		}
+		if sz, err := unix.Llistxattr(dangling, nil); err != nil || sz != 0 {
+			t.Errorf("Llistxattr(dangling) = (%d, %v), want (0, nil)", sz, err)
+		}
+		if _, err := unix.Lgetxattr(sym, "user.p9.secret", make([]byte, 8)); !errors.Is(err, unix.ENODATA) {
+			t.Errorf("Lgetxattr(sym) = %v, want ENODATA", err)
+		}
+	})
+
 	if err := mp.Unmount(0); err != nil {
 		t.Fatal(err)
 	}
