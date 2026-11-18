@@ -8,8 +8,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// In 9P2000.L, the server never follows symlinks automatically during walk or
+// xattr operations; symlink resolution is strictly a client-side responsibility
+// (via Treadlink). Use the no-follow L*xattr variants here so xattr calls
+// operate on the walked node itself without escaping across host symlinks or
+// failing with ENOENT on dangling symlinks.
+
 func (l *Local) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
-	return unix.Setxattr(l.path, attr, data, int(flags))
+	return unix.Lsetxattr(l.path, attr, data, int(flags))
 }
 
 func (l *Local) ListXattrs() ([]string, error) {
@@ -21,5 +27,5 @@ func (l *Local) GetXattr(attr string) ([]byte, error) {
 }
 
 func (l *Local) RemoveXattr(attr string) error {
-	return unix.Removexattr(l.path, attr)
+	return unix.Lremovexattr(l.path, attr)
 }

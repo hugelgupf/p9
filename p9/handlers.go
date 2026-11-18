@@ -137,7 +137,7 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 
 	if err := ref.safelyRead(func() error {
 		if ref.pendingXattr.op == xattrCreate {
-			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
+			if uint64(len(ref.pendingXattr.buf)) != ref.pendingXattr.size {
 				return linux.EINVAL
 			}
 			if ref.pendingXattr.flags == XattrReplace && ref.pendingXattr.size == 0 {
@@ -319,7 +319,7 @@ func (t *tlopen) handle(cs *connState) message {
 		}
 
 		// Has it been opened already?
-		if ref.opened || !CanOpen(ref.mode) {
+		if ref.opened || ref.pendingXattr.op != xattrNone || !CanOpen(ref.mode) {
 			return linux.EINVAL
 		}
 
@@ -474,14 +474,14 @@ func (t *tlink) handle(cs *connState) message {
 	}
 	defer refTarget.DecRef()
 
-	if err := ref.safelyWrite(func() (err error) {
+	if err := ref.safelyGlobal(func() (err error) {
 		// Don't allow create links from non-directories or deleted directories.
-		if ref.isDeleted() || !ref.mode.IsDir() {
+		if ref.isDeleted() || !ref.mode.IsDir() || ref.pendingXattr.op != xattrNone {
 			return linux.EINVAL
 		}
 
-		// Not allowed on open directories.
-		if ref.opened {
+		// Not allowed on open directories or deleted/xattr targets.
+		if ref.opened || refTarget.isDeleted() || refTarget.pendingXattr.op != xattrNone {
 			return linux.EINVAL
 		}
 
@@ -746,7 +746,7 @@ func (t *tread) handle(cs *connState) message {
 				return linux.EINVAL
 			}
 
-			if t.Offset+uint64(t.Count) > uint64(len(ref.pendingXattr.buf)) {
+			if t.Offset > uint64(len(ref.pendingXattr.buf)) || uint64(t.Count) > uint64(len(ref.pendingXattr.buf))-t.Offset {
 				return linux.EINVAL
 			}
 
@@ -958,6 +958,48 @@ func (t *tsetattr) handle(cs *connState) message {
 	return &rsetattr{}
 }
 
+// xattrWalkFile is a sentinel File attached to transient FIDs created by
+// Txattrwalk. Attribute bytes are buffered in fidRef.pendingXattr.buf, so
+// clunking the xattr FID must be a no-op rather than closing the parent FID's
+// backing File, while any non-xattr File operations return EINVAL.
+type xattrWalkFile struct {
+	DefaultWalkGetAttr
+}
+
+func (xattrWalkFile) Walk([]string) ([]QID, File, error) { return nil, nil, linux.EINVAL }
+func (xattrWalkFile) StatFS() (FSStat, error)            { return FSStat{}, linux.EINVAL }
+func (xattrWalkFile) GetAttr(AttrMask) (QID, AttrMask, Attr, error) {
+	return QID{}, AttrMask{}, Attr{}, linux.EINVAL
+}
+func (xattrWalkFile) SetAttr(SetAttrMask, SetAttr) error        { return linux.EINVAL }
+func (xattrWalkFile) Close() error                              { return nil }
+func (xattrWalkFile) Open(OpenFlags) (QID, uint32, error)       { return QID{}, 0, linux.EINVAL }
+func (xattrWalkFile) ReadAt([]byte, int64) (int, error)         { return 0, linux.EINVAL }
+func (xattrWalkFile) WriteAt([]byte, int64) (int, error)        { return 0, linux.EINVAL }
+func (xattrWalkFile) SetXattr(string, []byte, XattrFlags) error { return linux.EINVAL }
+func (xattrWalkFile) GetXattr(string) ([]byte, error)           { return nil, linux.EINVAL }
+func (xattrWalkFile) ListXattrs() ([]string, error)             { return nil, linux.EINVAL }
+func (xattrWalkFile) RemoveXattr(string) error                  { return linux.EINVAL }
+func (xattrWalkFile) FSync() error                              { return linux.EINVAL }
+func (xattrWalkFile) Lock(int, LockType, LockFlags, uint64, uint64, string) (LockStatus, error) {
+	return LockStatusError, linux.EINVAL
+}
+func (xattrWalkFile) Create(string, OpenFlags, FileMode, UID, GID) (File, QID, uint32, error) {
+	return nil, QID{}, 0, linux.EINVAL
+}
+func (xattrWalkFile) Mkdir(string, FileMode, UID, GID) (QID, error) { return QID{}, linux.EINVAL }
+func (xattrWalkFile) Symlink(string, string, UID, GID) (QID, error) { return QID{}, linux.EINVAL }
+func (xattrWalkFile) Link(File, string) error                       { return linux.EINVAL }
+func (xattrWalkFile) Mknod(string, FileMode, uint32, uint32, UID, GID) (QID, error) {
+	return QID{}, linux.EINVAL
+}
+func (xattrWalkFile) Rename(File, string) error               { return linux.EINVAL }
+func (xattrWalkFile) RenameAt(string, File, string) error     { return linux.EINVAL }
+func (xattrWalkFile) UnlinkAt(string, uint32) error           { return linux.EINVAL }
+func (xattrWalkFile) Readdir(uint64, uint32) (Dirents, error) { return nil, linux.EINVAL }
+func (xattrWalkFile) Readlink() (string, error)               { return "", linux.EINVAL }
+func (xattrWalkFile) Renamed(File, string)                    {}
+
 // handle implements handler.handle.
 func (t *txattrwalk) handle(cs *connState) message {
 	// Lookup the fid.
@@ -967,10 +1009,13 @@ func (t *txattrwalk) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	size := 0
+	var newRef *fidRef
 	if err := ref.safelyRead(func() error {
-		if ref.isDeleted() {
+		if ref.isDeleted() || ref.pendingXattr.op != xattrNone {
 			return linux.EINVAL
+		}
+		if ref.opened && t.fid == t.newFID {
+			return linux.EBUSY
 		}
 		var buf []byte
 		var err error
@@ -979,38 +1024,39 @@ func (t *txattrwalk) handle(cs *connState) message {
 		} else {
 			var xattrs []string
 			xattrs, err = ref.file.ListXattrs()
-			if err == nil {
+			if err == nil && len(xattrs) > 0 {
 				buf = []byte(strings.Join(xattrs, "\000") + "\000")
 			}
 		}
 		if err != nil {
-			// Propagate the backing's errno (e.g. ENODATA for a missing
-			// attribute) rather than flattening every failure to EINVAL —
-			// getxattr(2) callers distinguish ENODATA ("absent") from a hard
-			// error, and the kernel probes optional attrs on ordinary lookups.
+			// Propagate the backing's errno (e.g. ENODATA for a
+			// missing attribute) rather than flattening every
+			// failure to EINVAL — getxattr(2) callers distinguish
+			// ENODATA ("absent") from a hard error, and the kernel
+			// probes optional attrs on ordinary lookups.
 			return err
 		}
-		if uint32(len(buf)) > maximumLength {
+		if uint64(len(buf)) > uint64(maximumLength) {
 			return linux.EINVAL
 		}
-		size = len(buf)
-		newRef := &fidRef{
+		newRef = &fidRef{
 			server: cs.server,
-			file:   ref.file,
+			file:   xattrWalkFile{},
 			pendingXattr: pendingXattr{
 				op:   xattrWalk,
 				name: t.Name,
-				size: uint64(size),
+				size: uint64(len(buf)),
 				buf:  buf,
 			},
 			pathNode: ref.pathNode,
 		}
-		cs.InsertFID(t.newFID, newRef)
 		return nil
 	}); err != nil {
 		return newErr(err)
 	}
-	return &rxattrwalk{Size: uint64(size)}
+	size := newRef.pendingXattr.size
+	cs.InsertFID(t.newFID, newRef)
+	return &rxattrwalk{Size: size}
 }
 
 // handle implements handler.handle.
@@ -1022,7 +1068,7 @@ func (t *txattrcreate) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 	if err := ref.safelyWrite(func() error {
-		if ref.isDeleted() {
+		if ref.isDeleted() || ref.pendingXattr.op != xattrNone {
 			return linux.EINVAL
 		}
 		ref.pendingXattr = pendingXattr{
