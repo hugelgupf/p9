@@ -503,6 +503,12 @@ func (cs *connState) handleRequest() bool {
 		return false
 	}
 
+	// Try to start the tag before another goroutine may receive: a Tflush
+	// of this tag right behind it would otherwise find no tag to wait for,
+	// and answer before this request does.
+	protocolErr := err != nil && err != io.EOF
+	started := !protocolErr && cs.StartTag(tag)
+
 	// Ensure that another goroutine is available to receive from cs.t.
 	if atomic.LoadInt32(&cs.recvIdle) == 0 {
 		cs.pendingWg.Add(1)
@@ -514,7 +520,7 @@ func (cs *connState) handleRequest() bool {
 	cs.recvMu.Unlock()
 
 	// Deal with other errors.
-	if err != nil && err != io.EOF {
+	if protocolErr {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
 		cs.sendMu.Lock()
@@ -526,8 +532,7 @@ func (cs *connState) handleRequest() bool {
 		return true
 	}
 
-	// Try to start the tag.
-	if !cs.StartTag(tag) {
+	if !started {
 		cs.server.log.Printf("no valid tag [%05d]", tag)
 		// Nothing we can do at this point; client is bogus.
 		return true
@@ -538,11 +543,12 @@ func (cs *connState) handleRequest() bool {
 
 	// Clear the tag before sending. That's because as soon as this
 	// hits the wire, the client can legally send another message
-	// with the same tag.
+	// with the same tag. Hold sendMu while clearing, so that a Tflush
+	// waiting for the tag can't send its Rflush before this answer.
+	cs.sendMu.Lock()
 	cs.ClearTag(tag)
 
 	// Send back the result.
-	cs.sendMu.Lock()
 	err = send(cs.server.log, cs.r, tag, r)
 	cs.sendMu.Unlock()
 	if err != nil {
