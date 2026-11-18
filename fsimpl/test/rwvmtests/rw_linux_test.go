@@ -78,6 +78,49 @@ func TestMountHostDirectory(t *testing.T) {
 		}
 	})
 
+	t.Run("readdir-dtype-and-pagination", func(t *testing.T) {
+		dir := filepath.Join(targetDir, "readdirtree")
+		if err := os.Mkdir(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(filepath.Join(dir, "subdir"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "regfile"), []byte("data"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("regfile", filepath.Join(dir, "symlink")); err != nil {
+			t.Fatal(err)
+		}
+		for i := range 250 {
+			name := fmt.Sprintf("extra-%03d", i)
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("ReadDir: %v", err)
+		}
+		if got, want := len(entries), 253; got != want {
+			t.Fatalf("ReadDir count = %d, want %d", got, want)
+		}
+		types := make(map[string]os.FileMode, len(entries))
+		for _, de := range entries {
+			types[de.Name()] = de.Type()
+		}
+		if got := types["subdir"]; got != os.ModeDir {
+			t.Errorf("subdir Type() = %v, want %v", got, os.ModeDir)
+		}
+		if got := types["symlink"]; got != os.ModeSymlink {
+			t.Errorf("symlink Type() = %v, want %v", got, os.ModeSymlink)
+		}
+		if got := types["regfile"]; got != 0 {
+			t.Errorf("regfile Type() = %v, want 0 (regular)", got)
+		}
+	})
+
 	t.Run("xattr-list", func(t *testing.T) {
 		p := filepath.Join(targetDir, "xattrlist")
 		if err := ioutil.WriteFile(p, []byte("somecontent"), 0755); err != nil {
