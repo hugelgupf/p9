@@ -62,6 +62,25 @@ func (f *xattrFile) ListXattrs() ([]string, error) {
 	return names, nil
 }
 
+func (f *xattrFile) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
+	if attr == "user.readonly" {
+		return linux.EPERM
+	}
+	if f.xattrs == nil {
+		f.xattrs = make(map[string][]byte)
+	}
+	f.xattrs[attr] = append([]byte(nil), data...)
+	return nil
+}
+
+func (f *xattrFile) RemoveXattr(attr string) error {
+	if _, ok := f.xattrs[attr]; !ok {
+		return linux.ENODATA
+	}
+	delete(f.xattrs, attr)
+	return nil
+}
+
 func (f *xattrFile) qid() p9.QID { return p9.QID{Type: p9.TypeRegular, Path: 1} }
 
 type xattrAttacher struct{ root *xattrFile }
@@ -157,5 +176,74 @@ func TestClientListXattrs(t *testing.T) {
 	sort.Strings(got)
 	if len(got) != 2 || got[0] != "user.a" || got[1] != "user.b" {
 		t.Errorf("ListXattrs: got = %v, want = [user.a user.b]", got)
+	}
+}
+
+// TestClientSetXattr round-trips a value through Txattrcreate and asserts that
+// the file's own fid survives: Txattrcreate turns the fid it names into an
+// attribute fid, so the client must walk to a new one rather than sacrifice
+// the caller's.
+func TestClientSetXattr(t *testing.T) {
+	root := &xattrFile{xattrs: map[string][]byte{}}
+	f, cleanup := serveXattr(t, root)
+	defer cleanup()
+
+	t.Run("RoundTrip", func(t *testing.T) {
+		if err := f.SetXattr("user.greeting", []byte("hello xattr"), 0); err != nil {
+			t.Fatalf("SetXattr: got = %v, want = nil", err)
+		}
+		got, err := f.GetXattr("user.greeting")
+		if err != nil {
+			t.Fatalf("GetXattr: got = %v, want = nil", err)
+		}
+		if string(got) != "hello xattr" {
+			t.Errorf("GetXattr: got = %q, want = %q", got, "hello xattr")
+		}
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		if err := f.SetXattr("user.empty", nil, 0); err != nil {
+			t.Fatalf("SetXattr empty: got = %v, want = nil", err)
+		}
+		got, err := f.GetXattr("user.empty")
+		if err != nil {
+			t.Fatalf("GetXattr empty: got = %v, want = nil", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("GetXattr empty: got = %q, want = empty", got)
+		}
+	})
+
+	t.Run("FileStillUsable", func(t *testing.T) {
+		if _, _, _, err := f.GetAttr(p9.AttrMask{Mode: true}); err != nil {
+			t.Errorf("GetAttr after SetXattr: got = %v, want = nil", err)
+		}
+	})
+
+	t.Run("ErrorPropagates", func(t *testing.T) {
+		// The server only calls setxattr(2) on clunk, so its error has to
+		// travel back through the clunk of the attribute fid.
+		err := f.SetXattr("user.readonly", []byte("nope"), 0)
+		if !errors.Is(err, linux.EPERM) {
+			t.Errorf("SetXattr readonly: got = %v, want = EPERM", err)
+		}
+	})
+}
+
+// TestClientRemoveXattr removes an attribute, which is a zero-sized
+// Txattrcreate with XattrReplace.
+func TestClientRemoveXattr(t *testing.T) {
+	root := &xattrFile{xattrs: map[string][]byte{"user.a": []byte("1")}}
+	f, cleanup := serveXattr(t, root)
+	defer cleanup()
+
+	if err := f.RemoveXattr("user.a"); err != nil {
+		t.Fatalf("RemoveXattr: got = %v, want = nil", err)
+	}
+	if _, err := f.GetXattr("user.a"); !errors.Is(err, linux.ENODATA) {
+		t.Errorf("GetXattr after RemoveXattr: got = %v, want = ENODATA", err)
+	}
+	if err := f.RemoveXattr("user.does-not-exist"); !errors.Is(err, linux.ENODATA) {
+		t.Errorf("RemoveXattr missing: got = %v, want = ENODATA", err)
 	}
 }
