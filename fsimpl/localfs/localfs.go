@@ -100,6 +100,18 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	return qid, fi, nil
 }
 
+// join returns the host path of the directory entry name in dir.
+//
+// The p9 server only rejects names containing "/", but on Windows "\" is a
+// path separator too, so a name like `..\x` would otherwise resolve outside
+// the exported tree.
+func join(dir, name string) (string, error) {
+	if name == "." || !filepath.IsLocal(name) || filepath.Base(name) != name {
+		return "", linux.EINVAL
+	}
+	return path.Join(dir, name), nil
+}
+
 // Walk implements p9.File.Walk.
 func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	var qids []p9.QID
@@ -111,7 +123,11 @@ func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	}
 
 	for _, name := range names {
-		c := &Local{path: path.Join(last.path, name)}
+		p, err := join(last.path, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		c := &Local{path: p}
 		qid, _, err := c.info()
 		if err != nil {
 			return nil, nil, err
@@ -207,7 +223,10 @@ func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
 
 // Create implements p9.File.Create.
 func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
-	newName := path.Join(l.path, name)
+	newName, err := join(l.path, name)
+	if err != nil {
+		return nil, p9.QID{}, 0, err
+	}
 	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
 	if err != nil {
 		return nil, p9.QID{}, 0, err
@@ -226,7 +245,11 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 //
 // Not properly implemented.
 func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	if err := os.Mkdir(path.Join(l.path, name), os.FileMode(permissions)); err != nil {
+	p, err := join(l.path, name)
+	if err != nil {
+		return p9.QID{}, err
+	}
+	if err := os.Mkdir(p, os.FileMode(permissions)); err != nil {
 		return p9.QID{}, err
 	}
 
@@ -238,7 +261,11 @@ func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) 
 //
 // Not properly implemented.
 func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	if err := os.Symlink(oldname, path.Join(l.path, newname)); err != nil {
+	p, err := join(l.path, newname)
+	if err != nil {
+		return p9.QID{}, err
+	}
+	if err := os.Symlink(oldname, p); err != nil {
 		return p9.QID{}, err
 	}
 
@@ -250,13 +277,23 @@ func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 //
 // Not properly implemented.
 func (l *Local) Link(target p9.File, newname string) error {
-	return os.Link(target.(*Local).path, path.Join(l.path, newname))
+	p, err := join(l.path, newname)
+	if err != nil {
+		return err
+	}
+	return os.Link(target.(*Local).path, p)
 }
 
 // RenameAt implements p9.File.RenameAt.
 func (l *Local) RenameAt(oldName string, newDir p9.File, newName string) error {
-	oldPath := path.Join(l.path, oldName)
-	newPath := path.Join(newDir.(*Local).path, newName)
+	oldPath, err := join(l.path, oldName)
+	if err != nil {
+		return err
+	}
+	newPath, err := join(newDir.(*Local).path, newName)
+	if err != nil {
+		return err
+	}
 
 	return os.Rename(oldPath, newPath)
 }
@@ -353,7 +390,10 @@ func (l *Local) Remove() error {
 // UnlinkAt implements p9.File.UnlinkAt
 func (l *Local) UnlinkAt(name string, flags uint32) error {
 	// Construct the full path
-	fullPath := filepath.Join(l.path, name)
+	fullPath, err := join(l.path, name)
+	if err != nil {
+		return err
+	}
 
 	// Remove the file or directory
 	return os.Remove(fullPath)

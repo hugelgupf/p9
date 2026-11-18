@@ -56,3 +56,41 @@ func TestGetAttrExecutable(t *testing.T) {
 		})
 	}
 }
+
+// TestBackslashNames checks that names using Windows path separators cannot
+// reach outside the exported directory.
+func TestBackslashNames(t *testing.T) {
+	dir := t.TempDir()
+	share := filepath.Join(dir, "share")
+	if err := os.Mkdir(share, 0777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secret"), nil, 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(share).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := root.Walk([]string{`..\secret`}); err == nil {
+		t.Errorf("Walk(%q) = nil, want error", `..\secret`)
+	}
+	if _, _, _, err := root.Create(`..\created`, p9.WriteOnly, 0666, 0, 0); err == nil {
+		t.Errorf("Create(%q) = nil, want error", `..\created`)
+	}
+	if _, err := root.Mkdir(`..\dir`, 0777, 0, 0); err == nil {
+		t.Errorf("Mkdir(%q) = nil, want error", `..\dir`)
+	}
+	if err := root.UnlinkAt(`..\secret`, 0); err == nil {
+		t.Errorf("UnlinkAt(%q) = nil, want error", `..\secret`)
+	}
+	for _, name := range []string{"created", "dir"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s was created outside the exported directory", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "secret")); err != nil {
+		t.Errorf("secret outside the exported directory: %v", err)
+	}
+}
