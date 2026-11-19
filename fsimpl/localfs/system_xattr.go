@@ -9,7 +9,7 @@ import (
 )
 
 func (l *Local) SetXattr(attr string, data []byte, flags p9.XattrFlags) error {
-	return unix.Setxattr(l.path, attr, data, int(flags))
+	return unix.Lsetxattr(l.path, attr, data, int(flags))
 }
 
 func (l *Local) ListXattrs() ([]string, error) {
@@ -21,5 +21,5 @@ func (l *Local) GetXattr(attr string) ([]byte, error) {
 }
 
 func (l *Local) RemoveXattr(attr string) error {
-	return unix.Removexattr(l.path, attr)
+	return unix.Lremovexattr(l.path, attr)
 }
