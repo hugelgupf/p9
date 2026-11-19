@@ -152,6 +152,64 @@ func TestSetAttr(t *testing.T) {
 	}
 }
 
+func TestSetAttrSymlink(t *testing.T) {
+	// The target lives outside the exported directory.
+	target := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(target, []byte("hello world"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(t.TempDir()).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.Symlink(target, "link", p9.NoUID, p9.NoGID); err != nil {
+		t.Skipf("Symlink() = %v", err)
+	}
+	_, file, err := root.Walk([]string{"link"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		valid p9.SetAttrMask
+		attr  p9.SetAttr
+	}{
+		{p9.SetAttrMask{Size: true}, p9.SetAttr{Size: 0}},
+		{p9.SetAttrMask{Permissions: true}, p9.SetAttr{Permissions: 0777}},
+		{p9.SetAttrMask{MTime: true, MTimeNotSystemTime: true}, p9.SetAttr{MTimeSeconds: 1234}},
+	} {
+		if err := file.SetAttr(tt.valid, tt.attr); err == nil {
+			t.Errorf("SetAttr(%v) on symlink = nil, want error", tt.valid)
+		}
+	}
+
+	after, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Size() != before.Size() || after.Mode() != before.Mode() || !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("symlink target changed: size %d, mode %v, mtime %v; want %d, %v, %v",
+			after.Size(), after.Mode(), after.ModTime(), before.Size(), before.Mode(), before.ModTime())
+	}
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// Ownership of the link itself can still be set.
+	_, _, ga, err := file.GetAttr(p9.AttrMaskAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.SetAttr(p9.SetAttrMask{UID: true, GID: true}, p9.SetAttr{UID: ga.UID, GID: ga.GID}); err != nil {
+		t.Fatalf("SetAttr(UID, GID) on symlink = %v, want nil", err)
+	}
+}
+
 func TestWriteAtAppend(t *testing.T) {
 	tempDir := t.TempDir()
 	path := filepath.Join(tempDir, "append.txt")

@@ -292,6 +292,18 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		return linux.ENOSYS
 	}
 
+	// os.Truncate, os.Chtimes and os.Chmod follow symlinks, so on a
+	// symlink they would change whatever the link points at, which may
+	// be outside the exported tree. Only ownership (via os.Lchown) can be
+	// changed on the link itself.
+	fi, err := os.Lstat(l.path)
+	if err != nil {
+		return err
+	}
+	if fi.Mode()&os.ModeSymlink != 0 && !valid.IsSubsetOf(p9.SetAttrMask{UID: true, GID: true, CTime: true}) {
+		return linux.ENOSYS
+	}
+
 	// Perform Size, ATime/MTime, and UID/GID before Permissions so that:
 	// 1. A single SetAttr call that both modifies size/timestamps and
 	//    removes write permissions (e.g., chmod 0) does not fail its own
@@ -331,7 +343,7 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		if valid.GID {
 			gid = int(attr.GID)
 		}
-		if err := os.Chown(l.path, uid, gid); err != nil {
+		if err := os.Lchown(l.path, uid, gid); err != nil {
 			return err
 		}
 	}
