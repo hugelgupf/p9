@@ -137,6 +137,8 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 
 	if err := ref.safelyRead(func() error {
 		if ref.pendingXattr.op == xattrCreate {
+			ref.xattrMu.Lock()
+			defer ref.xattrMu.Unlock()
 			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
 				return linux.EINVAL
 			}
@@ -794,6 +796,8 @@ func (t *twrite) handle(cs *connState) message {
 			n, err = ref.file.WriteAt(t.Data, int64(t.Offset))
 
 		case xattrCreate:
+			ref.xattrMu.Lock()
+			defer ref.xattrMu.Unlock()
 			if uint64(len(ref.pendingXattr.buf)) != t.Offset {
 				return linux.EINVAL
 			}
