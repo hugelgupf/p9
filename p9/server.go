@@ -172,6 +172,11 @@ type fidRef struct {
 	// in a tread or twrite request.
 	pendingXattr pendingXattr
 
+	// xattrMu serializes Twrite and Tclunk on a fid with a pending
+	// Txattrcreate. Both hold pathNode.opMu only for reading, and Twrite
+	// appends to pendingXattr.buf.
+	xattrMu sync.Mutex
+
 	// refs is an active refence count.
 	//
 	// The node above will be closed only when refs reaches zero.
