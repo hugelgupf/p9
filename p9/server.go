@@ -177,25 +177,29 @@ type fidRef struct {
 	// The node above will be closed only when refs reaches zero.
 	refs int64
 
+	// openedMu protects opened and openFlags. Tlopen holds it across
+	// File.Open, so that Open is never called concurrently on one fid,
+	// nor again after it succeeds.
+	//
+	// Lock ordering: renameMu, then pathNode.opMu, then openedMu. No other
+	// server lock may be acquired while holding openedMu.
+	openedMu sync.Mutex
+
 	// opened indicates whether this has been opened already.
 	//
 	// This is updated in handlers.go.
-	//
-	// opened is protected by pathNode.opMu or renameMu (for write).
 	opened bool
+
+	// openFlags is the mode used in the open.
+	//
+	// This is updated in handlers.go.
+	openFlags OpenFlags
 
 	// mode is the fidRef's mode from the walk. Only the type bits are
 	// valid, the permissions may change. This is used to sanity check
 	// operations on this element, and prevent walks across
 	// non-directories.
 	mode FileMode
-
-	// openFlags is the mode used in the open.
-	//
-	// This is updated in handlers.go.
-	//
-	// opened is protected by pathNode.opMu or renameMu (for write).
-	openFlags OpenFlags
 
 	// pathNode is the current pathNode for this fid.
 	pathNode *pathNode
@@ -272,6 +276,20 @@ func (f *fidRef) TryIncRef() bool {
 // safelyGlobal.
 func (f *fidRef) isDeleted() bool {
 	return atomic.LoadUint32(&f.pathNode.deleted) != 0
+}
+
+// openState returns whether this fidRef has been opened and, if so, the flags
+// it was opened with.
+func (f *fidRef) openState() (opened bool, flags OpenFlags) {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	return f.opened, f.openFlags
+}
+
+// isOpened returns true if this fidRef has been opened.
+func (f *fidRef) isOpened() bool {
+	opened, _ := f.openState()
+	return opened
 }
 
 // hasParent indicates whether this is a root fid.
