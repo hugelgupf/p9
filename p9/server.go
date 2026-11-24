@@ -73,9 +73,9 @@ import (
 //     and renameChildTo holds f.pathNode.childMu.Lock while acquiring ancestor
 //     childMus (via ref.parent.DecRef) and target.pathNode.childMu (via
 //     addChild/ref.DecRef).
-//   - fidRef.openedMu (Mutex): per-fid leaf lock protecting opened and
-//     openFlags, held across File.Open so Open is never called concurrently on
-//     one fid or again after it succeeds.
+//   - fidRef.openedMu (Mutex): per-fid leaf lock protecting openState and
+//     openFlags. Held only for short state transitions and queries, never
+//     across File.Open or any other syscall.
 //   - connState.tagMu, recvMu, sendMu (Mutex): protect active request tags,
 //     incoming frame reads and recvShutdown, and outgoing frame writes.
 
@@ -208,6 +208,15 @@ type pendingXattr struct {
 	buf []byte
 }
 
+// openState tracks a fidRef's open lifecycle.
+type openState uint8
+
+const (
+	openClosed openState = iota
+	openOpening
+	openOpened
+)
+
 // fidRef wraps a node and tracks references.
 type fidRef struct {
 	// server is the associated server.
@@ -225,22 +234,16 @@ type fidRef struct {
 	// The node above will be closed only when refs reaches zero.
 	refs int64
 
-	// openedMu protects opened and openFlags. Tlopen holds it across
-	// File.Open, so that Open is never called concurrently on one fid,
-	// nor again after it succeeds.
-	//
-	// Lock ordering: renameMu, then pathNode.opMu, then openedMu. No other
-	// server lock may be acquired while holding openedMu.
+	// openedMu is the per-fid leaf mutex protecting openState and openFlags
+	// (see the server lock hierarchy comment above). It is held only for
+	// short state transitions and queries, never across syscalls.
 	openedMu sync.Mutex
 
-	// opened indicates whether this has been opened already.
-	//
-	// This is updated in handlers.go.
-	opened bool
+	// openState tracks whether this fid is closed, mid-Tlopen, or opened.
+	openState openState
 
-	// openFlags is the mode used in the open.
-	//
-	// This is updated in handlers.go.
+	// openFlags is the mode used in the open, valid when openState is
+	// openOpened.
 	openFlags OpenFlags
 
 	// mode is the fidRef's mode from the walk. Only the type bits are
@@ -325,18 +328,64 @@ func (f *fidRef) isDeleted() bool {
 	return atomic.LoadUint32(&f.pathNode.deleted) != 0
 }
 
-// openState returns whether this fidRef has been opened and, if so, the flags
-// it was opened with.
-func (f *fidRef) openState() (opened bool, flags OpenFlags) {
+// beginOpen transitions f from openClosed to openOpening after validating
+// its mode and open flags.
+func (f *fidRef) beginOpen(flags OpenFlags) error {
 	f.openedMu.Lock()
 	defer f.openedMu.Unlock()
-	return f.opened, f.openFlags
+	switch f.openState {
+	case openOpened:
+		return linux.EINVAL
+	case openOpening:
+		return linux.EBUSY
+	}
+	if !CanOpen(f.mode) {
+		return linux.EINVAL
+	}
+	if f.mode.IsDir() && flags.Mode() != ReadOnly {
+		return linux.EISDIR
+	}
+	f.openState = openOpening
+	return nil
 }
 
-// isOpened returns true if this fidRef has been opened.
+// finishOpen transitions f from openOpening to openOpened.
+func (f *fidRef) finishOpen(flags OpenFlags) {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	f.openState = openOpened
+	f.openFlags = flags
+}
+
+// abortOpen resets f from openOpening back to openClosed after a failed Open.
+func (f *fidRef) abortOpen() {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	if f.openState == openOpening {
+		f.openState = openClosed
+	}
+}
+
+// openInfo returns the flags f was opened with and whether f has finished
+// opening.
+func (f *fidRef) openInfo() (OpenFlags, bool) {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	return f.openFlags, f.openState == openOpened
+}
+
+// isOpened returns true if this fidRef has finished opening.
 func (f *fidRef) isOpened() bool {
-	opened, _ := f.openState()
+	_, opened := f.openInfo()
 	return opened
+}
+
+// isOpenActive returns true if this fidRef is currently opening or already
+// opened.
+func (f *fidRef) isOpenActive() bool {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	return f.openState != openClosed
 }
 
 // hasParent indicates whether this is a root fid.

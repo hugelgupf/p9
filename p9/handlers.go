@@ -314,39 +314,37 @@ func (t *tlopen) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	var (
-		qid    QID
-		ioUnit uint32
+		qid     QID
+		ioUnit  uint32
+		opening bool
 	)
-	if err := ref.safelyRead(func() (err error) {
-		// Hold openedMu across Open, so that Open is never called
-		// concurrently on this fid, nor again after it succeeds.
-		ref.openedMu.Lock()
-		defer ref.openedMu.Unlock()
-
-		// Has it been deleted already?
-		if ref.isDeleted() {
+	defer func() {
+		if opening {
+			ref.abortOpen()
+		}
+	}()
+	if err := ref.safelyRead(func() error {
+		// Has it been deleted or bound to an xattr op already?
+		if ref.isDeleted() || ref.pendingXattr.op != xattrNone {
 			return linux.EINVAL
 		}
 
-		// Has it been opened already?
-		if ref.opened || !CanOpen(ref.mode) {
-			return linux.EINVAL
+		if err := ref.beginOpen(t.Flags); err != nil {
+			return err
 		}
+		opening = true
 
-		// Is this an attempt to open a directory as writable? Don't accept.
-		if ref.mode.IsDir() && t.Flags.Mode() != ReadOnly {
-			return linux.EISDIR
-		}
-
-		// Do the open.
+		// Do the open without holding openedMu, so concurrent checks on
+		// this fid see openOpening without blocking.
+		var err error
 		qid, ioUnit, err = ref.file.Open(t.Flags)
 		if err != nil {
 			return err
 		}
 
 		// Mark file as opened and set open mode.
-		ref.opened = true
-		ref.openFlags = t.Flags
+		ref.finishOpen(t.Flags)
+		opening = false
 		return nil
 	}); err != nil {
 		return newErr(err)
@@ -381,7 +379,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -395,7 +393,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 			server:    cs.server,
 			parent:    ref,
 			file:      nsf,
-			opened:    true,
+			openState: openOpened,
 			openFlags: t.OpenFlags,
 			mode:      ModeRegular,
 			pathNode:  ref.pathNode.pathNodeFor(t.Name),
@@ -452,7 +450,7 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -497,7 +495,7 @@ func (t *tlink) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -555,7 +553,7 @@ func (t *trenameat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -600,7 +598,7 @@ func (t *tunlinkat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -747,7 +745,7 @@ func (t *tread) handle(cs *connState) message {
 		switch ref.pendingXattr.op {
 		case xattrNone:
 			// Has it been opened already?
-			opened, openFlags := ref.openState()
+			openFlags, opened := ref.openInfo()
 			if !opened {
 				return linux.EINVAL
 			}
@@ -812,7 +810,7 @@ func (t *twrite) handle(cs *connState) message {
 		switch ref.pendingXattr.op {
 		case xattrNone:
 			// Has it been opened already?
-			opened, openFlags := ref.openState()
+			openFlags, opened := ref.openInfo()
 			if !opened {
 				return linux.EINVAL
 			}
@@ -875,7 +873,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -919,7 +917,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.isOpened() {
+		if ref.isOpenActive() {
 			return linux.EINVAL
 		}
 
@@ -1053,7 +1051,7 @@ func (t *txattrcreate) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 	if err := ref.safelyWrite(func() error {
-		if ref.isDeleted() {
+		if ref.isDeleted() || ref.isOpenActive() || ref.pendingXattr.op != xattrNone {
 			return linux.EINVAL
 		}
 		ref.pendingXattr = pendingXattr{
@@ -1362,7 +1360,7 @@ func (t *twalk) handle(cs *connState) message {
 		// That as OK as long as newFID is different. Note this
 		// violates the spec, but the Linux client does too, so we have
 		// little choice.
-		if t.fid == t.newFID && ref.isOpened() {
+		if t.fid == t.newFID && ref.isOpenActive() {
 			return linux.EBUSY
 		}
 		return nil
@@ -1406,7 +1404,7 @@ func (t *twalkgetattr) handle(cs *connState) message {
 		// That as OK as long as newFID is different. Note this
 		// violates the spec, but the Linux client does too, so we have
 		// little choice.
-		if t.fid == t.newFID && ref.isOpened() {
+		if t.fid == t.newFID && ref.isOpenActive() {
 			return linux.EBUSY
 		}
 		return nil

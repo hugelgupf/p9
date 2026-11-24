@@ -164,7 +164,9 @@ func walk(t *testing.T, f p9.File, names ...string) p9.File {
 }
 
 // TestConcurrentTlopenOpensOnce checks that concurrent Tlopens of one fid call
-// File.Open once, and that reads racing with them see a consistent open state.
+// File.Open once, return EBUSY/EINVAL immediately without waiting on an
+// in-flight Open, and that Tread racing with them sees a consistent open state
+// without blocking.
 func TestConcurrentTlopenOpensOnce(t *testing.T) {
 	const n = 8
 
@@ -178,6 +180,23 @@ func TestConcurrentTlopenOpensOnce(t *testing.T) {
 		return nil
 	}
 	f := walk(t, serveFile(t, &memFile{fs: fs, node: fs.root}), "f")
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, _, err := f.Open(p9.ReadOnly)
+		firstDone <- err
+	}()
+	<-entered
+
+	// While the first Open is in flight, another Tlopen on the same fid
+	// must fail immediately with EBUSY, and Tread must fail immediately
+	// with EINVAL without waiting on File.Open.
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EBUSY) {
+		t.Errorf("concurrent Open during openOpening: got = %v, want = EBUSY", err)
+	}
+	if _, err := f.ReadAt(make([]byte, 1), 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("ReadAt during openOpening: got = %v, want = EINVAL", err)
+	}
 
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
@@ -201,29 +220,58 @@ func TestConcurrentTlopenOpensOnce(t *testing.T) {
 		}
 	})
 
-	<-entered
-	// Give the other Tlopens time to reach the server.
-	time.Sleep(100 * time.Millisecond)
+	// Give the other Tlopens time to reach the server while Open blocks.
+	time.Sleep(50 * time.Millisecond)
 	close(release)
+	if err := <-firstDone; err != nil {
+		t.Errorf("first Open: got = %v, want = nil", err)
+	}
 	close(stop)
 	wg.Wait()
 	close(errs)
 
-	var succeeded int
 	for err := range errs {
-		switch {
-		case err == nil:
-			succeeded++
-		case !errors.Is(err, linux.EINVAL):
-			t.Errorf("Open: got = %v, want = nil or EINVAL", err)
+		if !errors.Is(err, linux.EBUSY) && !errors.Is(err, linux.EINVAL) {
+			t.Errorf("Open: got = %v, want = EBUSY or EINVAL", err)
 		}
-	}
-	if succeeded != 1 {
-		t.Errorf("successful Opens: got = %d, want = 1", succeeded)
 	}
 	if got := fs.opens.Load(); got != 1 {
 		t.Errorf("File.Open calls: got = %d, want = 1", got)
 	}
+
+	// Also race N concurrent Tlopens directly from openClosed.
+	t.Run("concurrent_from_openClosed", func(t *testing.T) {
+		fs2 := newMemFS()
+		fs2.add(fs2.root, "f", p9.ModeRegular|0o644)
+		f2 := walk(t, serveFile(t, &memFile{fs: fs2, node: fs2.root}), "f")
+
+		var wg2 sync.WaitGroup
+		errs2 := make(chan error, n)
+		for range n {
+			wg2.Go(func() {
+				_, _, err := f2.Open(p9.ReadOnly)
+				errs2 <- err
+			})
+		}
+		wg2.Wait()
+		close(errs2)
+
+		var succeeded int
+		for err := range errs2 {
+			switch {
+			case err == nil:
+				succeeded++
+			case !errors.Is(err, linux.EBUSY) && !errors.Is(err, linux.EINVAL):
+				t.Errorf("Open: got = %v, want = nil, EBUSY or EINVAL", err)
+			}
+		}
+		if succeeded != 1 {
+			t.Errorf("successful Opens: got = %d, want = 1", succeeded)
+		}
+		if got := fs2.opens.Load(); got != 1 {
+			t.Errorf("File.Open calls: got = %d, want = 1", got)
+		}
+	})
 }
 
 // TestTlopenRetryAfterFailedOpen checks that a failed File.Open leaves the fid
@@ -247,6 +295,36 @@ func TestTlopenRetryAfterFailedOpen(t *testing.T) {
 	}
 	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EINVAL) {
 		t.Fatalf("third Open: got = %v, want = EINVAL", err)
+	}
+}
+
+// TestTlopenAndTxattrcreateMutuallyExclusive checks that Tlopen and
+// Txattrcreate cannot both use the same fid.
+func TestTlopenAndTxattrcreateMutuallyExclusive(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+
+	// Txattrcreate on an already-opened fid fails with EINVAL.
+	opened := walk(t, root, "f")
+	if _, _, err := opened.Open(p9.ReadWrite); err != nil {
+		t.Fatalf("Open: got = %v, want = nil", err)
+	}
+	if err := p9.SendXattrCreate(opened, "user.x", 1, 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("SendXattrCreate on opened fid: got = %v, want = EINVAL", err)
+	}
+
+	// Tlopen and a second Txattrcreate on an xattrcreate fid fail with
+	// EINVAL.
+	xattrFid := walk(t, root, "f")
+	if err := p9.SendXattrCreate(xattrFid, "user.x", 1, 0); err != nil {
+		t.Fatalf("SendXattrCreate: got = %v, want = nil", err)
+	}
+	if err := p9.SendXattrCreate(xattrFid, "user.y", 1, 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("second SendXattrCreate: got = %v, want = EINVAL", err)
+	}
+	if _, _, err := xattrFid.Open(p9.ReadOnly); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Open on xattrcreate fid: got = %v, want = EINVAL", err)
 	}
 }
 
