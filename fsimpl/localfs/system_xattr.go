@@ -8,8 +8,8 @@ import (
 )
 
 func (l *Local) withXattr(fdFn func(fd int) error, atFn func(parentFD int, base string) error) error {
-	if l.file != nil {
-		return withFileFD(l.file, fdFn)
+	if h := l.open.Load(); h != nil {
+		return withFileFD(h.file, fdFn)
 	}
 	if l.rel == "" {
 		dirFD, release, err := l.openDir()

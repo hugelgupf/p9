@@ -485,8 +485,8 @@ func statToQID(st *unix.Stat_t) p9.QID {
 }
 
 func (l *Local) stat(st *unix.Stat_t) error {
-	if l.file != nil {
-		return withFileFD(l.file, func(fd int) error {
+	if h := l.open.Load(); h != nil {
+		return withFileFD(h.file, func(fd int) error {
 			return fstat(fd, st)
 		})
 	}
@@ -546,34 +546,75 @@ func (l *Local) walk(names []string) ([]p9.QID, p9.File, error) {
 	return qids, l.child(rel, nil, 0), nil
 }
 
-func (l *Local) open(mode p9.OpenFlags) (_ p9.QID, _ uint32, err error) {
-	flags, err := filterOpenFlags(mode, unixAllowedOpenFlags)
-	if err != nil {
-		return p9.QID{}, 0, err
+// openVerifiedTarget opens (dirFD, name) without following symlinks, verifies
+// the opened inode matches want, and only then applies O_TRUNC. Regular files
+// and directories are opened with O_NONBLOCK temporarily so a replacement FIFO
+// cannot block before the inode check.
+func (l *Local) openVerifiedTarget(dirFD int, name string, flags int, mode p9.OpenFlags, displayName string, want *unix.Stat_t) (_ p9.QID, _ uint32, err error) {
+	openFlags := flags &^ unix.O_TRUNC
+	wantType := want.Mode & unix.S_IFMT
+	addedNonblock := flags&unix.O_NONBLOCK == 0 && (wantType == unix.S_IFREG || wantType == unix.S_IFDIR)
+	if addedNonblock {
+		openFlags |= unix.O_NONBLOCK
 	}
-	dirFD, release, name, err := l.openTarget()
-	if err != nil {
-		return p9.QID{}, 0, err
-	}
-	defer release()
 
-	fd, err := openAt(dirFD, name, flags|unix.O_NOFOLLOW|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	fd, err := openAt(dirFD, name, openFlags|unix.O_NOFOLLOW|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return p9.QID{}, 0, err
 	}
 	defer func() {
-		if err != nil {
+		if err != nil && fd >= 0 {
 			_ = unix.Close(fd)
 		}
 	}()
 
-	var st unix.Stat_t
-	if err = fstat(fd, &st); err != nil {
+	var got unix.Stat_t
+	if err = fstat(fd, &got); err != nil {
 		return p9.QID{}, 0, err
 	}
-	l.file = os.NewFile(uintptr(fd), l.displayName())
-	l.mode = mode
-	return statToQID(&st), 0, nil
+	if !sameInode(&got, want) {
+		return p9.QID{}, 0, unix.ESTALE
+	}
+
+	if addedNonblock {
+		var fl int
+		fl, err = ignoringEINTRInt(func() (int, error) {
+			return unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
+		})
+		if err != nil {
+			return p9.QID{}, 0, err
+		}
+		if _, err = ignoringEINTRInt(func() (int, error) {
+			return unix.FcntlInt(uintptr(fd), unix.F_SETFL, fl&^unix.O_NONBLOCK)
+		}); err != nil {
+			return p9.QID{}, 0, err
+		}
+	}
+
+	if flags&unix.O_TRUNC != 0 {
+		switch got.Mode & unix.S_IFMT {
+		case unix.S_IFDIR:
+			return p9.QID{}, 0, unix.EISDIR
+		case unix.S_IFREG:
+			if mode.Mode() != p9.ReadOnly {
+				err = ignoringEINTR(func() error {
+					return unix.Ftruncate(fd, 0)
+				})
+			} else {
+				err = truncateAtNoFollow(dirFD, name, 0, &got)
+			}
+			if err != nil {
+				return p9.QID{}, 0, err
+			}
+		}
+	}
+
+	f := os.NewFile(uintptr(fd), displayName)
+	fd = -1
+	if err = l.setOpenHandle(f, mode); err != nil {
+		return p9.QID{}, 0, err
+	}
+	return statToQID(&got), 0, nil
 }
 
 func (l *Local) create(name string, mode p9.OpenFlags, permissions p9.FileMode) (_ p9.File, _ p9.QID, _ uint32, err error) {
@@ -714,19 +755,19 @@ func buildUtimes(valid p9.SetAttrMask, attr p9.SetAttr) [2]unix.Timespec {
 	return ts
 }
 
-func (l *Local) truncateSize(size int64, ensureTarget func() (int, string, error)) error {
+func truncateSize(h *openHandle, size int64, ensureTarget func() (int, string, error)) error {
 	var want *unix.Stat_t
-	if l.file != nil {
-		if l.mode.Mode() != p9.ReadOnly {
-			return l.file.Truncate(size)
+	if h != nil {
+		if h.mode.Mode() != p9.ReadOnly {
+			return h.file.Truncate(size)
 		}
 		// Fall back to path truncate if unsupported (ENOSYS) or /proc
 		// is absent (ENOENT).
-		if err := ftruncateReadOnly(l.file, size); err != unix.ENOSYS && err != unix.ENOENT {
+		if err := ftruncateReadOnly(h.file, size); err != unix.ENOSYS && err != unix.ENOENT {
 			return err
 		}
 		var st unix.Stat_t
-		if err := withFileFD(l.file, func(fd int) error {
+		if err := withFileFD(h.file, func(fd int) error {
 			return fstat(fd, &st)
 		}); err != nil {
 			return err
@@ -740,12 +781,12 @@ func (l *Local) truncateSize(size int64, ensureTarget func() (int, string, error
 	return truncateAtNoFollow(dirFD, target, size, want)
 }
 
-func (l *Local) setTimes(valid p9.SetAttrMask, attr p9.SetAttr, ensureTarget func() (int, string, error)) error {
+func setTimes(h *openHandle, valid p9.SetAttrMask, attr p9.SetAttr, ensureTarget func() (int, string, error)) error {
 	ts := buildUtimes(valid, attr)
-	if l.file != nil {
+	if h != nil {
 		// Fall back to UtimesNanoAt if unsupported (ENOSYS) or /proc
 		// is absent (ENOENT).
-		if err := futimesNano(l.file, &ts); err != unix.ENOSYS && err != unix.ENOENT {
+		if err := futimesNano(h.file, &ts); err != unix.ENOSYS && err != unix.ENOENT {
 			return err
 		}
 	}
@@ -753,8 +794,8 @@ func (l *Local) setTimes(valid p9.SetAttrMask, attr p9.SetAttr, ensureTarget fun
 	if err != nil {
 		return err
 	}
-	if l.file != nil {
-		if err := verifyTargetMatchesFile(l.file, dirFD, name); err != nil {
+	if h != nil {
+		if err := verifyTargetMatchesFile(h.file, dirFD, name); err != nil {
 			return err
 		}
 	}
@@ -764,6 +805,7 @@ func (l *Local) setTimes(valid p9.SetAttrMask, attr p9.SetAttr, ensureTarget fun
 }
 
 func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
+	h := l.open.Load()
 	var (
 		dirFD   int
 		name    string
@@ -790,12 +832,12 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	// 2. Chmod runs last so setuid/setgid bits are not cleared by truncate
 	//    or chown.
 	if valid.Size {
-		if err := l.truncateSize(int64(attr.Size), ensureTarget); err != nil {
+		if err := truncateSize(h, int64(attr.Size), ensureTarget); err != nil {
 			return err
 		}
 	}
 	if valid.ATime || valid.MTime {
-		if err := l.setTimes(valid, attr, ensureTarget); err != nil {
+		if err := setTimes(h, valid, attr, ensureTarget); err != nil {
 			return err
 		}
 	}
@@ -807,8 +849,8 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		if valid.GID {
 			gid = int(attr.GID)
 		}
-		if l.file != nil {
-			if err := withFileFD(l.file, func(fd int) error {
+		if h != nil {
+			if err := withFileFD(h.file, func(fd int) error {
 				return ignoringEINTR(func() error {
 					return unix.Fchown(fd, uid, gid)
 				})
@@ -829,8 +871,8 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	}
 	if valid.Permissions {
 		mode := uint32(attr.Permissions.Permissions())
-		if l.file != nil {
-			if err := withFileFD(l.file, func(fd int) error {
+		if h != nil {
+			if err := withFileFD(h.file, func(fd int) error {
 				return ignoringEINTR(func() error {
 					return unix.Fchmod(fd, mode)
 				})
@@ -852,11 +894,11 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 
 func (l *Local) openDirForRead() (int, error) {
 	const flags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOCTTY | unix.O_CLOEXEC
-	if l.file != nil {
+	if h := l.open.Load(); h != nil {
 		// Open a fresh description of the same directory inode so
-		// Readdir starts at offset 0 without mutating l.file's offset.
+		// Readdir starts at offset 0 without mutating h.file's offset.
 		var fd int
-		err := withFileFD(l.file, func(openFD int) error {
+		err := withFileFD(h.file, func(openFD int) error {
 			var openErr error
 			fd, openErr = openAt(openFD, ".", flags, 0)
 			return openErr
@@ -916,7 +958,8 @@ func (l *Local) readDir(offset uint64, count uint32) (p9.Dirents, error) {
 
 // lock implements p9.File.Lock.
 func (l *Local) lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, length uint64, client string) (p9.LockStatus, error) {
-	if l.file == nil {
+	h := l.open.Load()
+	if h == nil {
 		return p9.LockStatusError, unix.EBADF
 	}
 	var cmd int
@@ -945,7 +988,7 @@ func (l *Local) lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, l
 		Start:  int64(start),
 		Len:    int64(length),
 	}
-	if err := withFileFD(l.file, func(fd int) error {
+	if err := withFileFD(h.file, func(fd int) error {
 		return unix.FcntlFlock(uintptr(fd), cmd, lk)
 	}); err != nil {
 		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EACCES) {

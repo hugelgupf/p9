@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -889,24 +890,10 @@ func TestNestedDirectoryOperations(t *testing.T) {
 	}
 }
 
-func TestServerClientConfinementEndToEnd(t *testing.T) {
-	parent := t.TempDir()
-	outside := filepath.Join(parent, "outside")
-	export := filepath.Join(parent, "export")
-	if err := os.MkdirAll(outside, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(export, 0755); err != nil {
-		t.Fatal(err)
-	}
-	outsideFile := filepath.Join(outside, "secret")
-	if err := os.WriteFile(outsideFile, []byte("top-secret"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	mustSymlink(t, outsideFile, filepath.Join(export, "sym_secret"))
-
+func serveAttacher(t *testing.T, a p9.Attacher) p9.File {
+	t.Helper()
 	serverConn, clientConn := net.Pipe()
-	srv := p9.NewServer(Attacher(export))
+	srv := p9.NewServer(a)
 	srvDone := make(chan error, 1)
 	go func() {
 		srvDone <- srv.Handle(serverConn, serverConn)
@@ -928,7 +915,32 @@ func TestServerClientConfinementEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer root.Close()
+	t.Cleanup(func() { _ = root.Close() })
+	return root
+}
+
+func serveLocalFS(t *testing.T, export string) p9.File {
+	t.Helper()
+	return serveAttacher(t, Attacher(export))
+}
+
+func TestServerClientConfinementEndToEnd(t *testing.T) {
+	parent := t.TempDir()
+	outside := filepath.Join(parent, "outside")
+	export := filepath.Join(parent, "export")
+	if err := os.MkdirAll(outside, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(export, 0755); err != nil {
+		t.Fatal(err)
+	}
+	outsideFile := filepath.Join(outside, "secret")
+	if err := os.WriteFile(outsideFile, []byte("top-secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mustSymlink(t, outsideFile, filepath.Join(export, "sym_secret"))
+
+	root := serveLocalFS(t, export)
 
 	// Exercise Txattrwalk on root (whose server-side clunk aliases and
 	// closes the root Local) and confirm the mount remains healthy for
@@ -1012,5 +1024,156 @@ func TestSetAttrSizeOnAppendFile(t *testing.T) {
 	}
 	if string(got) != "hello" {
 		t.Errorf("file content = %q, want %q", string(got), "hello")
+	}
+}
+
+type blockingReadAttacher struct {
+	base     p9.Attacher
+	readHook func()
+}
+
+func (a blockingReadAttacher) Attach() (p9.File, error) {
+	f, err := a.base.Attach()
+	if err != nil {
+		return nil, err
+	}
+	return &blockingReadLocal{Local: f.(*Local), readHook: a.readHook}, nil
+}
+
+type blockingReadLocal struct {
+	*Local
+	readHook func()
+}
+
+func (b *blockingReadLocal) Walk(names []string) ([]p9.QID, p9.File, error) {
+	qids, child, err := b.Local.Walk(names)
+	if err != nil {
+		return nil, nil, err
+	}
+	return qids, &blockingReadLocal{Local: child.(*Local), readHook: b.readHook}, nil
+}
+
+func (b *blockingReadLocal) ReadAt(p []byte, offset int64) (int, error) {
+	b.readHook()
+	return b.Local.ReadAt(p, offset)
+}
+
+func (b *blockingReadLocal) RenameAt(oldName string, newDir p9.File, newName string) error {
+	if d, ok := newDir.(*blockingReadLocal); ok {
+		newDir = d.Local
+	}
+	return b.Local.RenameAt(oldName, newDir, newName)
+}
+
+// TestServerLocalFSBlockingReadAtDoesNotStallRename checks end-to-end that
+// Local's UnlockedIO opt-in allows a blocked ReadAt (e.g. a hung remote
+// mount) to proceed concurrently with RenameAt without deadlocking renameMu.
+func TestServerLocalFSBlockingReadAtDoesNotStallRename(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a"), []byte("world"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	defer releaseOnce()
+	root := serveAttacher(t, blockingReadAttacher{
+		base: Attacher(dir),
+		readHook: func() {
+			close(entered)
+			<-release
+		},
+	})
+
+	_, f, err := root.Walk([]string{"f"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	if _, _, err := f.Open(p9.ReadOnly); err != nil {
+		t.Fatalf("Open(f) = %v", err)
+	}
+
+	buf := make([]byte, 5)
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := f.ReadAt(buf, 0)
+		readDone <- err
+	}()
+	<-entered
+
+	renameDone := make(chan error, 1)
+	go func() {
+		renameDone <- root.RenameAt("a", root, "b")
+	}()
+	select {
+	case err := <-renameDone:
+		if err != nil {
+			t.Fatalf("RenameAt while ReadAt blocked = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RenameAt deadlocked behind blocked localfs ReadAt")
+	}
+
+	releaseOnce()
+	if err := <-readDone; err != nil {
+		t.Fatalf("ReadAt(f) = %v", err)
+	}
+	if string(buf) != "hello" {
+		t.Errorf("ReadAt(f) = %q, want %q", string(buf), "hello")
+	}
+}
+
+func TestPrepareOpenDoubleFinishAndDirTrunc(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "reg")
+	if err := os.WriteFile(reg, []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(dir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	_, f, err := root.Walk([]string{"reg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	finish, err := f.(*Local).PrepareOpen(p9.WriteOnly | p9.OpenFlags(os.O_TRUNC))
+	if err != nil {
+		t.Fatalf("PrepareOpen = %v", err)
+	}
+	if _, _, err := finish(); err != nil {
+		t.Fatalf("first finish = %v", err)
+	}
+	if _, _, err := finish(); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("second finish = %v, want EINVAL", err)
+	}
+	got, err := os.ReadFile(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("after O_TRUNC content = %q, want empty", string(got))
+	}
+
+	_, sub, err := root.Walk([]string{"sub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	if _, _, err := sub.Open(p9.ReadOnly | p9.OpenFlags(os.O_TRUNC)); linux.ExtractErrno(err) != linux.EISDIR {
+		t.Errorf("Open(dir, ReadOnly|O_TRUNC) = %v, want EISDIR", err)
 	}
 }

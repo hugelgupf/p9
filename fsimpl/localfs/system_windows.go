@@ -176,16 +176,20 @@ func checkPathInRoot(r *os.Root, rel string, mode pathCheck) error {
 	return nil
 }
 
-func (l *Local) openCheckedRoot(mode pathCheck) (*os.Root, error) {
-	r, err := l.root.openRoot()
+func openCheckedRootRel(root *rootDir, rel string, mode pathCheck) (*os.Root, error) {
+	r, err := root.openRoot()
 	if err != nil {
 		return nil, err
 	}
-	if err := checkPathInRoot(r, l.rel, mode); err != nil {
+	if err := checkPathInRoot(r, rel, mode); err != nil {
 		_ = r.Close()
 		return nil, err
 	}
 	return r, nil
+}
+
+func (l *Local) openCheckedRoot(mode pathCheck) (*os.Root, error) {
+	return openCheckedRootRel(l.root, l.rel, mode)
 }
 
 // fileIdentityAt reads the NTFS/ReFS (volume serial, file index) identity for
@@ -314,12 +318,12 @@ func openFileQID(f *os.File) (p9.QID, error) {
 }
 
 func (l *Local) getAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	if l.file != nil {
-		fi, err := l.file.Stat()
+	if h := l.open.Load(); h != nil {
+		fi, err := h.file.Stat()
 		if err != nil {
 			return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
 		}
-		qid, err := qidFromOpenFile(l.file, fi)
+		qid, err := qidFromOpenFile(h.file, fi)
 		if err != nil {
 			return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
 		}
@@ -375,34 +379,84 @@ func (l *Local) walk(names []string) ([]p9.QID, p9.File, error) {
 	return qids, l.child(rel, nil, 0), nil
 }
 
-func (l *Local) open(mode p9.OpenFlags) (_ p9.QID, _ uint32, err error) {
+func (l *Local) prepareOpen(mode p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
 	flags, err := filterOpenFlags(mode, windowsAllowedOpenFlags)
 	if err != nil {
-		return p9.QID{}, 0, err
+		return nil, err
 	}
 	r, err := l.openCheckedRoot(checkTarget)
 	if err != nil {
-		return p9.QID{}, 0, err
+		return nil, err
 	}
 	defer r.Close()
 
-	f, err := r.OpenFile(relOrDot(l.rel), flags, 0)
+	rel := l.rel
+	target := relOrDot(rel)
+	fi, err := r.Lstat(target)
 	if err != nil {
-		return p9.QID{}, 0, err
+		return nil, err
 	}
-	defer func() {
-		if err != nil {
-			_ = f.Close()
-		}
-	}()
+	wantID, err := identityInRoot(r, rel)
+	if err != nil {
+		return nil, err
+	}
+	wantType := fi.Mode().Type()
 
-	qid, err := openFileQID(f)
-	if err != nil {
-		return p9.QID{}, 0, err
-	}
-	l.file = f
-	l.mode = mode
-	return qid, 0, nil
+	return func() (_ p9.QID, _ uint32, err error) {
+		r, err := openCheckedRootRel(l.root, rel, checkTarget)
+		if err != nil {
+			return p9.QID{}, 0, err
+		}
+		defer r.Close()
+
+		f, err := r.OpenFile(target, flags&^os.O_TRUNC, 0)
+		if err != nil {
+			return p9.QID{}, 0, err
+		}
+		defer func() {
+			if err != nil && f != nil {
+				_ = f.Close()
+			}
+		}()
+
+		gotID, err := fileIdentity(f)
+		if err != nil {
+			return p9.QID{}, 0, err
+		}
+		gotFI, err := f.Stat()
+		if err != nil {
+			return p9.QID{}, 0, err
+		}
+		if gotID != wantID || gotFI.Mode().Type() != wantType {
+			return p9.QID{}, 0, linux.ESTALE
+		}
+
+		if flags&os.O_TRUNC != 0 {
+			if gotFI.Mode().IsDir() {
+				return p9.QID{}, 0, linux.EISDIR
+			}
+			if gotFI.Mode().IsRegular() {
+				// os.Root.OpenFile omits FILE_WRITE_DATA for
+				// O_APPEND without O_TRUNC (stripped above),
+				// so fall back to truncateInRoot.
+				if mode.Mode() != p9.ReadOnly && int(mode)&os.O_APPEND == 0 {
+					err = f.Truncate(0)
+				} else {
+					err = truncateInRoot(r, target, f, 0)
+				}
+				if err != nil {
+					return p9.QID{}, 0, err
+				}
+			}
+		}
+
+		opened := f
+		f = nil
+		if err = l.setOpenHandle(opened, mode); err != nil {
+			return p9.QID{}, 0, err
+		}
+		return makeQID(gotFI.Mode(), gotID.fileIndex), 0, nil
+	}, nil
 }
 
 func (l *Local) create(name string, mode p9.OpenFlags, permissions p9.FileMode) (_ p9.File, _ p9.QID, _ uint32, err error) {
@@ -518,6 +572,11 @@ func truncateInRoot(root *os.Root, target string, openFile *os.File, size int64)
 }
 
 func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
+	h := l.open.Load()
+	var openFile *os.File
+	if h != nil {
+		openFile = h.file
+	}
 	var r *os.Root
 	defer func() {
 		if r != nil {
@@ -532,8 +591,8 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 				return nil, err
 			}
 		}
-		if l.file != nil {
-			if err := verifyRootTargetMatchesFile(r, l.rel, l.file); err != nil {
+		if openFile != nil {
+			if err := verifyRootTargetMatchesFile(r, l.rel, openFile); err != nil {
 				return nil, err
 			}
 		}
@@ -549,8 +608,8 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		// Go's os.Root.OpenFile omits FILE_WRITE_DATA for O_APPEND
 		// without O_TRUNC, so O_APPEND fids take the verified reopen
 		// path to avoid ERROR_ACCESS_DENIED on Truncate.
-		if l.file != nil && l.mode.Mode() != p9.ReadOnly && int(l.mode)&os.O_APPEND == 0 {
-			if err := l.file.Truncate(int64(attr.Size)); err != nil {
+		if h != nil && h.mode.Mode() != p9.ReadOnly && int(h.mode)&os.O_APPEND == 0 {
+			if err := h.file.Truncate(int64(attr.Size)); err != nil {
 				return err
 			}
 		} else {
@@ -558,7 +617,7 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 			if err != nil {
 				return err
 			}
-			if err := truncateInRoot(root, target, l.file, int64(attr.Size)); err != nil {
+			if err := truncateInRoot(root, target, openFile, int64(attr.Size)); err != nil {
 				return err
 			}
 		}
@@ -635,8 +694,8 @@ func (l *Local) readDir(offset uint64, count uint32) (p9.Dirents, error) {
 	}
 	defer f.Close()
 
-	if l.file != nil {
-		if err := verifySameFile(f, l.file); err != nil {
+	if h := l.open.Load(); h != nil {
+		if err := verifySameFile(f, h.file); err != nil {
 			return nil, err
 		}
 	}

@@ -220,3 +220,102 @@ func TestWithPinnedAtProcAbsentFallback(t *testing.T) {
 		t.Errorf("withPinnedAt(pipe) = %v, want EOPNOTSUPP", err)
 	}
 }
+
+func TestPrepareOpenProcAbsentFallback(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "reg")
+	if err := os.WriteFile(reg, []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other"), []byte("other"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(dir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	absentProc := func(int) string {
+		return filepath.Join(dir, "nonexistent-proc-fd")
+	}
+
+	// Normal open succeeds through the /proc-absent fallback.
+	_, f1, err := root.Walk([]string{"reg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f1.Close()
+	finish, err := f1.(*Local).prepareOpenWithProc(p9.ReadOnly, absentProc)
+	if err != nil {
+		t.Fatalf("prepareOpenWithProc(reg) = %v", err)
+	}
+	if _, _, err := finish(); err != nil {
+		t.Fatalf("finish(reg) = %v", err)
+	}
+
+	// Replacing the target with another file before finish must fail with
+	// ESTALE without applying O_TRUNC to the replacement file.
+	_, f2, err := root.Walk([]string{"reg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f2.Close()
+	finish2, err := f2.(*Local).prepareOpenWithProc(p9.WriteOnly|p9.OpenFlags(os.O_TRUNC), absentProc)
+	if err != nil {
+		t.Fatalf("prepareOpenWithProc(reg2) = %v", err)
+	}
+	if err := os.Rename(filepath.Join(dir, "other"), reg); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := finish2(); !errors.Is(err, unix.ESTALE) {
+		t.Errorf("finish(replaced) = %v, want ESTALE", err)
+	}
+	got, err := os.ReadFile(reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "other" {
+		t.Errorf("replacement file modified by O_TRUNC: got %q, want %q", string(got), "other")
+	}
+
+	// Replacing a regular file with a peerless FIFO before finish must fail
+	// promptly with ESTALE instead of blocking in open(2).
+	_, f3, err := root.Walk([]string{"reg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f3.Close()
+	finish3, err := f3.(*Local).prepareOpenWithProc(p9.ReadOnly, absentProc)
+	if err != nil {
+		t.Fatalf("prepareOpenWithProc(reg3) = %v", err)
+	}
+	if err := os.Remove(reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(reg, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := finish3(); !errors.Is(err, unix.ESTALE) {
+		t.Errorf("finish(replaced by FIFO) = %v, want ESTALE", err)
+	}
+
+	// Opening a directory with ReadOnly|O_TRUNC via the /proc-absent
+	// fallback must fail with EISDIR.
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	_, f4, err := root.Walk([]string{"sub"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f4.Close()
+	finish4, err := f4.(*Local).prepareOpenWithProc(p9.ReadOnly|p9.OpenFlags(os.O_TRUNC), absentProc)
+	if err != nil {
+		t.Fatalf("prepareOpenWithProc(sub) = %v", err)
+	}
+	if _, _, err := finish4(); !errors.Is(err, unix.EISDIR) {
+		t.Errorf("finish(dir, ReadOnly|O_TRUNC) = %v, want EISDIR", err)
+	}
+}

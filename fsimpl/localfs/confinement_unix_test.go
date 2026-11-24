@@ -127,8 +127,9 @@ func TestReadOnlyOpenSetAttrNoSplitBrain(t *testing.T) {
 
 	// Path-verification fallback and truncateAtNoFollow with want must
 	// reject the mismatched replacement inode with ESTALE.
+	openFile := f.(*Local).open.Load().file
 	var openSt unix.Stat_t
-	if err := withFileFD(f.(*Local).file, func(fd int) error {
+	if err := withFileFD(openFile, func(fd int) error {
 		return fstat(fd, &openSt)
 	}); err != nil {
 		t.Fatal(err)
@@ -137,7 +138,7 @@ func TestReadOnlyOpenSetAttrNoSplitBrain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = verifyTargetMatchesFile(f.(*Local).file, dirFD, "target")
+	err = verifyTargetMatchesFile(openFile, dirFD, "target")
 	truncErr := truncateAtNoFollow(dirFD, "target", 0, &openSt)
 	release()
 	if !errors.Is(err, unix.ESTALE) {
@@ -256,6 +257,94 @@ func TestFIFOOperations(t *testing.T) {
 	}
 	if err := <-wrDone; err != nil {
 		t.Fatalf("Open(FIFO, O_WRONLY) with reader = %v", err)
+	}
+}
+
+// TestServerFIFOOpenDoesNotStallRename checks end-to-end with p9.Server and
+// p9.Client that a blocking FIFO Open(ReadOnly) does not stall concurrent
+// RenameAt or the peer Open(WriteOnly) needed to unblock it.
+func TestServerFIFOOpenDoesNotStallRename(t *testing.T) {
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "pipe")
+	if err := unix.Mkfifo(fifoPath, 0644); err != nil {
+		t.Fatalf("Mkfifo = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a"), []byte("hi"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := serveLocalFS(t, dir)
+	_, fifoRD, err := root.Walk([]string{"pipe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fifoRD.Close()
+	_, fifoWR, err := root.Walk([]string{"pipe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fifoWR.Close()
+
+	// Start blocking Open(ReadOnly) on the FIFO.
+	rdDone := make(chan error, 1)
+	go func() {
+		_, _, err := fifoRD.Open(p9.ReadOnly)
+		rdDone <- err
+	}()
+	// Ensure a blocked server Open(ReadOnly) unblocks before serveLocalFS
+	// waits for handlers to finish if the test fails early.
+	rdWaited := false
+	defer func() {
+		if rdWaited {
+			return
+		}
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.After(5 * time.Second)
+		for {
+			if w, err := os.OpenFile(fifoPath, os.O_WRONLY|unix.O_NONBLOCK, 0); err == nil {
+				_ = w.Close()
+			}
+			select {
+			case <-rdDone:
+				return
+			case <-deadline:
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	// Give the server time to enter the blocking open(2) call.
+	time.Sleep(50 * time.Millisecond)
+
+	// RenameAt takes renameMu.Lock(); it would deadlock until fifoRD
+	// returns if Tlopen still held renameMu.RLock() across open(2).
+	renameDone := make(chan error, 1)
+	go func() {
+		renameDone <- root.RenameAt("a", root, "b")
+	}()
+	select {
+	case err := <-renameDone:
+		if err != nil {
+			t.Fatalf("RenameAt while FIFO Open blocked = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("RenameAt deadlocked behind blocked FIFO Open")
+	}
+
+	// Now open the write end over the same 9P connection; both must finish.
+	if _, _, err := fifoWR.Open(p9.WriteOnly); err != nil {
+		t.Fatalf("Open(FIFO, O_WRONLY) = %v", err)
+	}
+	select {
+	case err := <-rdDone:
+		rdWaited = true
+		if err != nil {
+			t.Fatalf("Open(FIFO, O_RDONLY) = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open(FIFO, O_RDONLY) did not unblock after peer opened")
 	}
 }
 

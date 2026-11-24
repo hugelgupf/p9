@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync/atomic"
 
+	"github.com/hugelgupf/p9/p9"
 	"golang.org/x/sys/unix"
 )
 
@@ -155,4 +156,81 @@ func futimesNano(f *os.File, ts *[2]unix.Timespec) error {
 			return unix.UtimesNanoAt(unix.AT_FDCWD, procFDPath(fd), ts[:], 0)
 		})
 	})
+}
+
+func (l *Local) prepareOpen(mode p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+	return l.prepareOpenWithProc(mode, procFDPath)
+}
+
+func (l *Local) prepareOpenWithProc(mode p9.OpenFlags, procPath func(int) string) (func() (p9.QID, uint32, error), error) {
+	flags, err := filterOpenFlags(mode, unixAllowedOpenFlags)
+	if err != nil {
+		return nil, err
+	}
+	dirFD, release, name, err := l.openTarget()
+	if err != nil {
+		return nil, err
+	}
+	releaseDir := true
+	defer func() {
+		if releaseDir {
+			release()
+		}
+	}()
+	displayName := l.displayName()
+
+	// Pin the target inode with O_PATH|O_NOFOLLOW under the server's read
+	// locks so finish can open /proc/self/fd/<pinFD> after dropping them.
+	pinFD, err := openAt(dirFD, name, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	closePin := true
+	defer func() {
+		if closePin {
+			_ = unix.Close(pinFD)
+		}
+	}()
+
+	var st unix.Stat_t
+	if err := fstat(pinFD, &st); err != nil {
+		return nil, err
+	}
+	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
+		return nil, unix.ELOOP
+	}
+
+	// Probe /proc/self/fd via stat (never blocks, even on FIFOs). If it is
+	// usable and resolves to the same inode, release dirFD now so finish
+	// needs only pinFD. Do not pass O_NOFOLLOW when opening
+	// /proc/self/fd/<pinFD>, as procfs presents it as a magic symlink
+	// (symlinks were already rejected above).
+	procTarget := procPath(pinFD)
+	var pst unix.Stat_t
+	procErr := ignoringEINTR(func() error {
+		return unix.Stat(procTarget, &pst)
+	})
+	if procErr == nil && sameInode(&pst, &st) {
+		closePin = false
+		return func() (p9.QID, uint32, error) {
+			defer unix.Close(pinFD)
+			fd, err := openAt(unix.AT_FDCWD, procTarget, flags|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+			if err != nil {
+				return p9.QID{}, 0, err
+			}
+			f := os.NewFile(uintptr(fd), displayName)
+			if err := l.setOpenHandle(f, mode); err != nil {
+				return p9.QID{}, 0, err
+			}
+			return statToQID(&st), 0, nil
+		}, nil
+	}
+
+	// /proc is absent or inaccessible; keep (dirFD, release, name, st) to
+	// open with O_NOFOLLOW and inode verification in finish.
+	releaseDir = false
+	return func() (p9.QID, uint32, error) {
+		defer release()
+		return l.openVerifiedTarget(dirFD, name, flags, mode, displayName, &st)
+	}, nil
 }

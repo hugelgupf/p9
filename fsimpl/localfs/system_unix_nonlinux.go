@@ -5,6 +5,7 @@ package localfs
 import (
 	"os"
 
+	"github.com/hugelgupf/p9/p9"
 	"golang.org/x/sys/unix"
 )
 
@@ -48,4 +49,34 @@ func ftruncateReadOnly(_ *os.File, _ int64) error {
 
 func futimesNano(_ *os.File, _ *[2]unix.Timespec) error {
 	return unix.ENOSYS
+}
+
+func (l *Local) prepareOpen(mode p9.OpenFlags) (_ func() (p9.QID, uint32, error), err error) {
+	flags, err := filterOpenFlags(mode, unixAllowedOpenFlags)
+	if err != nil {
+		return nil, err
+	}
+	dirFD, release, name, err := l.openTarget()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			release()
+		}
+	}()
+	displayName := l.displayName()
+
+	var st unix.Stat_t
+	if err = fstatAt(dirFD, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return nil, err
+	}
+	if st.Mode&unix.S_IFMT == unix.S_IFLNK {
+		return nil, unix.ELOOP
+	}
+
+	return func() (p9.QID, uint32, error) {
+		defer release()
+		return l.openVerifiedTarget(dirFD, name, flags, mode, displayName, &st)
+	}, nil
 }

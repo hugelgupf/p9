@@ -60,6 +60,11 @@ func (a *attacher) Attach() (p9.File, error) {
 	return &Local{root: r}, nil
 }
 
+type openHandle struct {
+	file *os.File
+	mode p9.OpenFlags
+}
+
 // Local is a p9.File.
 type Local struct {
 	p9.DefaultWalkGetAttr
@@ -67,23 +72,26 @@ type Local struct {
 
 	root   *rootDir
 	rel    string
-	file   *os.File
-	mode   p9.OpenFlags
+	open   atomic.Pointer[openHandle]
 	closed atomic.Bool
 }
 
 var (
-	_ p9.File = &Local{}
+	_ p9.File         = &Local{}
+	_ p9.OpenPreparer = &Local{}
+	_ p9.UnlockedIO   = &Local{}
 )
 
 func (l *Local) child(rel string, file *os.File, mode p9.OpenFlags) *Local {
 	l.root.acquireFID()
-	return &Local{
+	c := &Local{
 		root: l.root,
 		rel:  rel,
-		file: file,
-		mode: mode,
 	}
+	if file != nil {
+		c.open.Store(&openHandle{file: file, mode: mode})
+	}
+	return c
 }
 
 // validateName ensures name is a single safe path component: non-empty, not
@@ -215,9 +223,39 @@ func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	return l.walk(names)
 }
 
+// UnlockedIO implements p9.UnlockedIO.
+func (*Local) UnlockedIO() bool { return true }
+
+// PrepareOpen implements p9.OpenPreparer.
+func (l *Local) PrepareOpen(mode p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+	finish, err := l.prepareOpen(mode)
+	if err != nil {
+		return nil, err
+	}
+	var called atomic.Bool
+	return func() (p9.QID, uint32, error) {
+		if !called.CompareAndSwap(false, true) {
+			return p9.QID{}, 0, linux.EINVAL
+		}
+		return finish()
+	}, nil
+}
+
+func (l *Local) setOpenHandle(f *os.File, mode p9.OpenFlags) error {
+	if !l.open.CompareAndSwap(nil, &openHandle{file: f, mode: mode}) {
+		_ = f.Close()
+		return linux.EINVAL
+	}
+	return nil
+}
+
 // FSync implements p9.File.FSync.
 func (l *Local) FSync() error {
-	return l.file.Sync()
+	h := l.open.Load()
+	if h == nil {
+		return linux.EBADF
+	}
+	return h.file.Sync()
 }
 
 // GetAttr implements p9.File.GetAttr.
@@ -230,11 +268,8 @@ func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
 // Close implements p9.File.Close.
 func (l *Local) Close() error {
 	var err error
-	if l.file != nil {
-		// We don't set l.file = nil, as Close is called by servers
-		// only in Clunk. Clunk should release the last (direct)
-		// reference to this file.
-		err = l.file.Close()
+	if h := l.open.Swap(nil); h != nil {
+		err = h.file.Close()
 	}
 	if l.root != nil && l.closed.CompareAndSwap(false, true) {
 		l.root.releaseFID()
@@ -244,12 +279,20 @@ func (l *Local) Close() error {
 
 // Open implements p9.File.Open.
 func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	return l.open(mode)
+	finish, err := l.prepareOpen(mode)
+	if err != nil {
+		return p9.QID{}, 0, err
+	}
+	return finish()
 }
 
 // ReadAt implements p9.File.ReadAt.
 func (l *Local) ReadAt(p []byte, offset int64) (int, error) {
-	return l.file.ReadAt(p, offset)
+	h := l.open.Load()
+	if h == nil {
+		return 0, linux.EBADF
+	}
+	return h.file.ReadAt(p, offset)
 }
 
 // Lock implements p9.File.Lock.
@@ -259,12 +302,16 @@ func (l *Local) Lock(pid int, locktype p9.LockType, flags p9.LockFlags, start, l
 
 // WriteAt implements p9.File.WriteAt.
 func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
+	h := l.open.Load()
+	if h == nil {
+		return 0, linux.EBADF
+	}
 	// Go's (*os.File).WriteAt unconditionally returns an unexported error
 	// when the file was opened with os.O_APPEND.
-	if int(l.mode)&os.O_APPEND != 0 {
-		return l.file.Write(p)
+	if int(h.mode)&os.O_APPEND != 0 {
+		return h.file.Write(p)
 	}
-	return l.file.WriteAt(p, offset)
+	return h.file.WriteAt(p, offset)
 }
 
 // Create implements p9.File.Create.
