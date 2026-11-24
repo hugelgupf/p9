@@ -166,3 +166,57 @@ func TestWalkThroughExecuteOnlyDir(t *testing.T) {
 		t.Fatalf("Open through 0111 dir = %v", err)
 	}
 }
+
+func TestWithPinnedAtProcAbsentFallback(t *testing.T) {
+	dir := t.TempDir()
+	reg := filepath.Join(dir, "reg")
+	if err := os.WriteFile(reg, []byte("ok"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("reg", filepath.Join(dir, "sym")); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(filepath.Join(dir, "pipe"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := Attacher(dir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	dirFD, release, err := root.(*Local).openDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	noProc := func(string) error { return unix.ENOENT }
+
+	// Regular file must invoke fdFn with a valid fd.
+	called := false
+	if err := withPinnedAt(dirFD, "reg", noProc, func(fd int) error {
+		called = true
+		var st unix.Stat_t
+		return fstat(fd, &st)
+	}); err != nil || !called {
+		t.Errorf("withPinnedAt(reg) = (%v, called=%v), want (nil, true)", err, called)
+	}
+
+	// Symlink must fail with ELOOP without invoking fdFn.
+	if err := withPinnedAt(dirFD, "sym", noProc, func(int) error {
+		t.Error("fdFn invoked for symlink")
+		return nil
+	}); !errors.Is(err, unix.ELOOP) {
+		t.Errorf("withPinnedAt(sym) = %v, want ELOOP", err)
+	}
+
+	// FIFO must fail with EOPNOTSUPP without blocking or invoking fdFn.
+	if err := withPinnedAt(dirFD, "pipe", noProc, func(int) error {
+		t.Error("fdFn invoked for FIFO")
+		return nil
+	}); !errors.Is(err, unix.EOPNOTSUPP) {
+		t.Errorf("withPinnedAt(pipe) = %v, want EOPNOTSUPP", err)
+	}
+}
