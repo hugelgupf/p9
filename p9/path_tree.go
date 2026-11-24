@@ -23,13 +23,16 @@ import (
 //
 // These are shared by all fidRefs that point to the same path.
 //
-// Lock ordering:
+// Lock ordering (see the server lock hierarchy comment in server.go):
 //
-//	opMu
-//	  childMu
+//	Server.renameMu -> pathNode.opMu -> connState.fidMu -> pathNode.childMu
 //
-//	Two different pathNodes may only be locked if Server.renameMu is held for
-//	write, in which case they can be acquired in any order.
+// The same lock (opMu or childMu) on two different pathNodes may only be
+// acquired if Server.renameMu is held for write (in which case they can be
+// acquired in any order), except Tunlinkat, which under renameMu.RLock
+// acquires parent opMu then child opMu (parent-to-child) and, via
+// notifyDelete, parent-to-child childMu.RLock. Cross-level opMu -> fidMu
+// -> childMu (e.g. Txattrwalk) follows the global order.
 type pathNode struct {
 	// opMu synchronizes high-level, sematic operations, such as the
 	// simultaneous creation and deletion of a file.

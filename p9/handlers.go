@@ -137,6 +137,11 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 
 	if err := ref.safelyRead(func() error {
 		if ref.pendingXattr.op == xattrCreate {
+			// As in Txattrcreate, don't set or remove attributes on
+			// deleted files: the backing path may have been reused.
+			if ref.isDeleted() {
+				return linux.EINVAL
+			}
 			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
 				return linux.EINVAL
 			}
@@ -313,6 +318,11 @@ func (t *tlopen) handle(cs *connState) message {
 		ioUnit uint32
 	)
 	if err := ref.safelyRead(func() (err error) {
+		// Hold openedMu across Open, so that Open is never called
+		// concurrently on this fid, nor again after it succeeds.
+		ref.openedMu.Lock()
+		defer ref.openedMu.Unlock()
+
 		// Has it been deleted already?
 		if ref.isDeleted() {
 			return linux.EINVAL
@@ -330,14 +340,17 @@ func (t *tlopen) handle(cs *connState) message {
 
 		// Do the open.
 		qid, ioUnit, err = ref.file.Open(t.Flags)
-		return err
+		if err != nil {
+			return err
+		}
+
+		// Mark file as opened and set open mode.
+		ref.opened = true
+		ref.openFlags = t.Flags
+		return nil
 	}); err != nil {
 		return newErr(err)
 	}
-
-	// Mark file as opened and set open mode.
-	ref.opened = true
-	ref.openFlags = t.Flags
 
 	return &rlopen{QID: qid, IoUnit: ioUnit}
 }
@@ -368,7 +381,7 @@ func (t *tlcreate) do(cs *connState, uid UID) (*rlcreate, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -439,7 +452,7 @@ func (t *tsymlink) do(cs *connState, uid UID) (*rsymlink, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -474,15 +487,31 @@ func (t *tlink) handle(cs *connState) message {
 	}
 	defer refTarget.DecRef()
 
-	if err := ref.safelyWrite(func() (err error) {
+	// Hold the global lock: the target and the directory are different
+	// path nodes, and the target must not be unlinked (and its path
+	// reused) between the deleted check and the link.
+	if err := ref.safelyGlobal(func() error {
 		// Don't allow create links from non-directories or deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
 			return linux.EINVAL
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
+		}
+
+		// Don't link deleted files, whose paths may have been reused,
+		// or Txattrwalk fids, which are not in the path tree and so
+		// are not updated on renames. Nor does a fid with a pending
+		// Txattrcreate make sense as a target.
+		if refTarget.isDeleted() || refTarget.pendingXattr.op != xattrNone {
+			return linux.EINVAL
+		}
+
+		// Hard links to directories are not allowed, as in link(2).
+		if refTarget.mode.IsDir() {
+			return linux.EPERM
 		}
 
 		// Do the link.
@@ -526,7 +555,7 @@ func (t *trenameat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -571,7 +600,7 @@ func (t *tunlinkat) handle(cs *connState) message {
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -718,12 +747,13 @@ func (t *tread) handle(cs *connState) message {
 		switch ref.pendingXattr.op {
 		case xattrNone:
 			// Has it been opened already?
-			if !ref.opened {
+			opened, openFlags := ref.openState()
+			if !opened {
 				return linux.EINVAL
 			}
 
 			// Can it be read? Check permissions.
-			if ref.openFlags&OpenFlagsModeMask == WriteOnly {
+			if openFlags&OpenFlagsModeMask == WriteOnly {
 				return linux.EPERM
 			}
 
@@ -782,12 +812,13 @@ func (t *twrite) handle(cs *connState) message {
 		switch ref.pendingXattr.op {
 		case xattrNone:
 			// Has it been opened already?
-			if !ref.opened {
+			opened, openFlags := ref.openState()
+			if !opened {
 				return linux.EINVAL
 			}
 
 			// Can it be written? Check permissions.
-			if ref.openFlags&OpenFlagsModeMask == ReadOnly {
+			if openFlags&OpenFlagsModeMask == ReadOnly {
 				return linux.EPERM
 			}
 
@@ -844,7 +875,7 @@ func (t *tmknod) do(cs *connState, uid UID) (*rmknod, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -888,7 +919,7 @@ func (t *tmkdir) do(cs *connState, uid UID) (*rmkdir, error) {
 		}
 
 		// Not allowed on open directories.
-		if ref.opened {
+		if ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -1055,7 +1086,7 @@ func (t *treaddir) handle(cs *connState) message {
 		}
 
 		// Has it been opened already?
-		if !ref.opened {
+		if !ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -1083,7 +1114,7 @@ func (t *tfsync) handle(cs *connState) message {
 
 	if err := ref.safelyRead(func() (err error) {
 		// Has it been opened already?
-		if !ref.opened {
+		if !ref.isOpened() {
 			return linux.EINVAL
 		}
 
@@ -1217,7 +1248,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 	// validate anything since this is always permitted.
 	if len(names) == 0 {
 		var sf File // Temporary.
-		if err := ref.maybeParent().safelyRead(func() (err error) {
+		if err := ref.safelyReadParent(func() (err error) {
 			// Clone the single element.
 			qids, sf, valid, attr, err = walkOne(nil, ref.file, nil, getattr)
 			if err != nil {
@@ -1318,12 +1349,20 @@ func (t *twalk) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	if err := ref.safelyRead(func() error {
+		// Don't walk from (or clone) a fid with a pending xattr
+		// operation. Txattrwalk fids are not in the path tree, so
+		// their File is never told about renames, and a fid with a
+		// pending Txattrcreate is not a file to walk from.
+		if ref.pendingXattr.op != xattrNone {
+			return linux.EINVAL
+		}
+
 		// Has it been opened already?
 		//
 		// That as OK as long as newFID is different. Note this
 		// violates the spec, but the Linux client does too, so we have
 		// little choice.
-		if ref.opened && t.fid == t.newFID {
+		if t.fid == t.newFID && ref.isOpened() {
 			return linux.EBUSY
 		}
 		return nil
@@ -1354,12 +1393,20 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	if err := ref.safelyRead(func() error {
+		// Don't walk from (or clone) a fid with a pending xattr
+		// operation. Txattrwalk fids are not in the path tree, so
+		// their File is never told about renames, and a fid with a
+		// pending Txattrcreate is not a file to walk from.
+		if ref.pendingXattr.op != xattrNone {
+			return linux.EINVAL
+		}
+
 		// Has it been opened already?
 		//
 		// That as OK as long as newFID is different. Note this
 		// violates the spec, but the Linux client does too, so we have
 		// little choice.
-		if ref.opened && t.fid == t.newFID {
+		if t.fid == t.newFID && ref.isOpened() {
 			return linux.EBUSY
 		}
 		return nil

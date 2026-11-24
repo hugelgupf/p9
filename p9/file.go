@@ -52,6 +52,15 @@ type Attacher interface {
 //
 // global: The method is guaranteed to be exclusive of any read, write or
 // global operation.
+//
+// The server implements the read, write and global guarantees with a
+// server-wide lock, which read and write methods hold for reading and global
+// methods hold for writing. So if such a method blocks indefinitely (e.g.
+// Open, ReadAt or WriteAt on a FIFO with no peer), every global operation
+// waits for it, and since a waiting global operation blocks new readers, so
+// does every other read, write or global operation on the server.
+// Implementations should not block indefinitely in methods with a read, write
+// or global guarantee.
 type File interface {
 	// Walk walks to the path components given in names.
 	//
@@ -204,7 +213,7 @@ type File interface {
 
 	// Link makes a new hard link.
 	//
-	// On the server, Link has a write concurrency guarantee.
+	// On the server, Link has a global concurrency guarantee.
 	Link(target File, newName string) error
 
 	// Mknod makes a new device node.
