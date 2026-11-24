@@ -204,7 +204,7 @@ type File interface {
 
 	// Link makes a new hard link.
 	//
-	// On the server, Link has a write concurrency guarantee.
+	// On the server, Link has a global concurrency guarantee.
 	Link(target File, newName string) error
 
 	// Mknod makes a new device node.

@@ -482,7 +482,10 @@ func (t *tlink) handle(cs *connState) message {
 	}
 	defer refTarget.DecRef()
 
-	if err := ref.safelyWrite(func() (err error) {
+	// Hold the global lock: the target and the directory are different
+	// path nodes, and the target must not be unlinked (and its path
+	// reused) between the deleted check and the link.
+	if err := ref.safelyGlobal(func() error {
 		// Don't allow create links from non-directories or deleted directories.
 		if ref.isDeleted() || !ref.mode.IsDir() {
 			return linux.EINVAL
@@ -491,6 +494,19 @@ func (t *tlink) handle(cs *connState) message {
 		// Not allowed on open directories.
 		if ref.isOpened() {
 			return linux.EINVAL
+		}
+
+		// Don't link deleted files, whose paths may have been reused,
+		// or Txattrwalk fids, which are not in the path tree and so
+		// are not updated on renames. Nor does a fid with a pending
+		// Txattrcreate make sense as a target.
+		if refTarget.isDeleted() || refTarget.pendingXattr.op != xattrNone {
+			return linux.EINVAL
+		}
+
+		// Hard links to directories are not allowed, as in link(2).
+		if refTarget.mode.IsDir() {
+			return linux.EPERM
 		}
 
 		// Do the link.

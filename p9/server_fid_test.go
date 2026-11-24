@@ -46,6 +46,13 @@ type memFS struct {
 
 	// opens counts calls to Open.
 	opens atomic.Int32
+
+	// linkHook, if set, is called by every Link.
+	linkHook func()
+
+	// links and unlinks count calls to Link and UnlinkAt.
+	links   atomic.Int32
+	unlinks atomic.Int32
 }
 
 func newMemFS() *memFS {
@@ -108,6 +115,32 @@ func (f *memFile) Open(p9.OpenFlags) (p9.QID, uint32, error) {
 		}
 	}
 	return f.node.qid, 0, nil
+}
+
+func (f *memFile) Link(target p9.File, name string) error {
+	f.fs.links.Add(1)
+	if f.fs.linkHook != nil {
+		f.fs.linkHook()
+	}
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+	f.node.children[name] = target.(*memFile).node
+	return nil
+}
+
+func (f *memFile) UnlinkAt(name string, _ uint32) error {
+	f.fs.unlinks.Add(1)
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+	if _, ok := f.node.children[name]; !ok {
+		return linux.ENOENT
+	}
+	delete(f.node.children, name)
+	return nil
+}
+
+func (f *memFile) GetXattr(string) ([]byte, error) {
+	return []byte("v"), nil
 }
 
 // walk walks from f, failing the test on error. The new file is closed when
@@ -207,4 +240,98 @@ func TestTlopenRetryAfterFailedOpen(t *testing.T) {
 	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EINVAL) {
 		t.Fatalf("third Open: got = %v, want = EINVAL", err)
 	}
+}
+
+// TestTlinkRejectsDeletedTarget checks that Tlink does not pass a fid whose
+// file has been unlinked to File.Link. For a path-based backend, the stale
+// path may since have been replaced, e.g. by a symlink out of the export.
+func TestTlinkRejectsDeletedTarget(t *testing.T) {
+	fs := newMemFS()
+	d := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(d, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	dir := walk(t, root, "d")
+	target := walk(t, dir, "f")
+
+	if err := dir.UnlinkAt("f", 0); err != nil {
+		t.Fatalf("UnlinkAt(f): got = %v, want = nil", err)
+	}
+	if err := root.Link(target, "stolen"); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Link: got = %v, want = EINVAL", err)
+	}
+	if got := fs.links.Load(); got != 0 {
+		t.Errorf("File.Link calls: got = %d, want = 0", got)
+	}
+}
+
+// TestTlinkRejectsDirectoryTarget checks that Tlink refuses to hard link a
+// directory, as link(2) does.
+func TestTlinkRejectsDirectoryTarget(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+
+	if err := root.Link(walk(t, root, "d"), "d2"); !errors.Is(err, linux.EPERM) {
+		t.Errorf("Link: got = %v, want = EPERM", err)
+	}
+	if got := fs.links.Load(); got != 0 {
+		t.Errorf("File.Link calls: got = %d, want = 0", got)
+	}
+}
+
+// TestTlinkRejectsXattrTarget checks that Tlink refuses an xattr fid as its
+// target.
+func TestTlinkRejectsXattrTarget(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	x, err := p9.SendXattrWalk(walk(t, root, "f"), "user.x")
+	if err != nil {
+		t.Fatalf("SendXattrWalk: got = %v, want = nil", err)
+	}
+	t.Cleanup(func() { _ = x.Close() })
+
+	if err := root.Link(x, "stolen"); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Link: got = %v, want = EINVAL", err)
+	}
+	if got := fs.links.Load(); got != 0 {
+		t.Errorf("File.Link calls: got = %d, want = 0", got)
+	}
+}
+
+// TestTlinkExcludesUnlink checks that a Tunlinkat of the target cannot run
+// while Tlink is in File.Link, which would invalidate Tlink's deleted check.
+func TestTlinkExcludesUnlink(t *testing.T) {
+	fs := newMemFS()
+	d := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(d, "f", p9.ModeRegular|0o644)
+	inLink := make(chan struct{})
+	release := make(chan struct{})
+	fs.linkHook = func() {
+		close(inLink)
+		<-release
+	}
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	dir := walk(t, root, "d")
+	target := walk(t, dir, "f")
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if err := root.Link(target, "l"); err != nil {
+			t.Errorf("Link: got = %v, want = nil", err)
+		}
+	})
+	<-inLink
+	wg.Go(func() {
+		if err := dir.UnlinkAt("f", 0); err != nil {
+			t.Errorf("UnlinkAt: got = %v, want = nil", err)
+		}
+	})
+	// Give the Tunlinkat time to reach File.UnlinkAt, if it can.
+	time.Sleep(100 * time.Millisecond)
+	if got := fs.unlinks.Load(); got != 0 {
+		t.Errorf("File.UnlinkAt calls during File.Link: got = %d, want = 0", got)
+	}
+	close(release)
+	wg.Wait()
 }
