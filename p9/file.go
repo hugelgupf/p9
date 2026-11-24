@@ -59,8 +59,9 @@ type Attacher interface {
 // Open, ReadAt or WriteAt on a FIFO with no peer), every global operation
 // waits for it, and since a waiting global operation blocks new readers, so
 // does every other read, write or global operation on the server.
-// Implementations should not block indefinitely in methods with a read, write
-// or global guarantee.
+// Implementations that may block indefinitely (such as on FIFOs or remote
+// mounts) should implement OpenPreparer and UnlockedIO, and otherwise should
+// not block indefinitely in methods with a read, write or global guarantee.
 type File interface {
 	// Walk walks to the path components given in names.
 	//
@@ -113,7 +114,8 @@ type File interface {
 	// optional, and may be nil.
 	//
 	// On the server, Open has a read concurrency guarantee.  Open is
-	// guaranteed to be called only once.
+	// guaranteed to be called only once.  See OpenPreparer for splitting
+	// blocking opens out of the server's read locks.
 	//
 	// N.B. The server must resolve any lazy paths when open is called.
 	// After this point, read and write may be called on files with no
@@ -124,16 +126,18 @@ type File interface {
 	//
 	// This may return io.EOF in addition to linux.Errno values.
 	//
-	// On the server, ReadAt has a read concurrency guarantee. See Open for
-	// additional requirements regarding lazy path resolution.
+	// On the server, ReadAt has a read concurrency guarantee unless the
+	// File opts into UnlockedIO. See Open for additional requirements
+	// regarding lazy path resolution.
 	ReadAt(p []byte, offset int64) (int, error)
 
 	// WriteAt writes to this file. Open must be called first.
 	//
 	// This may return io.EOF in addition to linux.Errno values.
 	//
-	// On the server, WriteAt has a read concurrency guarantee. See Open
-	// for additional requirements regarding lazy path resolution.
+	// On the server, WriteAt has a read concurrency guarantee unless the
+	// File opts into UnlockedIO. See Open for additional requirements
+	// regarding lazy path resolution.
 	WriteAt(p []byte, offset int64) (int, error)
 
 	// SetXattr sets the extended attributes attr=data of the file.
@@ -153,7 +157,8 @@ type File interface {
 
 	// FSync syncs this node. Open must be called first.
 	//
-	// On the server, FSync has a read concurrency guarantee.
+	// On the server, FSync has a read concurrency guarantee unless the File
+	// opts into UnlockedIO.
 	FSync() error
 
 	// Lock locks the file. The operation as defined in 9P2000.L is fairly
@@ -282,6 +287,44 @@ type File interface {
 // implement it answers every Tgetlock with Unlock.
 type LockGetter interface {
 	GetLock(pid int, locktype LockType, start, length uint64, client string) (LockType, uint64, uint64, int, string, error)
+}
+
+// OpenPreparer is an optional interface implemented by Files that split
+// opening into a locked preparation step and an unlocked completion step so
+// a blocking open (e.g. on a FIFO) does not hold server-wide locks.
+//
+// When a File implements OpenPreparer, the server calls PrepareOpen instead of
+// Open. PrepareOpen is called with the read concurrency guarantee (and never
+// concurrently with another PrepareOpen on the same fid, nor after a prior
+// open succeeds). When PrepareOpen returns a nil error, it must return a
+// non-nil finish closure, which the server invokes exactly once after
+// releasing server-wide and path-node locks. If PrepareOpen returns
+// linux.ENOSYS, the server falls back to calling Open under its read
+// concurrency guarantee. Wrapper types that embed a concrete OpenPreparer and
+// override Open must also override PrepareOpen (returning linux.ENOSYS to opt
+// out).
+//
+// The finish closure has no concurrency guarantee: GetAttr, SetAttr, Renamed,
+// xattr calls, and Close (e.g. via Txattrwalk fid aliasing) may run
+// concurrently with it (though the server holds this fid's reference across
+// Tlopen), so implementations must synchronize their own state.
+type OpenPreparer interface {
+	PrepareOpen(mode OpenFlags) (finish func() (QID, uint32, error), err error)
+}
+
+// UnlockedIO is an optional interface implemented by Files whose ReadAt,
+// WriteAt and FSync methods are safe to invoke without holding server-wide or
+// path-node locks.
+//
+// When UnlockedIO() returns true, ReadAt, WriteAt, and FSync have no
+// concurrency guarantee once the fid is open (if the fid is not yet open,
+// Tread and Twrite still enter the read-locked path so xattr operations
+// remain serialized). Implementations must synchronize ReadAt, WriteAt, and
+// FSync against concurrent GetAttr, SetAttr, Renamed, UnlinkAt, Close, and
+// other calls. Wrapper types that embed a concrete File implementation may
+// return false to opt out.
+type UnlockedIO interface {
+	UnlockedIO() bool
 }
 
 // DefaultWalkGetAttr implements File.WalkGetAttr to return ENOSYS for server-side Files.

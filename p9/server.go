@@ -52,6 +52,9 @@ import (
 //     sync.RWMutex blocks new RLock callers while a Lock writer is waiting,
 //     holding renameMu.RLock across a blocking backend call stalls waiting
 //     global ops and every subsequent read, write, or global op on the server.
+//     Files implementing OpenPreparer and UnlockedIO avoid this by dropping
+//     renameMu and opMu before Tlopen's finish closure and skipping them
+//     for ReadAt, WriteAt, and FSync.
 //   - pathNode.opMu (RWMutex): serializes same-path operations (Tlcreate,
 //     Tsymlink, Tunlinkat, Tmknod, Tmkdir, Tsetattr, Txattrcreate write-lock;
 //     Tlopen, Treadlink, Tread, Twrite, Tgetattr, Txattrwalk, Treaddir, Tfsync,
@@ -74,8 +77,10 @@ import (
 //     childMus (via ref.parent.DecRef) and target.pathNode.childMu (via
 //     addChild/ref.DecRef).
 //   - fidRef.openedMu (Mutex): per-fid leaf lock protecting openState and
-//     openFlags. Held only for short state transitions and queries, never
-//     across File.Open or any other syscall.
+//     openFlags. Held only for short state transitions and queries (including
+//     directly by Tlopen's finishOpen/abortOpen after safelyRead, and by
+//     Tread, Twrite, and Tfsync on UnlockedIO files), never across
+//     File.Open, PrepareOpen, or any other syscall.
 //   - connState.tagMu, recvMu, sendMu (Mutex): protect active request tags,
 //     incoming frame reads and recvShutdown, and outgoing frame writes.
 

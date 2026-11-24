@@ -316,6 +316,7 @@ func (t *tlopen) handle(cs *connState) message {
 	var (
 		qid     QID
 		ioUnit  uint32
+		finish  func() (QID, uint32, error)
 		opening bool
 	)
 	defer func() {
@@ -334,21 +335,41 @@ func (t *tlopen) handle(cs *connState) message {
 		}
 		opening = true
 
+		if preparer, ok := ref.file.(OpenPreparer); ok {
+			var err error
+			finish, err = preparer.PrepareOpen(t.Flags)
+			if err == nil {
+				if finish == nil {
+					return linux.EINVAL
+				}
+				// Keep openState at openOpening until finish
+				// succeeds.
+				return nil
+			}
+			if !errors.Is(err, linux.ENOSYS) {
+				return err
+			}
+		}
+
 		// Do the open without holding openedMu, so concurrent checks on
 		// this fid see openOpening without blocking.
 		var err error
 		qid, ioUnit, err = ref.file.Open(t.Flags)
-		if err != nil {
-			return err
-		}
-
-		// Mark file as opened and set open mode.
-		ref.finishOpen(t.Flags)
-		opening = false
-		return nil
+		return err
 	}); err != nil {
 		return newErr(err)
 	}
+
+	if finish != nil {
+		var err error
+		qid, ioUnit, err = finish()
+		if err != nil {
+			return newErr(err)
+		}
+	}
+	// Mark file as opened and set open mode.
+	ref.finishOpen(t.Flags)
+	opening = false
 
 	return &rlopen{QID: qid, IoUnit: ioUnit}
 }
@@ -723,6 +744,11 @@ func (t *treadlink) handle(cs *connState) message {
 	return &rreadlink{target}
 }
 
+func usesUnlockedIO(f File) bool {
+	u, ok := f.(UnlockedIO)
+	return ok && u.UnlockedIO()
+}
+
 // handle implements handler.handle.
 func (t *tread) handle(cs *connState) message {
 	// Lookup the fid.
@@ -737,6 +763,28 @@ func (t *tread) handle(cs *connState) message {
 		return newErr(linux.ENOBUFS)
 	}
 
+	unlocked := usesUnlockedIO(ref.file)
+	if unlocked {
+		if openFlags, opened := ref.openInfo(); opened {
+			if openFlags&OpenFlagsModeMask == WriteOnly {
+				return newErr(linux.EPERM)
+			}
+			data := cs.readBufPool.Get().(*[]byte)
+			dataBuf := (*data)
+			n, err := ref.file.ReadAt(dataBuf[:t.Count], int64(t.Offset))
+			if err != nil && !errors.Is(err, io.EOF) {
+				return newErr(err)
+			}
+			return &rreadServerPayloader{
+				rread: rread{
+					Data: dataBuf[:n],
+				},
+				cs:         cs,
+				fullBuffer: dataBuf,
+			}
+		}
+	}
+
 	var n int
 	data := cs.readBufPool.Get().(*[]byte)
 	// Retain a reference to the full length of the buffer.
@@ -744,6 +792,13 @@ func (t *tread) handle(cs *connState) message {
 	if err := ref.safelyRead(func() (err error) {
 		switch ref.pendingXattr.op {
 		case xattrNone:
+			// UnlockedIO files must never run ReadAt under
+			// renameMu; if Tlopen finished racing with the fast
+			// path, reject with EINVAL rather than falling back.
+			if unlocked {
+				return linux.EINVAL
+			}
+
 			// Has it been opened already?
 			openFlags, opened := ref.openInfo()
 			if !opened {
@@ -805,10 +860,31 @@ func (t *twrite) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
+	unlocked := usesUnlockedIO(ref.file)
+	if unlocked {
+		if openFlags, opened := ref.openInfo(); opened {
+			if openFlags&OpenFlagsModeMask == ReadOnly {
+				return newErr(linux.EPERM)
+			}
+			n, err := ref.file.WriteAt(t.Data, int64(t.Offset))
+			if err != nil {
+				return newErr(err)
+			}
+			return &rwrite{Count: uint32(n)}
+		}
+	}
+
 	var n int
 	if err := ref.safelyRead(func() (err error) {
 		switch ref.pendingXattr.op {
 		case xattrNone:
+			// UnlockedIO files must never run WriteAt under
+			// renameMu; if Tlopen finished racing with the fast
+			// path, reject with EINVAL rather than falling back.
+			if unlocked {
+				return linux.EINVAL
+			}
+
 			// Has it been opened already?
 			openFlags, opened := ref.openInfo()
 			if !opened {
@@ -1110,15 +1186,20 @@ func (t *tfsync) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	if err := ref.safelyRead(func() (err error) {
-		// Has it been opened already?
+	fsync := func() error {
 		if !ref.isOpened() {
 			return linux.EINVAL
 		}
-
-		// Perform the sync.
 		return ref.file.FSync()
-	}); err != nil {
+	}
+
+	var err error
+	if usesUnlockedIO(ref.file) {
+		err = fsync()
+	} else {
+		err = ref.safelyRead(fsync)
+	}
+	if err != nil {
 		return newErr(err)
 	}
 
