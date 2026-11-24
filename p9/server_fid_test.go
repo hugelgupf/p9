@@ -368,3 +368,39 @@ func TestXattrCreateOnDeletedFile(t *testing.T) {
 		t.Errorf("File.SetXattr calls: got = %d, want = 0", got)
 	}
 }
+
+// TestWalkRejectsXattrFid checks that fids with a pending xattr operation
+// cannot be walked from or cloned.
+func TestWalkRejectsXattrFid(t *testing.T) {
+	fs := newMemFS()
+	d := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(d, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+
+	x, err := p9.SendXattrWalk(walk(t, root, "d"), "user.x")
+	if err != nil {
+		t.Fatalf("SendXattrWalk: got = %v, want = nil", err)
+	}
+	t.Cleanup(func() { _ = x.Close() })
+	created := walk(t, root, "d")
+	if err := p9.SendXattrCreate(created, "user.x", 1, 0); err != nil {
+		t.Fatalf("SendXattrCreate: got = %v, want = nil", err)
+	}
+
+	for _, tt := range []struct {
+		name string
+		f    p9.File
+	}{
+		{name: "xattrwalk", f: x},
+		{name: "xattrcreate", f: created},
+	} {
+		for _, names := range [][]string{nil, {"f"}} {
+			if _, _, err := tt.f.Walk(names); !errors.Is(err, linux.EINVAL) {
+				t.Errorf("%s: Walk(%q): got = %v, want = EINVAL", tt.name, names, err)
+			}
+			if _, _, _, _, err := tt.f.WalkGetAttr(names); !errors.Is(err, linux.EINVAL) {
+				t.Errorf("%s: WalkGetAttr(%q): got = %v, want = EINVAL", tt.name, names, err)
+			}
+		}
+	}
+}

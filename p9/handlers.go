@@ -1349,6 +1349,14 @@ func (t *twalk) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	if err := ref.safelyRead(func() error {
+		// Don't walk from (or clone) a fid with a pending xattr
+		// operation. Txattrwalk fids are not in the path tree, so
+		// their File is never told about renames, and a fid with a
+		// pending Txattrcreate is not a file to walk from.
+		if ref.pendingXattr.op != xattrNone {
+			return linux.EINVAL
+		}
+
 		// Has it been opened already?
 		//
 		// That as OK as long as newFID is different. Note this
@@ -1385,6 +1393,14 @@ func (t *twalkgetattr) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	if err := ref.safelyRead(func() error {
+		// Don't walk from (or clone) a fid with a pending xattr
+		// operation. Txattrwalk fids are not in the path tree, so
+		// their File is never told about renames, and a fid with a
+		// pending Txattrcreate is not a file to walk from.
+		if ref.pendingXattr.op != xattrNone {
+			return linux.EINVAL
+		}
+
 		// Has it been opened already?
 		//
 		// That as OK as long as newFID is different. Note this
