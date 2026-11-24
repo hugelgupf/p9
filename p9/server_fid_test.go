@@ -53,6 +53,9 @@ type memFS struct {
 	// links and unlinks count calls to Link and UnlinkAt.
 	links   atomic.Int32
 	unlinks atomic.Int32
+
+	// setXattrs counts calls to SetXattr.
+	setXattrs atomic.Int32
 }
 
 func newMemFS() *memFS {
@@ -141,6 +144,11 @@ func (f *memFile) UnlinkAt(name string, _ uint32) error {
 
 func (f *memFile) GetXattr(string) ([]byte, error) {
 	return []byte("v"), nil
+}
+
+func (f *memFile) SetXattr(string, []byte, p9.XattrFlags) error {
+	f.fs.setXattrs.Add(1)
+	return nil
 }
 
 // walk walks from f, failing the test on error. The new file is closed when
@@ -334,4 +342,29 @@ func TestTlinkExcludesUnlink(t *testing.T) {
 	}
 	close(release)
 	wg.Wait()
+}
+
+// TestXattrCreateOnDeletedFile checks that a Txattrcreate is not carried out
+// at Tclunk if the file was unlinked in between.
+func TestXattrCreateOnDeletedFile(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	f := walk(t, root, "f")
+
+	if err := p9.SendXattrCreate(f, "user.x", 1, 0); err != nil {
+		t.Fatalf("SendXattrCreate: got = %v, want = nil", err)
+	}
+	if _, err := f.WriteAt([]byte("v"), 0); err != nil {
+		t.Fatalf("WriteAt: got = %v, want = nil", err)
+	}
+	if err := root.UnlinkAt("f", 0); err != nil {
+		t.Fatalf("UnlinkAt: got = %v, want = nil", err)
+	}
+	if err := f.Close(); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Close: got = %v, want = EINVAL", err)
+	}
+	if got := fs.setXattrs.Load(); got != 0 {
+		t.Errorf("File.SetXattr calls: got = %d, want = 0", got)
+	}
 }

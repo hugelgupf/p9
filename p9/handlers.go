@@ -137,6 +137,11 @@ func clunkHandleXattr(cs *connState, t *tclunk) message {
 
 	if err := ref.safelyRead(func() error {
 		if ref.pendingXattr.op == xattrCreate {
+			// As in Txattrcreate, don't set or remove attributes on
+			// deleted files: the backing path may have been reused.
+			if ref.isDeleted() {
+				return linux.EINVAL
+			}
 			if len(ref.pendingXattr.buf) != int(ref.pendingXattr.size) {
 				return linux.EINVAL
 			}

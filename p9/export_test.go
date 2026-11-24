@@ -28,3 +28,15 @@ func SendXattrWalk(f File, name string) (File, error) {
 	}
 	return c.client.newFile(fid(id)), nil
 }
+
+// SendXattrCreate sends a Txattrcreate for f, a File returned by a Client.
+// Client does not otherwise expose Txattrcreate.
+func SendXattrCreate(f File, name string, size uint64, flags XattrFlags) error {
+	c := f.(*clientFile)
+	return c.client.sendRecv(&txattrcreate{
+		fid:      c.fid,
+		Name:     name,
+		AttrSize: size,
+		Flags:    uint32(flags),
+	}, &rxattrcreate{})
+}
