@@ -17,10 +17,10 @@ package localfs
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
@@ -53,7 +53,11 @@ func Attacher(root string) p9.Attacher {
 // Attach implements p9.Attacher.Attach.
 func (a *attacher) Attach() (p9.File, error) {
 	umask(0)
-	return &Local{path: a.root}, nil
+	r, err := openRootDir(a.root)
+	if err != nil {
+		return nil, err
+	}
+	return &Local{root: r}, nil
 }
 
 // Local is a p9.File.
@@ -61,14 +65,26 @@ type Local struct {
 	p9.DefaultWalkGetAttr
 	templatefs.NoopFile
 
-	path string
-	file *os.File
-	mode p9.OpenFlags
+	root   *rootDir
+	rel    string
+	file   *os.File
+	mode   p9.OpenFlags
+	closed atomic.Bool
 }
 
 var (
 	_ p9.File = &Local{}
 )
+
+func (l *Local) child(rel string, file *os.File, mode p9.OpenFlags) *Local {
+	l.root.acquireFID()
+	return &Local{
+		root: l.root,
+		rel:  rel,
+		file: file,
+		mode: mode,
+	}
+}
 
 // validateName ensures name is a single safe path component: non-empty, not
 // "." or "..", free of path separators and NUL bytes, and locally valid on the
@@ -95,67 +111,108 @@ func validateName(name string) error {
 	return nil
 }
 
-// info constructs a QID for this file.
-func (l *Local) info() (p9.QID, os.FileInfo, error) {
-	var (
-		qid p9.QID
-		fi  os.FileInfo
-		err error
-	)
-
-	// Stat the file.
-	if l.file != nil {
-		fi, err = l.file.Stat()
-	} else {
-		if l.path == "" {
-			return qid, nil, linux.EINVAL
+// validateRel ensures every slash-separated component in rel is a safe child
+// name. An empty rel denotes the attached export root itself.
+func validateRel(rel string) error {
+	if rel == "" {
+		return nil
+	}
+	for comp := range strings.SplitSeq(rel, "/") {
+		if err := validateName(comp); err != nil {
+			return err
 		}
-		fi, err = os.Lstat(l.path)
 	}
-	if err != nil {
-		return qid, nil, err
+	return nil
+}
+
+func joinRel(base, elem string) string {
+	if base == "" {
+		return elem
 	}
+	return base + "/" + elem
+}
 
-	// Construct the QID type.
-	qid.Type = p9.ModeFromOS(fi.Mode()).QIDType()
-
-	// Save the path from the Ino.
-	ninePath, err := localToQid(l.path, fi)
-	if err != nil {
-		return qid, nil, err
+func splitRel(rel string) (dir, base string) {
+	if i := strings.LastIndexByte(rel, '/'); i >= 0 {
+		return rel[:i], rel[i+1:]
 	}
+	return "", rel
+}
 
-	qid.Path = ninePath
+// filterOpenFlags translates host os.O_* flags carried in p9.OpenFlags via an
+// explicit allowlist so callers cannot smuggle unsafe or cross-OS-colliding
+// flags (such as O_PATH, O_SYMLINK, O_TMPFILE, O_CREAT, O_EXCL, O_DIRECTORY,
+// or Win32 FILE_FLAG_* bits).
+func filterOpenFlags(mode p9.OpenFlags, allowed int) (int, error) {
+	var flags int
+	switch mode.Mode() {
+	case p9.ReadOnly:
+		flags = os.O_RDONLY
+	case p9.WriteOnly:
+		flags = os.O_WRONLY
+	case p9.ReadWrite:
+		flags = os.O_RDWR
+	default:
+		return 0, linux.EINVAL
+	}
+	return flags | (int(mode) & allowed), nil
+}
 
-	return qid, fi, nil
+func resolveTimes(valid p9.SetAttrMask, attr p9.SetAttr) (atime, mtime time.Time) {
+	now := time.Now()
+	if valid.ATime {
+		atime = now
+		if valid.ATimeNotSystemTime {
+			atime = time.Unix(int64(attr.ATimeSeconds), int64(attr.ATimeNanoSeconds))
+		}
+	}
+	if valid.MTime {
+		mtime = now
+		if valid.MTimeNotSystemTime {
+			mtime = time.Unix(int64(attr.MTimeSeconds), int64(attr.MTimeNanoSeconds))
+		}
+	}
+	return atime, mtime
+}
+
+func statToAttr(st *internal.Stat_t) p9.Attr {
+	return p9.Attr{
+		Mode:             p9.FileMode(st.Mode),
+		UID:              p9.UID(st.Uid),
+		GID:              p9.GID(st.Gid),
+		NLink:            p9.NLink(st.Nlink),
+		RDev:             p9.Dev(st.Rdev),
+		Size:             uint64(st.Size),
+		BlockSize:        uint64(st.Blksize),
+		Blocks:           uint64(st.Blocks),
+		ATimeSeconds:     uint64(st.Atim.Sec),
+		ATimeNanoSeconds: uint64(st.Atim.Nsec),
+		MTimeSeconds:     uint64(st.Mtim.Sec),
+		MTimeNanoSeconds: uint64(st.Mtim.Nsec),
+		CTimeSeconds:     uint64(st.Ctim.Sec),
+		CTimeNanoSeconds: uint64(st.Ctim.Nsec),
+	}
 }
 
 // Walk implements p9.File.Walk.
 func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
-	var qids []p9.QID
-	last := &Local{path: l.path}
-
 	// A walk with no names is a copy of self.
 	if len(names) == 0 {
-		return nil, last, nil
-	}
-	if l.path == "" {
-		return nil, nil, linux.EINVAL
+		if l.root == nil {
+			return nil, nil, linux.EBADF
+		}
+		if err := validateRel(l.rel); err != nil {
+			return nil, nil, err
+		}
+		return nil, l.child(l.rel, nil, 0), nil
 	}
 
 	for _, name := range names {
 		if err := validateName(name); err != nil {
 			return nil, nil, err
 		}
-		c := &Local{path: path.Join(last.path, name)}
-		qid, _, err := c.info()
-		if err != nil {
-			return nil, nil, err
-		}
-		qids = append(qids, qid)
-		last = c
 	}
-	return qids, last, nil
+	return l.walk(names)
 }
 
 // FSync implements p9.File.FSync.
@@ -167,58 +224,27 @@ func (l *Local) FSync() error {
 //
 // Not fully implemented.
 func (l *Local) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	qid, fi, err := l.info()
-	if err != nil {
-		return qid, p9.AttrMask{}, p9.Attr{}, err
-	}
-
-	stat := internal.InfoToStat(fi)
-	attr := &p9.Attr{
-		Mode:             p9.FileMode(stat.Mode),
-		UID:              p9.UID(stat.Uid),
-		GID:              p9.GID(stat.Gid),
-		NLink:            p9.NLink(stat.Nlink),
-		RDev:             p9.Dev(stat.Rdev),
-		Size:             uint64(stat.Size),
-		BlockSize:        uint64(stat.Blksize),
-		Blocks:           uint64(stat.Blocks),
-		ATimeSeconds:     uint64(stat.Atim.Sec),
-		ATimeNanoSeconds: uint64(stat.Atim.Nsec),
-		MTimeSeconds:     uint64(stat.Mtim.Sec),
-		MTimeNanoSeconds: uint64(stat.Mtim.Nsec),
-		CTimeSeconds:     uint64(stat.Ctim.Sec),
-		CTimeNanoSeconds: uint64(stat.Ctim.Nsec),
-	}
-	return qid, req, *attr, nil
+	return l.getAttr(req)
 }
 
 // Close implements p9.File.Close.
 func (l *Local) Close() error {
+	var err error
 	if l.file != nil {
 		// We don't set l.file = nil, as Close is called by servers
 		// only in Clunk. Clunk should release the last (direct)
 		// reference to this file.
-		return l.file.Close()
+		err = l.file.Close()
 	}
-	return nil
+	if l.root != nil && l.closed.CompareAndSwap(false, true) {
+		l.root.releaseFID()
+	}
+	return err
 }
 
 // Open implements p9.File.Open.
 func (l *Local) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	qid, _, err := l.info()
-	if err != nil {
-		return qid, 0, err
-	}
-
-	// Do the actual open.
-	f, err := os.OpenFile(l.path, int(mode), 0)
-	if err != nil {
-		return qid, 0, err
-	}
-	l.file = f
-	l.mode = mode
-
-	return qid, 0, nil
+	return l.open(mode)
 }
 
 // ReadAt implements p9.File.ReadAt.
@@ -243,38 +269,20 @@ func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
 
 // Create implements p9.File.Create.
 func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
-	if l.path == "" {
-		return nil, p9.QID{}, 0, linux.EINVAL
-	}
 	if err := validateName(name); err != nil {
 		return nil, p9.QID{}, 0, err
 	}
-	newName := path.Join(l.path, name)
-	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
-	if err != nil {
-		return nil, p9.QID{}, 0, err
-	}
-
-	l2 := &Local{path: newName, file: f, mode: mode}
-	qid, _, err := l2.info()
-	if err != nil {
-		l2.Close()
-		return nil, p9.QID{}, 0, err
-	}
-	return l2, qid, 0, nil
+	return l.create(name, mode, permissions)
 }
 
 // Mkdir implements p9.File.Mkdir.
 //
 // Not properly implemented.
 func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	if l.path == "" {
-		return p9.QID{}, linux.EINVAL
-	}
 	if err := validateName(name); err != nil {
 		return p9.QID{}, err
 	}
-	if err := os.Mkdir(path.Join(l.path, name), os.FileMode(permissions)); err != nil {
+	if err := l.mkdir(name, permissions); err != nil {
 		return p9.QID{}, err
 	}
 
@@ -286,13 +294,10 @@ func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) 
 //
 // Not properly implemented.
 func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	if l.path == "" {
-		return p9.QID{}, linux.EINVAL
-	}
 	if err := validateName(newname); err != nil {
 		return p9.QID{}, err
 	}
-	if err := os.Symlink(oldname, path.Join(l.path, newname)); err != nil {
+	if err := l.symlink(oldname, newname); err != nil {
 		return p9.QID{}, err
 	}
 
@@ -300,63 +305,69 @@ func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 	return p9.QID{}, nil
 }
 
+func (l *Local) sameRootLocal(other p9.File) (*Local, error) {
+	if other == nil {
+		return nil, linux.EBADF
+	}
+	o, ok := other.(*Local)
+	if !ok {
+		return nil, linux.EXDEV
+	}
+	if l.root == nil || o == nil || o.root == nil {
+		return nil, linux.EBADF
+	}
+	if l.root.id != o.root.id {
+		return nil, linux.EXDEV
+	}
+	return o, nil
+}
+
 // Link implements p9.File.Link.
 //
 // Not properly implemented.
 func (l *Local) Link(target p9.File, newname string) error {
-	if l.path == "" {
-		return linux.EINVAL
-	}
 	if err := validateName(newname); err != nil {
 		return err
 	}
-	t := target.(*Local)
-	if t.path == "" {
-		return linux.EINVAL
+	t, err := l.sameRootLocal(target)
+	if err != nil {
+		return err
 	}
-	return os.Link(t.path, path.Join(l.path, newname))
+	return l.link(t, newname)
 }
 
 // RenameAt implements p9.File.RenameAt.
 func (l *Local) RenameAt(oldName string, newDir p9.File, newName string) error {
-	if l.path == "" {
-		return linux.EINVAL
-	}
 	if err := validateName(oldName); err != nil {
 		return err
 	}
 	if err := validateName(newName); err != nil {
 		return err
 	}
-	nd := newDir.(*Local)
-	if nd.path == "" {
-		return linux.EINVAL
+	nd, err := l.sameRootLocal(newDir)
+	if err != nil {
+		return err
 	}
-	oldPath := path.Join(l.path, oldName)
-	newPath := path.Join(nd.path, newName)
-
-	return os.Rename(oldPath, newPath)
+	return l.renameAt(oldName, nd, newName)
 }
 
 // Readlink implements p9.File.Readlink.
 //
 // Not properly implemented.
 func (l *Local) Readlink() (string, error) {
-	if l.path == "" {
-		return "", linux.EINVAL
-	}
-	return os.Readlink(l.path)
+	return l.readlink()
 }
 
 // Renamed implements p9.File.Renamed.
 func (l *Local) Renamed(parent p9.File, newName string) {
-	p := parent.(*Local)
-	if p.path == "" || validateName(newName) != nil {
-		// Fail closed if a direct caller passes an unsafe name.
-		l.path = ""
+	p, err := l.sameRootLocal(parent)
+	if err != nil || validateName(newName) != nil {
+		// Fail closed if a direct caller passes an unsafe name,
+		// foreign file, or mismatched root.
+		l.rel = ".."
 		return
 	}
-	l.path = path.Join(p.path, newName)
+	l.rel = joinRel(p.rel, newName)
 }
 
 // SetAttr implements p9.File.SetAttr.
@@ -377,82 +388,32 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	if !valid.IsSubsetOf(supported) {
 		return linux.ENOSYS
 	}
-	if l.path == "" {
-		return linux.EINVAL
+	if l.root == nil {
+		return linux.EBADF
 	}
-
-	// Perform Size, ATime/MTime, and UID/GID before Permissions so that:
-	// 1. A single SetAttr call that both modifies size/timestamps and
-	//    removes write permissions (e.g., chmod 0) does not fail its own
-	//    truncate or chtimes.
-	// 2. Chmod runs last so setuid/setgid bits are not cleared by truncate
-	//    or chown.
-	if valid.Size {
-		if err := os.Truncate(l.path, int64(attr.Size)); err != nil {
-			return err
-		}
+	if err := validateRel(l.rel); err != nil {
+		return err
 	}
-	if valid.ATime || valid.MTime {
-		// Chtimes leaves a time unchanged if it is the zero time.
-		var atime, mtime time.Time
-		now := time.Now()
-		if valid.ATime {
-			atime = now
-			if valid.ATimeNotSystemTime {
-				atime = time.Unix(int64(attr.ATimeSeconds), int64(attr.ATimeNanoSeconds))
-			}
-		}
-		if valid.MTime {
-			mtime = now
-			if valid.MTimeNotSystemTime {
-				mtime = time.Unix(int64(attr.MTimeSeconds), int64(attr.MTimeNanoSeconds))
-			}
-		}
-		if err := os.Chtimes(l.path, atime, mtime); err != nil {
-			return err
-		}
+	if !valid.Size && !valid.ATime && !valid.MTime && !valid.UID && !valid.GID && !valid.Permissions {
+		return nil
 	}
-	if valid.UID || valid.GID {
-		uid, gid := -1, -1
-		if valid.UID {
-			uid = int(attr.UID)
-		}
-		if valid.GID {
-			gid = int(attr.GID)
-		}
-		if err := os.Chown(l.path, uid, gid); err != nil {
-			return err
-		}
-	}
-	if valid.Permissions {
-		// OSMode moves the setuid, setgid and sticky bits into the
-		// positions os.Chmod expects.
-		if err := os.Chmod(l.path, attr.Permissions.Permissions().OSMode()); err != nil {
-			return err
-		}
-	}
-	return nil
+	return l.setAttr(valid, attr)
 }
 
 // Remove implements p9.File.Remove.
 func (l *Local) Remove() error {
-	if l.path == "" {
-		return linux.EINVAL
-	}
-	return os.Remove(l.path)
+	return l.remove()
 }
 
-// UnlinkAt implements p9.File.UnlinkAt
+// UnlinkAt implements p9.File.UnlinkAt.
 func (l *Local) UnlinkAt(name string, flags uint32) error {
-	if l.path == "" {
-		return linux.EINVAL
-	}
 	if err := validateName(name); err != nil {
 		return err
 	}
-	// Construct the full path
-	fullPath := filepath.Join(l.path, name)
+	return l.unlinkAt(name, flags)
+}
 
-	// Remove the file or directory
-	return os.Remove(fullPath)
+// Readdir implements p9.File.Readdir.
+func (l *Local) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
+	return l.readDir(offset, count)
 }
