@@ -214,9 +214,8 @@ type fidRef struct {
 	// parent safely.
 	//
 	// The parent will be nil for root fidRefs and pending xattrwalk/create
-	// fidRefs, and non-nil otherwise. The method maybeParent can be used
-	// to return a cyclical reference, and hasParent should be used to
-	// check for root over looking at parent directly.
+	// fidRefs, and non-nil otherwise. hasParent should be used to check
+	// for root over looking at parent directly.
 	parent *fidRef
 }
 
@@ -297,14 +296,6 @@ func (f *fidRef) hasParent() bool {
 	return f.parent == nil
 }
 
-// maybeParent returns a cyclic reference for roots, and the parent otherwise.
-func (f *fidRef) maybeParent() *fidRef {
-	if f.parent != nil {
-		return f.parent
-	}
-	return f // Root has itself.
-}
-
 // notifyDelete marks all fidRefs as deleted.
 //
 // Precondition: this must be called via safelyWrite or safelyGlobal.
@@ -378,6 +369,21 @@ func (f *fidRef) safelyRead(fn func() error) (err error) {
 	defer f.server.renameMu.RUnlock()
 	f.pathNode.opMu.RLock()
 	defer f.pathNode.opMu.RUnlock()
+	return fn()
+}
+
+// safelyReadParent is like safelyRead, but locks the path node of the parent
+// (or of f itself, for a root). The parent may be changed by a concurrent
+// rename, so it is read only once renameMu is held.
+func (f *fidRef) safelyReadParent(fn func() error) (err error) {
+	f.server.renameMu.RLock()
+	defer f.server.renameMu.RUnlock()
+	pn := f.pathNode
+	if f.parent != nil {
+		pn = f.parent.pathNode
+	}
+	pn.opMu.RLock()
+	defer pn.opMu.RUnlock()
 	return fn()
 }
 

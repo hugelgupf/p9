@@ -1243,7 +1243,7 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 	// validate anything since this is always permitted.
 	if len(names) == 0 {
 		var sf File // Temporary.
-		if err := ref.maybeParent().safelyRead(func() (err error) {
+		if err := ref.safelyReadParent(func() (err error) {
 			// Clone the single element.
 			qids, sf, valid, attr, err = walkOne(nil, ref.file, nil, getattr)
 			if err != nil {
