@@ -1,8 +1,12 @@
 package localfs
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+	"unsafe"
 
 	"github.com/hugelgupf/p9/internal"
 	"github.com/hugelgupf/p9/linux"
@@ -14,11 +18,63 @@ func umask(_ int) int {
 	return 0
 }
 
-// Temporary mechanical bridge for Commit 2; Commit 3 replaces this with full
-// os.Root and NtCreateFile confinement on Windows.
+type winFileID struct {
+	volSerial uint32
+	fileIndex uint64
+}
+
+// rootDir records the export root's path and pinned (volume serial, file
+// index) identity on Windows without holding an open directory handle across
+// Attach's lifetime. Holding an open os.Root handle (which omits
+// FILE_SHARE_DELETE on Windows) would prevent callers and tests that do not
+// close every root fid from removing the directory.
 type rootDir struct {
-	id   string
 	path string
+	id   winFileID
+}
+
+func withFileHandle(f *os.File, fn func(windows.Handle) error) error {
+	rc, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var fnErr error
+	if err := rc.Control(func(fd uintptr) {
+		fnErr = fn(windows.Handle(fd))
+	}); err != nil {
+		return err
+	}
+	return fnErr
+}
+
+func fileIdentityByHandle(h windows.Handle) (winFileID, error) {
+	var fi windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &fi); err != nil {
+		return winFileID{}, err
+	}
+	return winFileID{
+		volSerial: fi.VolumeSerialNumber,
+		fileIndex: uint64(fi.FileIndexHigh)<<32 | uint64(fi.FileIndexLow),
+	}, nil
+}
+
+func fileIdentity(f *os.File) (winFileID, error) {
+	var id winFileID
+	err := withFileHandle(f, func(h windows.Handle) error {
+		var hErr error
+		id, hErr = fileIdentityByHandle(h)
+		return hErr
+	})
+	return id, err
+}
+
+func rootIdentity(r *os.Root) (winFileID, error) {
+	f, err := r.Open(".")
+	if err != nil {
+		return winFileID{}, err
+	}
+	defer f.Close()
+	return fileIdentity(f)
 }
 
 func openRootDir(path string) (*rootDir, error) {
@@ -26,108 +82,291 @@ func openRootDir(path string) (*rootDir, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &rootDir{id: abs, path: abs}, nil
+	r, err := os.OpenRoot(abs)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	id, err := rootIdentity(r)
+	if err != nil {
+		return nil, err
+	}
+	return &rootDir{
+		path: abs,
+		id:   id,
+	}, nil
 }
 
 func (r *rootDir) acquireFID() {}
 func (r *rootDir) releaseFID() {}
 
-func (l *Local) hostPath() (string, error) {
-	if l.root == nil {
-		return "", linux.EBADF
+func (r *rootDir) openRoot() (*os.Root, error) {
+	if r == nil {
+		return nil, linux.EBADF
 	}
-	if err := validateRel(l.rel); err != nil {
-		return "", err
+	root, err := os.OpenRoot(r.path)
+	if err != nil {
+		return nil, err
 	}
-	return filepath.Join(l.root.path, filepath.FromSlash(l.rel)), nil
+	id, err := rootIdentity(root)
+	if err != nil {
+		_ = root.Close()
+		return nil, err
+	}
+	if id != r.id {
+		_ = root.Close()
+		return nil, linux.ESTALE
+	}
+	return root, nil
 }
 
-func localToQid(path string, info os.FileInfo) (uint64, error) {
-	pathPtr, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return 0, err
+func relOrDot(rel string) string {
+	if rel == "" {
+		return "."
 	}
+	return filepath.FromSlash(rel)
+}
 
-	var (
-		access     uint32 // none; we only need metadata
-		sharemode  uint32
-		createmode uint32 = windows.OPEN_EXISTING
-		attribute  uint32 = windows.FILE_ATTRIBUTE_NORMAL
+const windowsAllowedOpenFlags = os.O_TRUNC | os.O_APPEND | os.O_SYNC
+
+type pathCheck uint8
+
+const (
+	checkDir    pathCheck = iota // all components must be real dirs
+	checkParent                  // parent components must be real dirs
+	checkTarget                  // parents dirs; leaf not link/junction
+)
+
+// checkPathInRoot verifies rel component-by-component inside r using r.Lstat
+// so neither intermediate nor (per mode) leaf symlinks or directory junctions
+// are followed, even when their target stays within root.
+func checkPathInRoot(r *os.Root, rel string, mode pathCheck) error {
+	if rel == "" {
+		return nil
+	}
+	if err := validateRel(rel); err != nil {
+		return err
+	}
+	parts := strings.Split(rel, "/")
+	limit := len(parts)
+	if mode == checkParent {
+		limit = len(parts) - 1
+	}
+	var p string
+	for i := range limit {
+		if i == 0 {
+			p = parts[0]
+		} else {
+			p += string(os.PathSeparator) + parts[i]
+		}
+		fi, err := r.Lstat(p)
+		if err != nil {
+			return err
+		}
+		if fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return linux.ELOOP
+		}
+		if i < len(parts)-1 || mode == checkDir {
+			if fi.Mode()&os.ModeType != os.ModeDir {
+				return linux.ENOTDIR
+			}
+		}
+	}
+	return nil
+}
+
+func (l *Local) openCheckedRoot(mode pathCheck) (*os.Root, error) {
+	r, err := l.root.openRoot()
+	if err != nil {
+		return nil, err
+	}
+	if err := checkPathInRoot(r, l.rel, mode); err != nil {
+		_ = r.Close()
+		return nil, err
+	}
+	return r, nil
+}
+
+// fileIdentityAt reads the NTFS/ReFS (volume serial, file index) identity for
+// a single child name relative to dirHandle without following symlinks or
+// crossing MAX_PATH.
+func fileIdentityAt(dirHandle windows.Handle, name string) (winFileID, error) {
+	ntName, err := windows.NewNTUnicodeString(name)
+	if err != nil {
+		return winFileID{}, err
+	}
+	oa := &windows.OBJECT_ATTRIBUTES{
+		RootDirectory: dirHandle,
+		ObjectName:    ntName,
+		Attributes:    windows.OBJ_CASE_INSENSITIVE | windows.OBJ_DONT_REPARSE,
+	}
+	oa.Length = uint32(unsafe.Sizeof(*oa))
+
+	const (
+		access      = windows.FILE_READ_ATTRIBUTES | windows.SYNCHRONIZE
+		share       = windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE | windows.FILE_SHARE_DELETE
+		disposition = windows.FILE_OPEN
+		options     = windows.FILE_OPEN_FOR_BACKUP_INTENT | windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT
 	)
-	if info.IsDir() {
-		attribute = windows.FILE_FLAG_BACKUP_SEMANTICS
+	var (
+		h    windows.Handle
+		iosb windows.IO_STATUS_BLOCK
+	)
+	err = windows.NtCreateFile(&h, access, oa, &iosb, nil, 0, share, disposition, options, 0, 0)
+	if err == windows.STATUS_INVALID_PARAMETER {
+		// Older Windows builds (Win10 10240) reject OBJ_DONT_REPARSE;
+		// name is a single component and FILE_OPEN_REPARSE_POINT still
+		// prevents following it.
+		oa.Attributes &^= windows.OBJ_DONT_REPARSE
+		err = windows.NtCreateFile(&h, access, oa, &iosb, nil, 0, share, disposition, options, 0, 0)
 	}
-	fd, err := windows.CreateFile(pathPtr, access, sharemode, nil, createmode, attribute, 0)
 	if err != nil {
-		return 0, err
+		if st, ok := err.(windows.NTStatus); ok {
+			return winFileID{}, st.Errno()
+		}
+		return winFileID{}, err
 	}
-	defer windows.CloseHandle(fd)
+	defer windows.CloseHandle(h)
 
-	fi := &windows.ByHandleFileInformation{}
-	if err = windows.GetFileInformationByHandle(fd, fi); err != nil {
-		return 0, err
-	}
-
-	x := uint64(fi.FileIndexHigh)<<32 | uint64(fi.FileIndexLow)
-	return x, nil
+	return fileIdentityByHandle(h)
 }
 
-func qidForPath(p string, fi os.FileInfo) (p9.QID, error) {
-	ninePath, err := localToQid(p, fi)
+func identityInRoot(r *os.Root, rel string) (winFileID, error) {
+	if rel == "" {
+		return rootIdentity(r)
+	}
+	dir, base := splitRel(rel)
+	dirFile, err := r.Open(relOrDot(dir))
+	if err != nil {
+		return winFileID{}, err
+	}
+	defer dirFile.Close()
+
+	var id winFileID
+	err = withFileHandle(dirFile, func(h windows.Handle) error {
+		var hErr error
+		id, hErr = fileIdentityAt(h, base)
+		return hErr
+	})
+	return id, err
+}
+
+func verifySameFile(a, b *os.File) error {
+	idA, err := fileIdentity(a)
+	if err != nil {
+		return err
+	}
+	idB, err := fileIdentity(b)
+	if err != nil {
+		return err
+	}
+	if idA != idB {
+		return linux.ESTALE
+	}
+	return nil
+}
+
+func verifyRootTargetMatchesFile(r *os.Root, rel string, openFile *os.File) error {
+	openID, err := fileIdentity(openFile)
+	if err != nil {
+		return err
+	}
+	targetID, err := identityInRoot(r, rel)
+	if err != nil {
+		return err
+	}
+	if openID != targetID {
+		return linux.ESTALE
+	}
+	return nil
+}
+
+func makeQID(mode os.FileMode, fileIndex uint64) p9.QID {
+	return p9.QID{
+		Type: p9.ModeFromOS(mode).QIDType(),
+		Path: fileIndex,
+	}
+}
+
+func qidInRoot(r *os.Root, rel string, fi os.FileInfo) (p9.QID, error) {
+	id, err := identityInRoot(r, rel)
 	if err != nil {
 		return p9.QID{}, err
 	}
-	return p9.QID{
-		Type: p9.ModeFromOS(fi.Mode()).QIDType(),
-		Path: ninePath,
-	}, nil
+	return makeQID(fi.Mode(), id.fileIndex), nil
 }
 
-func (l *Local) info() (p9.QID, os.FileInfo, error) {
-	p, err := l.hostPath()
+func qidFromOpenFile(f *os.File, fi os.FileInfo) (p9.QID, error) {
+	id, err := fileIdentity(f)
 	if err != nil {
-		return p9.QID{}, nil, err
+		return p9.QID{}, err
 	}
-	var fi os.FileInfo
-	if l.file != nil {
-		fi, err = l.file.Stat()
-	} else {
-		fi, err = os.Lstat(p)
-	}
+	return makeQID(fi.Mode(), id.fileIndex), nil
+}
+
+func openFileQID(f *os.File) (p9.QID, error) {
+	fi, err := f.Stat()
 	if err != nil {
-		return p9.QID{}, nil, err
+		return p9.QID{}, err
 	}
-	qid, err := qidForPath(p, fi)
-	if err != nil {
-		return p9.QID{}, nil, err
-	}
-	return qid, fi, nil
+	return qidFromOpenFile(f, fi)
 }
 
 func (l *Local) getAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	qid, fi, err := l.info()
+	if l.file != nil {
+		fi, err := l.file.Stat()
+		if err != nil {
+			return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
+		}
+		qid, err := qidFromOpenFile(l.file, fi)
+		if err != nil {
+			return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
+		}
+		return qid, req, statToAttr(internal.InfoToStat(fi)), nil
+	}
+
+	r, err := l.openCheckedRoot(checkParent)
 	if err != nil {
-		return qid, p9.AttrMask{}, p9.Attr{}, err
+		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
+	}
+	defer r.Close()
+
+	fi, err := r.Lstat(relOrDot(l.rel))
+	if err != nil {
+		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
+	}
+	qid, err := qidInRoot(r, l.rel, fi)
+	if err != nil {
+		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, err
 	}
 	return qid, req, statToAttr(internal.InfoToStat(fi)), nil
 }
 
 func (l *Local) walk(names []string) ([]p9.QID, p9.File, error) {
-	base, err := l.hostPath()
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer r.Close()
+
 	qids := make([]p9.QID, 0, len(names))
 	rel := l.rel
-	p := base
-	for _, name := range names {
+	for i, name := range names {
 		rel = joinRel(rel, name)
-		p = filepath.Join(p, name)
-		fi, err := os.Lstat(p)
+		fi, err := r.Lstat(filepath.FromSlash(rel))
 		if err != nil {
 			return nil, nil, err
 		}
-		qid, err := qidForPath(p, fi)
+		if i < len(names)-1 {
+			if fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				return nil, nil, linux.ELOOP
+			}
+			if fi.Mode()&os.ModeType != os.ModeDir {
+				return nil, nil, linux.ENOTDIR
+			}
+		}
+		qid, err := qidInRoot(r, rel, fi)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -136,112 +375,209 @@ func (l *Local) walk(names []string) ([]p9.QID, p9.File, error) {
 	return qids, l.child(rel, nil, 0), nil
 }
 
-func (l *Local) open(mode p9.OpenFlags) (p9.QID, uint32, error) {
-	p, err := l.hostPath()
+func (l *Local) open(mode p9.OpenFlags) (_ p9.QID, _ uint32, err error) {
+	flags, err := filterOpenFlags(mode, windowsAllowedOpenFlags)
 	if err != nil {
 		return p9.QID{}, 0, err
 	}
-	qid, fi, err := l.info()
+	r, err := l.openCheckedRoot(checkTarget)
 	if err != nil {
-		return qid, 0, err
+		return p9.QID{}, 0, err
 	}
-	if fi.IsDir() && mode == p9.WriteOnly {
-		return qid, 0, linux.EISDIR
-	}
-	f, err := os.OpenFile(p, int(mode), 0)
+	defer r.Close()
+
+	f, err := r.OpenFile(relOrDot(l.rel), flags, 0)
 	if err != nil {
-		return qid, 0, err
+		return p9.QID{}, 0, err
+	}
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+		}
+	}()
+
+	qid, err := openFileQID(f)
+	if err != nil {
+		return p9.QID{}, 0, err
 	}
 	l.file = f
 	l.mode = mode
 	return qid, 0, nil
 }
 
-func (l *Local) create(name string, mode p9.OpenFlags, permissions p9.FileMode) (p9.File, p9.QID, uint32, error) {
-	dir, err := l.hostPath()
+func (l *Local) create(name string, mode p9.OpenFlags, permissions p9.FileMode) (_ p9.File, _ p9.QID, _ uint32, err error) {
+	flags, err := filterOpenFlags(mode, windowsAllowedOpenFlags)
 	if err != nil {
 		return nil, p9.QID{}, 0, err
 	}
+	r, err := l.openCheckedRoot(checkDir)
+	if err != nil {
+		return nil, p9.QID{}, 0, err
+	}
+	defer r.Close()
+
 	newRel := joinRel(l.rel, name)
-	newPath := filepath.Join(dir, name)
-	f, err := os.OpenFile(newPath, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
+	perm := os.FileMode(permissions & p9.AllPermissions)
+	f, err := r.OpenFile(filepath.FromSlash(newRel), flags|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return nil, p9.QID{}, 0, err
 	}
-	l2 := l.child(newRel, f, mode)
-	qid, _, err := l2.info()
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+		}
+	}()
+
+	qid, err := openFileQID(f)
 	if err != nil {
-		_ = l2.Close()
 		return nil, p9.QID{}, 0, err
 	}
-	return l2, qid, 0, nil
+	return l.child(newRel, f, mode), qid, 0, nil
 }
 
 func (l *Local) mkdir(name string, permissions p9.FileMode) error {
-	dir, err := l.hostPath()
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return err
 	}
-	return os.Mkdir(filepath.Join(dir, name), os.FileMode(permissions))
+	defer r.Close()
+	return r.Mkdir(filepath.FromSlash(joinRel(l.rel, name)), os.FileMode(permissions&p9.AllPermissions))
 }
 
 func (l *Local) symlink(oldname, newname string) error {
-	dir, err := l.hostPath()
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return err
 	}
-	return os.Symlink(oldname, filepath.Join(dir, newname))
+	defer r.Close()
+	return r.Symlink(oldname, filepath.FromSlash(joinRel(l.rel, newname)))
 }
 
 func (l *Local) link(target *Local, newname string) error {
-	dir, err := l.hostPath()
+	if target.rel == "" {
+		return linux.EPERM
+	}
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return err
 	}
-	targetPath, err := target.hostPath()
-	if err != nil {
+	defer r.Close()
+
+	if err := checkPathInRoot(r, target.rel, checkParent); err != nil {
 		return err
 	}
-	return os.Link(targetPath, filepath.Join(dir, newname))
+	return r.Link(filepath.FromSlash(target.rel), filepath.FromSlash(joinRel(l.rel, newname)))
 }
 
 func (l *Local) renameAt(oldName string, newDir *Local, newName string) error {
-	oldDir, err := l.hostPath()
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return err
 	}
-	dstDir, err := newDir.hostPath()
-	if err != nil {
-		return err
-	}
-	return os.Rename(filepath.Join(oldDir, oldName), filepath.Join(dstDir, newName))
-}
+	defer r.Close()
 
-func (l *Local) readlink() (string, error) {
-	p, err := l.hostPath()
-	if err != nil {
-		return "", err
-	}
-	return os.Readlink(p)
-}
-
-func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
-	p, err := l.hostPath()
-	if err != nil {
-		return err
-	}
-	if valid.Size {
-		if err := os.Truncate(p, int64(attr.Size)); err != nil {
+	if newDir.rel != l.rel {
+		if err := checkPathInRoot(r, newDir.rel, checkDir); err != nil {
 			return err
 		}
 	}
+	return r.Rename(
+		filepath.FromSlash(joinRel(l.rel, oldName)),
+		filepath.FromSlash(joinRel(newDir.rel, newName)),
+	)
+}
+
+func (l *Local) readlink() (string, error) {
+	if l.rel == "" {
+		return "", linux.EINVAL
+	}
+	r, err := l.openCheckedRoot(checkParent)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	return r.Readlink(filepath.FromSlash(l.rel))
+}
+
+func truncateInRoot(root *os.Root, target string, openFile *os.File, size int64) (err error) {
+	f, err := root.OpenFile(target, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
+	if openFile != nil {
+		if err = verifySameFile(f, openFile); err != nil {
+			return err
+		}
+	}
+	return f.Truncate(size)
+}
+
+func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
+	var r *os.Root
+	defer func() {
+		if r != nil {
+			_ = r.Close()
+		}
+	}()
+	ensureRoot := func() (*os.Root, error) {
+		if r == nil {
+			var err error
+			r, err = l.openCheckedRoot(checkTarget)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if l.file != nil {
+			if err := verifyRootTargetMatchesFile(r, l.rel, l.file); err != nil {
+				return nil, err
+			}
+		}
+		return r, nil
+	}
+
+	target := relOrDot(l.rel)
+
+	// Perform Size, ATime/MTime, and UID/GID before Permissions so that a
+	// single SetAttr call setting read-only permissions does not fail its
+	// own truncate or chtimes.
+	if valid.Size {
+		// Go's os.Root.OpenFile omits FILE_WRITE_DATA for O_APPEND
+		// without O_TRUNC, so O_APPEND fids take the verified reopen
+		// path to avoid ERROR_ACCESS_DENIED on Truncate.
+		if l.file != nil && l.mode.Mode() != p9.ReadOnly && int(l.mode)&os.O_APPEND == 0 {
+			if err := l.file.Truncate(int64(attr.Size)); err != nil {
+				return err
+			}
+		} else {
+			root, err := ensureRoot()
+			if err != nil {
+				return err
+			}
+			if err := truncateInRoot(root, target, l.file, int64(attr.Size)); err != nil {
+				return err
+			}
+		}
+	}
 	if valid.ATime || valid.MTime {
+		root, err := ensureRoot()
+		if err != nil {
+			return err
+		}
 		atime, mtime := resolveTimes(valid, attr)
-		if err := os.Chtimes(p, atime, mtime); err != nil {
+		if err := root.Chtimes(target, atime, mtime); err != nil {
 			return err
 		}
 	}
 	if valid.UID || valid.GID {
+		root, err := ensureRoot()
+		if err != nil {
+			return err
+		}
 		uid, gid := -1, -1
 		if valid.UID {
 			uid = int(attr.UID)
@@ -249,12 +585,16 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		if valid.GID {
 			gid = int(attr.GID)
 		}
-		if err := os.Chown(p, uid, gid); err != nil {
+		if err := root.Lchown(target, uid, gid); err != nil {
 			return err
 		}
 	}
 	if valid.Permissions {
-		if err := os.Chmod(p, attr.Permissions.Permissions().OSMode()); err != nil {
+		root, err := ensureRoot()
+		if err != nil {
+			return err
+		}
+		if err := root.Chmod(target, attr.Permissions.Permissions().OSMode()); err != nil {
 			return err
 		}
 	}
@@ -262,50 +602,78 @@ func (l *Local) setAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 }
 
 func (l *Local) remove() error {
-	p, err := l.hostPath()
+	if l.rel == "" {
+		return linux.EINVAL
+	}
+	r, err := l.openCheckedRoot(checkParent)
 	if err != nil {
 		return err
 	}
-	return os.Remove(p)
+	defer r.Close()
+	return r.Remove(filepath.FromSlash(l.rel))
 }
 
 func (l *Local) unlinkAt(name string, _ uint32) error {
-	dir, err := l.hostPath()
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return err
 	}
-	return os.Remove(filepath.Join(dir, name))
+	defer r.Close()
+	return r.Remove(filepath.FromSlash(joinRel(l.rel, name)))
 }
 
 func (l *Local) readDir(offset uint64, count uint32) (p9.Dirents, error) {
-	dir, err := l.hostPath()
+	r, err := l.openCheckedRoot(checkDir)
 	if err != nil {
 		return nil, err
 	}
-	fi, err := os.ReadDir(dir)
+	defer r.Close()
+
+	f, err := r.Open(relOrDot(l.rel))
 	if err != nil {
 		return nil, err
 	}
-	if offset >= uint64(len(fi)) {
+	defer f.Close()
+
+	if l.file != nil {
+		if err := verifySameFile(f, l.file); err != nil {
+			return nil, err
+		}
+	}
+
+	entries, err := f.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(entries, func(a, b os.DirEntry) int {
+		return cmp.Compare(a.Name(), b.Name())
+	})
+	if offset >= uint64(len(entries)) {
 		return nil, nil
 	}
+
 	var dirents p9.Dirents
-	for i := int(offset); i < len(fi) && uint64(len(dirents)) < uint64(count); i++ {
-		entryPath := filepath.Join(dir, fi[i].Name())
-		info, err := os.Lstat(entryPath)
-		if err != nil {
-			continue
+	err = withFileHandle(f, func(dirHandle windows.Handle) error {
+		for i, de := range entries[offset:] {
+			if uint64(len(dirents)) >= uint64(count) {
+				break
+			}
+			id, err := fileIdentityAt(dirHandle, de.Name())
+			if err != nil {
+				continue
+			}
+			qid := makeQID(de.Type(), id.fileIndex)
+			dirents = append(dirents, p9.Dirent{
+				QID:    qid,
+				Type:   qid.Type,
+				Name:   de.Name(),
+				Offset: offset + uint64(i) + 1,
+			})
 		}
-		qid, err := qidForPath(entryPath, info)
-		if err != nil {
-			continue
-		}
-		dirents = append(dirents, p9.Dirent{
-			QID:    qid,
-			Type:   qid.Type,
-			Name:   fi[i].Name(),
-			Offset: uint64(i + 1),
-		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return dirents, nil
 }
