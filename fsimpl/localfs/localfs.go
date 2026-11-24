@@ -19,6 +19,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/hugelgupf/p9/fsimpl/templatefs"
@@ -68,6 +70,31 @@ var (
 	_ p9.File = &Local{}
 )
 
+// validateName ensures name is a single safe path component: non-empty, not
+// "." or "..", free of path separators and NUL bytes, and locally valid on the
+// host OS (e.g. rejecting Windows drive prefixes, reserved device names, and
+// trailing dots or spaces stripped by Win32 path normalization).
+func validateName(name string) error {
+	if name == "" || name == "." || name == ".." {
+		return linux.EINVAL
+	}
+	if strings.ContainsRune(name, '/') || strings.ContainsRune(name, '\x00') {
+		return linux.EINVAL
+	}
+	if os.PathSeparator != '/' && strings.ContainsRune(name, os.PathSeparator) {
+		return linux.EINVAL
+	}
+	if runtime.GOOS == "windows" {
+		if last := name[len(name)-1]; last == '.' || last == ' ' {
+			return linux.EINVAL
+		}
+	}
+	if !filepath.IsLocal(name) {
+		return linux.EINVAL
+	}
+	return nil
+}
+
 // info constructs a QID for this file.
 func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	var (
@@ -80,6 +107,9 @@ func (l *Local) info() (p9.QID, os.FileInfo, error) {
 	if l.file != nil {
 		fi, err = l.file.Stat()
 	} else {
+		if l.path == "" {
+			return qid, nil, linux.EINVAL
+		}
 		fi, err = os.Lstat(l.path)
 	}
 	if err != nil {
@@ -109,8 +139,14 @@ func (l *Local) Walk(names []string) ([]p9.QID, p9.File, error) {
 	if len(names) == 0 {
 		return nil, last, nil
 	}
+	if l.path == "" {
+		return nil, nil, linux.EINVAL
+	}
 
 	for _, name := range names {
+		if err := validateName(name); err != nil {
+			return nil, nil, err
+		}
 		c := &Local{path: path.Join(last.path, name)}
 		qid, _, err := c.info()
 		if err != nil {
@@ -207,6 +243,12 @@ func (l *Local) WriteAt(p []byte, offset int64) (int, error) {
 
 // Create implements p9.File.Create.
 func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.File, p9.QID, uint32, error) {
+	if l.path == "" {
+		return nil, p9.QID{}, 0, linux.EINVAL
+	}
+	if err := validateName(name); err != nil {
+		return nil, p9.QID{}, 0, err
+	}
 	newName := path.Join(l.path, name)
 	f, err := os.OpenFile(newName, int(mode)|os.O_CREATE|os.O_EXCL, os.FileMode(permissions))
 	if err != nil {
@@ -226,6 +268,12 @@ func (l *Local) Create(name string, mode p9.OpenFlags, permissions p9.FileMode, 
 //
 // Not properly implemented.
 func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) (p9.QID, error) {
+	if l.path == "" {
+		return p9.QID{}, linux.EINVAL
+	}
+	if err := validateName(name); err != nil {
+		return p9.QID{}, err
+	}
 	if err := os.Mkdir(path.Join(l.path, name), os.FileMode(permissions)); err != nil {
 		return p9.QID{}, err
 	}
@@ -238,6 +286,12 @@ func (l *Local) Mkdir(name string, permissions p9.FileMode, _ p9.UID, _ p9.GID) 
 //
 // Not properly implemented.
 func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.QID, error) {
+	if l.path == "" {
+		return p9.QID{}, linux.EINVAL
+	}
+	if err := validateName(newname); err != nil {
+		return p9.QID{}, err
+	}
 	if err := os.Symlink(oldname, path.Join(l.path, newname)); err != nil {
 		return p9.QID{}, err
 	}
@@ -250,13 +304,36 @@ func (l *Local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 //
 // Not properly implemented.
 func (l *Local) Link(target p9.File, newname string) error {
-	return os.Link(target.(*Local).path, path.Join(l.path, newname))
+	if l.path == "" {
+		return linux.EINVAL
+	}
+	if err := validateName(newname); err != nil {
+		return err
+	}
+	t := target.(*Local)
+	if t.path == "" {
+		return linux.EINVAL
+	}
+	return os.Link(t.path, path.Join(l.path, newname))
 }
 
 // RenameAt implements p9.File.RenameAt.
 func (l *Local) RenameAt(oldName string, newDir p9.File, newName string) error {
+	if l.path == "" {
+		return linux.EINVAL
+	}
+	if err := validateName(oldName); err != nil {
+		return err
+	}
+	if err := validateName(newName); err != nil {
+		return err
+	}
+	nd := newDir.(*Local)
+	if nd.path == "" {
+		return linux.EINVAL
+	}
 	oldPath := path.Join(l.path, oldName)
-	newPath := path.Join(newDir.(*Local).path, newName)
+	newPath := path.Join(nd.path, newName)
 
 	return os.Rename(oldPath, newPath)
 }
@@ -265,12 +342,21 @@ func (l *Local) RenameAt(oldName string, newDir p9.File, newName string) error {
 //
 // Not properly implemented.
 func (l *Local) Readlink() (string, error) {
+	if l.path == "" {
+		return "", linux.EINVAL
+	}
 	return os.Readlink(l.path)
 }
 
 // Renamed implements p9.File.Renamed.
 func (l *Local) Renamed(parent p9.File, newName string) {
-	l.path = path.Join(parent.(*Local).path, newName)
+	p := parent.(*Local)
+	if p.path == "" || validateName(newName) != nil {
+		// Fail closed if a direct caller passes an unsafe name.
+		l.path = ""
+		return
+	}
+	l.path = path.Join(p.path, newName)
 }
 
 // SetAttr implements p9.File.SetAttr.
@@ -290,6 +376,9 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	}
 	if !valid.IsSubsetOf(supported) {
 		return linux.ENOSYS
+	}
+	if l.path == "" {
+		return linux.EINVAL
 	}
 
 	// Perform Size, ATime/MTime, and UID/GID before Permissions so that:
@@ -347,11 +436,20 @@ func (l *Local) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 
 // Remove implements p9.File.Remove.
 func (l *Local) Remove() error {
+	if l.path == "" {
+		return linux.EINVAL
+	}
 	return os.Remove(l.path)
 }
 
 // UnlinkAt implements p9.File.UnlinkAt
 func (l *Local) UnlinkAt(name string, flags uint32) error {
+	if l.path == "" {
+		return linux.EINVAL
+	}
+	if err := validateName(name); err != nil {
+		return err
+	}
 	// Construct the full path
 	fullPath := filepath.Join(l.path, name)
 
