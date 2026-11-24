@@ -29,6 +29,61 @@ import (
 	"github.com/u-root/uio/ulog"
 )
 
+// Server lock hierarchy and invariants:
+//
+// Global lock order (outermost to innermost):
+//
+//	Server.renameMu -> pathNode.opMu -> connState.fidMu -> pathNode.childMu
+//	Server.renameMu -> pathNode.opMu -> fidRef.openedMu
+//
+// Independent per-connection leaf locks (no other server lock is acquired
+// while holding any of these):
+//
+//	connState.tagMu, connState.recvMu, connState.sendMu
+//
+// Lock responsibilities and invariants:
+//
+//   - Server.renameMu (RWMutex): big global lock protecting the server-wide
+//     pathTree (fidRef.parent pointers and multi-node tree topology). Normal
+//     single-path operations (safelyRead, safelyReadParent, safelyWrite) hold
+//     renameMu for reading; multi-node or parent-mutating operations
+//     (safelyGlobal: Trename, Trenameat, Tremove, Tlink) hold it for writing
+//     and may then lock multiple pathNodes in any order. Because Go's
+//     sync.RWMutex blocks new RLock callers while a Lock writer is waiting,
+//     holding renameMu.RLock across a blocking backend call stalls waiting
+//     global ops and every subsequent read, write, or global op on the server.
+//     Files implementing OpenPreparer and UnlockedIO avoid this by dropping
+//     renameMu and opMu before Tlopen's finish closure and skipping them
+//     for ReadAt, WriteAt, and FSync.
+//   - pathNode.opMu (RWMutex): serializes same-path operations (Tlcreate,
+//     Tsymlink, Tunlinkat, Tmknod, Tmkdir, Tsetattr, Txattrcreate write-lock;
+//     Tlopen, Treadlink, Tread, Twrite, Tgetattr, Txattrwalk, Treaddir, Tfsync,
+//     Twalk, Twalkgetattr, Tclunk read-lock). It serializes Txattrcreate's
+//     pendingXattr.op transition against readers (Twrite appends
+//     pendingXattr.buf under opMu.RLock; Tlink inspects pendingXattr.op under
+//     renameMu.Lock), while pathNode.deleted uses atomics because subtree
+//     notifyDelete marks descendants without taking each descendant's opMu. At
+//     most one pathNode.opMu may be held unless renameMu is write-held, except
+//     Tunlinkat, which locks parent opMu then child opMu (parent-to-child).
+//   - connState.fidMu (Mutex): protects cs.fids. InsertFID and DeleteFID call
+//     fidRef.DecRef while holding fidMu, which can take pathNode.childMu via
+//     removeChild (and call File.Close at refs == 0). Txattrwalk calls
+//     InsertFID inside safelyRead, placing fidMu between opMu and childMu.
+//   - pathNode.childMu (RWMutex): protects childNodes, childRefs, and
+//     childRefNames on one pathNode. Under safelyWrite or safelyGlobal,
+//     notifyDelete acquires childMu.RLock recursively parent-to-child; under
+//     safelyGlobal, notifyNameChange acquires childMu.RLock parent-to-child
+//     and renameChildTo holds f.pathNode.childMu.Lock while acquiring ancestor
+//     childMus (via ref.parent.DecRef) and target.pathNode.childMu (via
+//     addChild/ref.DecRef).
+//   - fidRef.openedMu (Mutex): per-fid leaf lock protecting openState and
+//     openFlags. Held only for short state transitions and queries (including
+//     directly by Tlopen's finishOpen/abortOpen after safelyRead, and by
+//     Tread, Twrite, and Tfsync on UnlockedIO files), never across
+//     File.Open, PrepareOpen, or any other syscall.
+//   - connState.tagMu, recvMu, sendMu (Mutex): protect active request tags,
+//     incoming frame reads and recvShutdown, and outgoing frame writes.
+
 // Server is a 9p2000.L server.
 type Server struct {
 	// attacher provides the attach function.
@@ -41,10 +96,8 @@ type Server struct {
 	// for the entire server, and not per connection.
 	pathTree *pathNode
 
-	// renameMu is a global lock protecting rename operations. With this
-	// lock, we can be certain that any given rename operation can safely
-	// acquire two path nodes in any order, as all other concurrent
-	// operations acquire at most a single node.
+	// renameMu is the global RWMutex protecting pathTree mutations and
+	// multi-node operations (see the server lock hierarchy comment above).
 	renameMu sync.RWMutex
 
 	// log is a logger to log to, if specified.
@@ -160,6 +213,15 @@ type pendingXattr struct {
 	buf []byte
 }
 
+// openState tracks a fidRef's open lifecycle.
+type openState uint8
+
+const (
+	openClosed openState = iota
+	openOpening
+	openOpened
+)
+
 // fidRef wraps a node and tracks references.
 type fidRef struct {
 	// server is the associated server.
@@ -177,25 +239,23 @@ type fidRef struct {
 	// The node above will be closed only when refs reaches zero.
 	refs int64
 
-	// opened indicates whether this has been opened already.
-	//
-	// This is updated in handlers.go.
-	//
-	// opened is protected by pathNode.opMu or renameMu (for write).
-	opened bool
+	// openedMu is the per-fid leaf mutex protecting openState and openFlags
+	// (see the server lock hierarchy comment above). It is held only for
+	// short state transitions and queries, never across syscalls.
+	openedMu sync.Mutex
+
+	// openState tracks whether this fid is closed, mid-Tlopen, or opened.
+	openState openState
+
+	// openFlags is the mode used in the open, valid when openState is
+	// openOpened.
+	openFlags OpenFlags
 
 	// mode is the fidRef's mode from the walk. Only the type bits are
 	// valid, the permissions may change. This is used to sanity check
 	// operations on this element, and prevent walks across
 	// non-directories.
 	mode FileMode
-
-	// openFlags is the mode used in the open.
-	//
-	// This is updated in handlers.go.
-	//
-	// opened is protected by pathNode.opMu or renameMu (for write).
-	openFlags OpenFlags
 
 	// pathNode is the current pathNode for this fid.
 	pathNode *pathNode
@@ -210,9 +270,8 @@ type fidRef struct {
 	// parent safely.
 	//
 	// The parent will be nil for root fidRefs and pending xattrwalk/create
-	// fidRefs, and non-nil otherwise. The method maybeParent can be used
-	// to return a cyclical reference, and hasParent should be used to
-	// check for root over looking at parent directly.
+	// fidRefs, and non-nil otherwise. hasParent should be used to check
+	// for root over looking at parent directly.
 	parent *fidRef
 }
 
@@ -274,17 +333,69 @@ func (f *fidRef) isDeleted() bool {
 	return atomic.LoadUint32(&f.pathNode.deleted) != 0
 }
 
+// beginOpen transitions f from openClosed to openOpening after validating
+// its mode and open flags.
+func (f *fidRef) beginOpen(flags OpenFlags) error {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	switch f.openState {
+	case openOpened:
+		return linux.EINVAL
+	case openOpening:
+		return linux.EBUSY
+	}
+	if !CanOpen(f.mode) {
+		return linux.EINVAL
+	}
+	if f.mode.IsDir() && flags.Mode() != ReadOnly {
+		return linux.EISDIR
+	}
+	f.openState = openOpening
+	return nil
+}
+
+// finishOpen transitions f from openOpening to openOpened.
+func (f *fidRef) finishOpen(flags OpenFlags) {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	f.openState = openOpened
+	f.openFlags = flags
+}
+
+// abortOpen resets f from openOpening back to openClosed after a failed Open.
+func (f *fidRef) abortOpen() {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	if f.openState == openOpening {
+		f.openState = openClosed
+	}
+}
+
+// openInfo returns the flags f was opened with and whether f has finished
+// opening.
+func (f *fidRef) openInfo() (OpenFlags, bool) {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	return f.openFlags, f.openState == openOpened
+}
+
+// isOpened returns true if this fidRef has finished opening.
+func (f *fidRef) isOpened() bool {
+	_, opened := f.openInfo()
+	return opened
+}
+
+// isOpenActive returns true if this fidRef is currently opening or already
+// opened.
+func (f *fidRef) isOpenActive() bool {
+	f.openedMu.Lock()
+	defer f.openedMu.Unlock()
+	return f.openState != openClosed
+}
+
 // hasParent indicates whether this is a root fid.
 func (f *fidRef) hasParent() bool {
 	return f.parent == nil
-}
-
-// maybeParent returns a cyclic reference for roots, and the parent otherwise.
-func (f *fidRef) maybeParent() *fidRef {
-	if f.parent != nil {
-		return f.parent
-	}
-	return f // Root has itself.
 }
 
 // notifyDelete marks all fidRefs as deleted.
@@ -360,6 +471,21 @@ func (f *fidRef) safelyRead(fn func() error) (err error) {
 	defer f.server.renameMu.RUnlock()
 	f.pathNode.opMu.RLock()
 	defer f.pathNode.opMu.RUnlock()
+	return fn()
+}
+
+// safelyReadParent is like safelyRead, but locks the path node of the parent
+// (or of f itself, for a root). The parent may be changed by a concurrent
+// rename, so it is read only once renameMu is held.
+func (f *fidRef) safelyReadParent(fn func() error) (err error) {
+	f.server.renameMu.RLock()
+	defer f.server.renameMu.RUnlock()
+	pn := f.pathNode
+	if f.parent != nil {
+		pn = f.parent.pathNode
+	}
+	pn.opMu.RLock()
+	defer pn.opMu.RUnlock()
 	return fn()
 }
 

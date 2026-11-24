@@ -1,0 +1,905 @@
+// Copyright 2026 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package p9_test
+
+import (
+	"errors"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/hugelgupf/p9/fsimpl/templatefs"
+	"github.com/hugelgupf/p9/linux"
+	"github.com/hugelgupf/p9/p9"
+)
+
+// memNode is an inode in a memFS.
+type memNode struct {
+	qid      p9.QID
+	mode     p9.FileMode
+	children map[string]*memNode
+}
+
+// memFS is a minimal in-memory file system that records which calls the
+// server lets through to the backend.
+type memFS struct {
+	mu       sync.Mutex
+	nextPath uint64
+	root     *memNode
+
+	// openHook, if set, is called by every Open, and its error is
+	// returned.
+	openHook func() error
+
+	// opens counts calls to Open.
+	opens atomic.Int32
+
+	// linkHook, if set, is called by every Link.
+	linkHook func()
+
+	// links and unlinks count calls to Link and UnlinkAt.
+	links   atomic.Int32
+	unlinks atomic.Int32
+
+	// setXattrs counts calls to SetXattr.
+	setXattrs atomic.Int32
+
+	// readHook, writeHook and fsyncHook, if set, run during ReadAt,
+	// WriteAt and FSync.
+	readHook  func() error
+	writeHook func() error
+	fsyncHook func() error
+
+	// renames counts calls to RenameAt.
+	renames atomic.Int32
+
+	// prepareHook, if set, runs during PrepareOpen and can return a custom
+	// finish closure.
+	prepareHook func(mode p9.OpenFlags) (func() (p9.QID, uint32, error), error)
+}
+
+func newMemFS() *memFS {
+	fs := &memFS{}
+	fs.root = fs.newNode(p9.ModeDirectory)
+	return fs
+}
+
+func (fs *memFS) newNode(mode p9.FileMode) *memNode {
+	fs.nextPath++
+	n := &memNode{
+		qid:  p9.QID{Type: mode.QIDType(), Path: fs.nextPath},
+		mode: mode,
+	}
+	if mode.IsDir() {
+		n.children = make(map[string]*memNode)
+	}
+	return n
+}
+
+// add creates a node named name in dir.
+func (fs *memFS) add(dir *memNode, name string, mode p9.FileMode) *memNode {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	n := fs.newNode(mode)
+	dir.children[name] = n
+	return n
+}
+
+// memFile is a p9.File backed by a memNode.
+type memFile struct {
+	templatefs.NoopFile
+
+	fs   *memFS
+	node *memNode
+}
+
+func (f *memFile) Walk(names []string) ([]p9.QID, p9.File, error) {
+	if len(names) == 0 {
+		return nil, &memFile{fs: f.fs, node: f.node}, nil
+	}
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+	n, ok := f.node.children[names[0]]
+	if !ok {
+		return nil, nil, linux.ENOENT
+	}
+	return []p9.QID{n.qid}, &memFile{fs: f.fs, node: n}, nil
+}
+
+func (f *memFile) GetAttr(p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
+	return f.node.qid, p9.AttrMask{Mode: true}, p9.Attr{Mode: f.node.mode}, nil
+}
+
+func (f *memFile) Open(p9.OpenFlags) (p9.QID, uint32, error) {
+	f.fs.opens.Add(1)
+	if f.fs.openHook != nil {
+		if err := f.fs.openHook(); err != nil {
+			return p9.QID{}, 0, err
+		}
+	}
+	return f.node.qid, 0, nil
+}
+
+func (f *memFile) memNode() *memNode { return f.node }
+
+func (f *memFile) Link(target p9.File, name string) error {
+	f.fs.links.Add(1)
+	if f.fs.linkHook != nil {
+		f.fs.linkHook()
+	}
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+	f.node.children[name] = target.(interface{ memNode() *memNode }).memNode()
+	return nil
+}
+
+func (f *memFile) UnlinkAt(name string, _ uint32) error {
+	f.fs.unlinks.Add(1)
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+	if _, ok := f.node.children[name]; !ok {
+		return linux.ENOENT
+	}
+	delete(f.node.children, name)
+	return nil
+}
+
+func (f *memFile) GetXattr(string) ([]byte, error) {
+	return []byte("v"), nil
+}
+
+func (f *memFile) SetXattr(string, []byte, p9.XattrFlags) error {
+	f.fs.setXattrs.Add(1)
+	return nil
+}
+
+func (f *memFile) ReadAt(p []byte, _ int64) (int, error) {
+	if f.fs.readHook != nil {
+		if err := f.fs.readHook(); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+func (f *memFile) WriteAt(p []byte, _ int64) (int, error) {
+	if f.fs.writeHook != nil {
+		if err := f.fs.writeHook(); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+func (f *memFile) FSync() error {
+	if f.fs.fsyncHook != nil {
+		return f.fs.fsyncHook()
+	}
+	return nil
+}
+
+func (f *memFile) RenameAt(oldName string, newDir p9.File, newName string) error {
+	f.fs.renames.Add(1)
+	f.fs.mu.Lock()
+	defer f.fs.mu.Unlock()
+	n, ok := f.node.children[oldName]
+	if !ok {
+		return linux.ENOENT
+	}
+	delete(f.node.children, oldName)
+	newDir.(interface{ memNode() *memNode }).memNode().children[newName] = n
+	return nil
+}
+
+// unlockedMemFile wraps memFile and opts into OpenPreparer and UnlockedIO.
+type unlockedMemFile struct {
+	*memFile
+}
+
+func (f *unlockedMemFile) Walk(names []string) ([]p9.QID, p9.File, error) {
+	qids, child, err := f.memFile.Walk(names)
+	if err != nil {
+		return nil, nil, err
+	}
+	return qids, &unlockedMemFile{child.(*memFile)}, nil
+}
+
+func (f *unlockedMemFile) PrepareOpen(mode p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+	if f.fs.prepareHook != nil {
+		return f.fs.prepareHook(mode)
+	}
+	return func() (p9.QID, uint32, error) {
+		return f.Open(mode)
+	}, nil
+}
+
+func (*unlockedMemFile) UnlockedIO() bool { return true }
+
+type optedOutMemFile struct {
+	*unlockedMemFile
+}
+
+func (f *optedOutMemFile) Walk(names []string) ([]p9.QID, p9.File, error) {
+	qids, child, err := f.unlockedMemFile.Walk(names)
+	if err != nil {
+		return nil, nil, err
+	}
+	return qids, &optedOutMemFile{child.(*unlockedMemFile)}, nil
+}
+
+func (*optedOutMemFile) UnlockedIO() bool { return false }
+
+type enosysPrepareMemFile struct {
+	*unlockedMemFile
+	openCalls *atomic.Int32
+}
+
+func (f *enosysPrepareMemFile) Walk(names []string) ([]p9.QID, p9.File, error) {
+	qids, child, err := f.unlockedMemFile.Walk(names)
+	if err != nil {
+		return nil, nil, err
+	}
+	return qids, &enosysPrepareMemFile{
+		unlockedMemFile: child.(*unlockedMemFile),
+		openCalls:       f.openCalls,
+	}, nil
+}
+
+func (*enosysPrepareMemFile) PrepareOpen(p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+	return nil, linux.ENOSYS
+}
+
+func (f *enosysPrepareMemFile) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
+	f.openCalls.Add(1)
+	return f.unlockedMemFile.Open(mode)
+}
+
+// walk walks from f, failing the test on error. The new file is closed when
+// the test ends, rather than by a finalizer in the middle of it.
+func walk(t *testing.T, f p9.File, names ...string) p9.File {
+	t.Helper()
+	_, nf, err := f.Walk(names)
+	if err != nil {
+		t.Fatalf("Walk(%q): got = %v, want = nil", names, err)
+	}
+	t.Cleanup(func() { _ = nf.Close() })
+	return nf
+}
+
+// TestConcurrentTlopenOpensOnce checks that concurrent Tlopens of one fid call
+// File.Open once, return EBUSY/EINVAL immediately without waiting on an
+// in-flight Open, and that Tread racing with them sees a consistent open state
+// without blocking.
+func TestConcurrentTlopenOpensOnce(t *testing.T) {
+	const n = 8
+
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	entered := make(chan struct{}, n)
+	release := make(chan struct{})
+	fs.openHook = func() error {
+		entered <- struct{}{}
+		<-release
+		return nil
+	}
+	f := walk(t, serveFile(t, &memFile{fs: fs, node: fs.root}), "f")
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, _, err := f.Open(p9.ReadOnly)
+		firstDone <- err
+	}()
+	<-entered
+
+	// While the first Open is in flight, another Tlopen on the same fid
+	// must fail immediately with EBUSY, and Tread must fail immediately
+	// with EINVAL without waiting on File.Open.
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EBUSY) {
+		t.Errorf("concurrent Open during openOpening: got = %v, want = EBUSY", err)
+	}
+	if _, err := f.ReadAt(make([]byte, 1), 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("ReadAt during openOpening: got = %v, want = EINVAL", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for range n {
+		wg.Go(func() {
+			_, _, err := f.Open(p9.ReadOnly)
+			errs <- err
+		})
+	}
+	// Tread reads the open state that Tlopen sets.
+	stop := make(chan struct{})
+	wg.Go(func() {
+		buf := make([]byte, 1)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_, _ = f.ReadAt(buf, 0)
+			}
+		}
+	})
+
+	// Give the other Tlopens time to reach the server while Open blocks.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Errorf("first Open: got = %v, want = nil", err)
+	}
+	close(stop)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if !errors.Is(err, linux.EBUSY) && !errors.Is(err, linux.EINVAL) {
+			t.Errorf("Open: got = %v, want = EBUSY or EINVAL", err)
+		}
+	}
+	if got := fs.opens.Load(); got != 1 {
+		t.Errorf("File.Open calls: got = %d, want = 1", got)
+	}
+
+	// Also race N concurrent Tlopens directly from openClosed.
+	t.Run("concurrent_from_openClosed", func(t *testing.T) {
+		fs2 := newMemFS()
+		fs2.add(fs2.root, "f", p9.ModeRegular|0o644)
+		f2 := walk(t, serveFile(t, &memFile{fs: fs2, node: fs2.root}), "f")
+
+		var wg2 sync.WaitGroup
+		errs2 := make(chan error, n)
+		for range n {
+			wg2.Go(func() {
+				_, _, err := f2.Open(p9.ReadOnly)
+				errs2 <- err
+			})
+		}
+		wg2.Wait()
+		close(errs2)
+
+		var succeeded int
+		for err := range errs2 {
+			switch {
+			case err == nil:
+				succeeded++
+			case !errors.Is(err, linux.EBUSY) && !errors.Is(err, linux.EINVAL):
+				t.Errorf("Open: got = %v, want = nil, EBUSY or EINVAL", err)
+			}
+		}
+		if succeeded != 1 {
+			t.Errorf("successful Opens: got = %d, want = 1", succeeded)
+		}
+		if got := fs2.opens.Load(); got != 1 {
+			t.Errorf("File.Open calls: got = %d, want = 1", got)
+		}
+	})
+}
+
+// TestTlopenRetryAfterFailedOpen checks that a failed File.Open leaves the fid
+// unopened, so that it may be opened again.
+func TestTlopenRetryAfterFailedOpen(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	fs.openHook = func() error {
+		if fs.opens.Load() == 1 {
+			return linux.EACCES
+		}
+		return nil
+	}
+	f := walk(t, serveFile(t, &memFile{fs: fs, node: fs.root}), "f")
+
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EACCES) {
+		t.Fatalf("first Open: got = %v, want = EACCES", err)
+	}
+	if _, _, err := f.Open(p9.ReadOnly); err != nil {
+		t.Fatalf("second Open: got = %v, want = nil", err)
+	}
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EINVAL) {
+		t.Fatalf("third Open: got = %v, want = EINVAL", err)
+	}
+}
+
+// TestTlopenAndTxattrcreateMutuallyExclusive checks that Tlopen and
+// Txattrcreate cannot both use the same fid.
+func TestTlopenAndTxattrcreateMutuallyExclusive(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+
+	// Txattrcreate on an already-opened fid fails with EINVAL.
+	opened := walk(t, root, "f")
+	if _, _, err := opened.Open(p9.ReadWrite); err != nil {
+		t.Fatalf("Open: got = %v, want = nil", err)
+	}
+	if err := p9.SendXattrCreate(opened, "user.x", 1, 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("SendXattrCreate on opened fid: got = %v, want = EINVAL", err)
+	}
+
+	// Tlopen and a second Txattrcreate on an xattrcreate fid fail with
+	// EINVAL.
+	xattrFid := walk(t, root, "f")
+	if err := p9.SendXattrCreate(xattrFid, "user.x", 1, 0); err != nil {
+		t.Fatalf("SendXattrCreate: got = %v, want = nil", err)
+	}
+	if err := p9.SendXattrCreate(xattrFid, "user.y", 1, 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("second SendXattrCreate: got = %v, want = EINVAL", err)
+	}
+	if _, _, err := xattrFid.Open(p9.ReadOnly); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Open on xattrcreate fid: got = %v, want = EINVAL", err)
+	}
+}
+
+// TestTlinkRejectsDeletedTarget checks that Tlink does not pass a fid whose
+// file has been unlinked to File.Link. For a path-based backend, the stale
+// path may since have been replaced, e.g. by a symlink out of the export.
+func TestTlinkRejectsDeletedTarget(t *testing.T) {
+	fs := newMemFS()
+	d := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(d, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	dir := walk(t, root, "d")
+	target := walk(t, dir, "f")
+
+	if err := dir.UnlinkAt("f", 0); err != nil {
+		t.Fatalf("UnlinkAt(f): got = %v, want = nil", err)
+	}
+	if err := root.Link(target, "stolen"); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Link: got = %v, want = EINVAL", err)
+	}
+	if got := fs.links.Load(); got != 0 {
+		t.Errorf("File.Link calls: got = %d, want = 0", got)
+	}
+}
+
+// TestTlinkRejectsDirectoryTarget checks that Tlink refuses to hard link a
+// directory, as link(2) does.
+func TestTlinkRejectsDirectoryTarget(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+
+	if err := root.Link(walk(t, root, "d"), "d2"); !errors.Is(err, linux.EPERM) {
+		t.Errorf("Link: got = %v, want = EPERM", err)
+	}
+	if got := fs.links.Load(); got != 0 {
+		t.Errorf("File.Link calls: got = %d, want = 0", got)
+	}
+}
+
+// TestTlinkRejectsXattrTarget checks that Tlink refuses an xattr fid as its
+// target.
+func TestTlinkRejectsXattrTarget(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	x, err := p9.SendXattrWalk(walk(t, root, "f"), "user.x")
+	if err != nil {
+		t.Fatalf("SendXattrWalk: got = %v, want = nil", err)
+	}
+	t.Cleanup(func() { _ = x.Close() })
+
+	if err := root.Link(x, "stolen"); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Link: got = %v, want = EINVAL", err)
+	}
+	if got := fs.links.Load(); got != 0 {
+		t.Errorf("File.Link calls: got = %d, want = 0", got)
+	}
+}
+
+// TestTlinkExcludesUnlink checks that a Tunlinkat of the target cannot run
+// while Tlink is in File.Link, which would invalidate Tlink's deleted check.
+func TestTlinkExcludesUnlink(t *testing.T) {
+	fs := newMemFS()
+	d := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(d, "f", p9.ModeRegular|0o644)
+	inLink := make(chan struct{})
+	release := make(chan struct{})
+	fs.linkHook = func() {
+		close(inLink)
+		<-release
+	}
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	dir := walk(t, root, "d")
+	target := walk(t, dir, "f")
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if err := root.Link(target, "l"); err != nil {
+			t.Errorf("Link: got = %v, want = nil", err)
+		}
+	})
+	<-inLink
+	wg.Go(func() {
+		if err := dir.UnlinkAt("f", 0); err != nil {
+			t.Errorf("UnlinkAt: got = %v, want = nil", err)
+		}
+	})
+	// Give the Tunlinkat time to reach File.UnlinkAt, if it can.
+	time.Sleep(100 * time.Millisecond)
+	if got := fs.unlinks.Load(); got != 0 {
+		t.Errorf("File.UnlinkAt calls during File.Link: got = %d, want = 0", got)
+	}
+	close(release)
+	wg.Wait()
+}
+
+// TestXattrCreateOnDeletedFile checks that a Txattrcreate is not carried out
+// at Tclunk if the file was unlinked in between.
+func TestXattrCreateOnDeletedFile(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+	f := walk(t, root, "f")
+
+	if err := p9.SendXattrCreate(f, "user.x", 1, 0); err != nil {
+		t.Fatalf("SendXattrCreate: got = %v, want = nil", err)
+	}
+	if _, err := f.WriteAt([]byte("v"), 0); err != nil {
+		t.Fatalf("WriteAt: got = %v, want = nil", err)
+	}
+	if err := root.UnlinkAt("f", 0); err != nil {
+		t.Fatalf("UnlinkAt: got = %v, want = nil", err)
+	}
+	if err := f.Close(); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Close: got = %v, want = EINVAL", err)
+	}
+	if got := fs.setXattrs.Load(); got != 0 {
+		t.Errorf("File.SetXattr calls: got = %d, want = 0", got)
+	}
+}
+
+// TestWalkRejectsXattrFid checks that fids with a pending xattr operation
+// cannot be walked from or cloned.
+func TestWalkRejectsXattrFid(t *testing.T) {
+	fs := newMemFS()
+	d := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(d, "f", p9.ModeRegular|0o644)
+	root := serveFile(t, &memFile{fs: fs, node: fs.root})
+
+	x, err := p9.SendXattrWalk(walk(t, root, "d"), "user.x")
+	if err != nil {
+		t.Fatalf("SendXattrWalk: got = %v, want = nil", err)
+	}
+	t.Cleanup(func() { _ = x.Close() })
+	created := walk(t, root, "d")
+	if err := p9.SendXattrCreate(created, "user.x", 1, 0); err != nil {
+		t.Fatalf("SendXattrCreate: got = %v, want = nil", err)
+	}
+
+	for _, tt := range []struct {
+		name string
+		f    p9.File
+	}{
+		{name: "xattrwalk", f: x},
+		{name: "xattrcreate", f: created},
+	} {
+		for _, names := range [][]string{nil, {"f"}} {
+			if _, _, err := tt.f.Walk(names); !errors.Is(err, linux.EINVAL) {
+				t.Errorf("%s: Walk(%q): got = %v, want = EINVAL", tt.name, names, err)
+			}
+			if _, _, _, _, err := tt.f.WalkGetAttr(names); !errors.Is(err, linux.EINVAL) {
+				t.Errorf("%s: WalkGetAttr(%q): got = %v, want = EINVAL", tt.name, names, err)
+			}
+		}
+	}
+}
+
+// TestPrepareOpenDoesNotStallGlobalOps checks that a blocked finish closure
+// returned by PrepareOpen does not block concurrent Trenameat, Tlink or peer
+// Tlopen, while still preventing operations on the opening fid itself.
+func TestPrepareOpenDoesNotStallGlobalOps(t *testing.T) {
+	fs := newMemFS()
+	fifoNode := fs.add(fs.root, "fifo", p9.ModeNamedPipe|0o644)
+	fs.add(fs.root, "a", p9.ModeRegular|0o644)
+
+	rdEntered := make(chan struct{})
+	rdRelease := make(chan struct{})
+	fs.prepareHook = func(mode p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+		if mode.Mode() == p9.ReadOnly {
+			return func() (p9.QID, uint32, error) {
+				close(rdEntered)
+				<-rdRelease
+				return fifoNode.qid, 0, nil
+			}, nil
+		}
+		return func() (p9.QID, uint32, error) {
+			return fifoNode.qid, 0, nil
+		}, nil
+	}
+
+	root := serveFile(t, &unlockedMemFile{&memFile{fs: fs, node: fs.root}})
+	fifoRD := walk(t, root, "fifo")
+	fifoWR := walk(t, root, "fifo")
+	a := walk(t, root, "a")
+
+	rdDone := make(chan error, 1)
+	go func() {
+		_, _, err := fifoRD.Open(p9.ReadOnly)
+		rdDone <- err
+	}()
+	<-rdEntered
+
+	// Concurrent global ops (Trenameat, Tlink) and peer Open must complete
+	// without waiting for fifoRD's finish closure.
+	if err := root.RenameAt("a", root, "b"); err != nil {
+		t.Errorf("RenameAt while PrepareOpen blocked: got = %v, want = nil", err)
+	}
+	if err := root.Link(a, "c"); err != nil {
+		t.Errorf("Link while PrepareOpen blocked: got = %v, want = nil", err)
+	}
+	if _, _, err := fifoWR.Open(p9.WriteOnly); err != nil {
+		t.Errorf("peer Open while PrepareOpen blocked: got = %v, want = nil", err)
+	}
+	if _, _, err := fifoRD.Open(p9.ReadOnly); !errors.Is(err, linux.EBUSY) {
+		t.Errorf("concurrent Open on openOpening fid: got = %v, want = EBUSY", err)
+	}
+	if err := p9.SendXattrCreate(fifoRD, "user.x", 1, 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("SendXattrCreate on openOpening fid: got = %v, want = EINVAL", err)
+	}
+
+	close(rdRelease)
+	if err := <-rdDone; err != nil {
+		t.Errorf("fifoRD Open: got = %v, want = nil", err)
+	}
+}
+
+// TestPrepareOpenDirectoryRejectsMutationsWhileOpening checks that a directory
+// fid in openOpening state rejects mutating directory operations.
+func TestPrepareOpenDirectoryRejectsMutationsWhileOpening(t *testing.T) {
+	fs := newMemFS()
+	dNode := fs.add(fs.root, "d", p9.ModeDirectory|0o755)
+	fs.add(dNode, "f", p9.ModeRegular|0o644)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	fs.prepareHook = func(p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+		return func() (p9.QID, uint32, error) {
+			close(entered)
+			<-release
+			return dNode.qid, 0, nil
+		}, nil
+	}
+
+	root := serveFile(t, &unlockedMemFile{&memFile{fs: fs, node: fs.root}})
+	d := walk(t, root, "d")
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := d.Open(p9.ReadOnly)
+		done <- err
+	}()
+	<-entered
+
+	if err := d.UnlinkAt("f", 0); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("UnlinkAt on openOpening dir: got = %v, want = EINVAL", err)
+	}
+	if _, err := d.Readdir(0, 1024); !errors.Is(err, linux.EINVAL) {
+		t.Errorf("Readdir on openOpening dir: got = %v, want = EINVAL", err)
+	}
+
+	close(release)
+	if err := <-done; err != nil {
+		t.Errorf("Open: got = %v, want = nil", err)
+	}
+}
+
+// TestPrepareOpenRetryAfterErrors checks that errors (or a nil finish closure)
+// from PrepareOpen or its finish closure reset openState back to openClosed.
+func TestPrepareOpenRetryAfterErrors(t *testing.T) {
+	fs := newMemFS()
+	fNode := fs.add(fs.root, "f", p9.ModeRegular|0o644)
+
+	var step atomic.Int32
+	fs.prepareHook = func(p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+		switch step.Add(1) {
+		case 1:
+			return nil, linux.EACCES
+		case 2:
+			return nil, nil
+		case 3:
+			return func() (p9.QID, uint32, error) {
+				return p9.QID{}, 0, linux.EIO
+			}, nil
+		default:
+			return func() (p9.QID, uint32, error) {
+				return fNode.qid, 0, nil
+			}, nil
+		}
+	}
+
+	f := walk(t, serveFile(t, &unlockedMemFile{&memFile{fs: fs, node: fs.root}}), "f")
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EACCES) {
+		t.Fatalf("attempt 1: got = %v, want = EACCES", err)
+	}
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EINVAL) {
+		t.Fatalf("attempt 2 (nil finish): got = %v, want = EINVAL", err)
+	}
+	if _, _, err := f.Open(p9.ReadOnly); !errors.Is(err, linux.EIO) {
+		t.Fatalf("attempt 3 (finish error): got = %v, want = EIO", err)
+	}
+	if _, _, err := f.Open(p9.ReadOnly); err != nil {
+		t.Fatalf("attempt 4 (retry): got = %v, want = nil", err)
+	}
+}
+
+// TestPrepareOpenENOSYSFallback checks that a wrapper returning linux.ENOSYS
+// from PrepareOpen falls back to calling Open under the server read lock.
+func TestPrepareOpenENOSYSFallback(t *testing.T) {
+	fs := newMemFS()
+	fs.add(fs.root, "f", p9.ModeRegular|0o644)
+	fs.add(fs.root, "a", p9.ModeRegular|0o644)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	fs.openHook = func() error {
+		close(entered)
+		<-release
+		return nil
+	}
+	fs.prepareHook = func(p9.OpenFlags) (func() (p9.QID, uint32, error), error) {
+		return nil, linux.EACCES
+	}
+
+	var openCalls atomic.Int32
+	root := serveFile(t, &enosysPrepareMemFile{
+		unlockedMemFile: &unlockedMemFile{&memFile{fs: fs, node: fs.root}},
+		openCalls:       &openCalls,
+	})
+	f := walk(t, root, "f")
+
+	openDone := make(chan error, 1)
+	go func() {
+		_, _, err := f.Open(p9.ReadOnly)
+		openDone <- err
+	}()
+	<-entered
+
+	renameDone := make(chan error, 1)
+	go func() {
+		renameDone <- root.RenameAt("a", root, "b")
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if got := fs.renames.Load(); got != 0 {
+		t.Errorf("File.RenameAt calls during ENOSYS fallback Open: got = %d, want = 0", got)
+	}
+
+	close(release)
+	if err := <-openDone; err != nil {
+		t.Fatalf("Open: got = %v, want = nil", err)
+	}
+	if err := <-renameDone; err != nil {
+		t.Fatalf("RenameAt: got = %v, want = nil", err)
+	}
+	if got := openCalls.Load(); got != 1 {
+		t.Errorf("wrapper Open calls = %d, want 1", got)
+	}
+}
+
+// TestUnlockedIODoesNotStallRename checks that blocked ReadAt, WriteAt and
+// FSync on an UnlockedIO file do not block concurrent Trenameat, while a plain
+// File retains the server read lock across ReadAt.
+func TestUnlockedIODoesNotStallRename(t *testing.T) {
+	t.Run("unlocked", func(t *testing.T) {
+		for _, op := range []string{"read", "write", "fsync"} {
+			t.Run(op, func(t *testing.T) {
+				fs := newMemFS()
+				fs.add(fs.root, "f", p9.ModeRegular|0o644)
+				fs.add(fs.root, "a", p9.ModeRegular|0o644)
+
+				entered := make(chan struct{})
+				release := make(chan struct{})
+				block := func() error {
+					close(entered)
+					<-release
+					return nil
+				}
+				switch op {
+				case "read":
+					fs.readHook = block
+				case "write":
+					fs.writeHook = block
+				case "fsync":
+					fs.fsyncHook = block
+				}
+
+				root := serveFile(t, &unlockedMemFile{&memFile{fs: fs, node: fs.root}})
+				f := walk(t, root, "f")
+				if _, _, err := f.Open(p9.ReadWrite); err != nil {
+					t.Fatalf("Open: got = %v, want = nil", err)
+				}
+
+				done := make(chan error, 1)
+				go func() {
+					var err error
+					switch op {
+					case "read":
+						_, err = f.ReadAt(make([]byte, 4), 0)
+					case "write":
+						_, err = f.WriteAt([]byte("abcd"), 0)
+					case "fsync":
+						err = f.FSync()
+					}
+					done <- err
+				}()
+				<-entered
+
+				if err := root.RenameAt("a", root, "b"); err != nil {
+					t.Errorf("RenameAt during blocked %s: got = %v, want = nil", op, err)
+				}
+				close(release)
+				if err := <-done; err != nil {
+					t.Errorf("%s: got = %v, want = nil", op, err)
+				}
+			})
+		}
+	})
+
+	for _, tt := range []struct {
+		name string
+		wrap func(*memFS) p9.File
+	}{
+		{name: "plain_file_retains_read_lock", wrap: func(fs *memFS) p9.File { return &memFile{fs: fs, node: fs.root} }},
+		{name: "opted_out_retains_read_lock", wrap: func(fs *memFS) p9.File {
+			return &optedOutMemFile{&unlockedMemFile{&memFile{fs: fs, node: fs.root}}}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newMemFS()
+			fs.add(fs.root, "f", p9.ModeRegular|0o644)
+			fs.add(fs.root, "a", p9.ModeRegular|0o644)
+
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			fs.readHook = func() error {
+				close(entered)
+				<-release
+				return nil
+			}
+
+			root := serveFile(t, tt.wrap(fs))
+			f := walk(t, root, "f")
+			if _, _, err := f.Open(p9.ReadOnly); err != nil {
+				t.Fatalf("Open: got = %v, want = nil", err)
+			}
+
+			readDone := make(chan error, 1)
+			go func() {
+				_, err := f.ReadAt(make([]byte, 4), 0)
+				readDone <- err
+			}()
+			<-entered
+
+			renameDone := make(chan error, 1)
+			go func() {
+				renameDone <- root.RenameAt("a", root, "b")
+			}()
+			time.Sleep(50 * time.Millisecond)
+			if got := fs.renames.Load(); got != 0 {
+				t.Errorf("File.RenameAt calls during ReadAt: got = %d, want = 0", got)
+			}
+
+			close(release)
+			if err := <-readDone; err != nil {
+				t.Errorf("ReadAt: got = %v, want = nil", err)
+			}
+			if err := <-renameDone; err != nil {
+				t.Errorf("RenameAt: got = %v, want = nil", err)
+			}
+		})
+	}
+}
