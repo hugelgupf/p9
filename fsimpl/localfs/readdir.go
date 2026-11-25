@@ -1,6 +1,7 @@
 package localfs
 
 import (
+	"hash/fnv"
 	"os"
 	"path"
 
@@ -21,7 +22,13 @@ func (l *Local) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 		entry := Local{path: path.Join(l.path, fi[i].Name())}
 		qid, _, err := entry.info()
 		if err != nil {
-			continue
+			// The entry exists but can't be stat'ed (e.g. no search
+			// permission on l.path). List it anyway, like ls does;
+			// the client gets the real error when it walks to it.
+			qid = p9.QID{
+				Type: p9.ModeFromOS(fi[i].Type()).QIDType(),
+				Path: fallbackQidPath(entry.path),
+			}
 		}
 		dirents = append(dirents, p9.Dirent{
 			QID:    qid,
@@ -31,4 +38,16 @@ func (l *Local) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 		})
 	}
 	return dirents, nil
+}
+
+// fallbackQidPath returns a stable qid path for an entry that couldn't be
+// stat'ed. It is never 0: clients turn qid.path into d_ino, and readdir(3)
+// skips entries whose d_ino is 0.
+func fallbackQidPath(p string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(p))
+	if q := h.Sum64(); q != 0 {
+		return q
+	}
+	return 1
 }
