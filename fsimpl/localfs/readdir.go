@@ -11,7 +11,9 @@ import (
 // Readdir implements p9.File.Readdir.
 func (l *Local) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	fi, err := os.ReadDir(l.path)
-	if err != nil {
+	// os.ReadDir returns the entries it read before failing; serve those
+	// rather than nothing.
+	if err != nil && len(fi) == 0 {
 		return nil, err
 	}
 	if offset >= uint64(len(fi)) {
