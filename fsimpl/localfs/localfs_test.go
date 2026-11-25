@@ -15,6 +15,7 @@
 package localfs
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -241,6 +242,79 @@ func TestReaddirPagination(t *testing.T) {
 		if len(ents) != 0 {
 			t.Fatalf("Readdir(offset=%d) = %v, want empty", off, ents)
 		}
+	}
+}
+
+func TestReaddirUnstatableEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod can't revoke directory search permission on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory search permission")
+	}
+
+	tempDir := t.TempDir()
+	dir := filepath.Join(tempDir, "d")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a"), nil, 0666); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Readable but not searchable: entries can be listed, not stat'ed.
+	if err := os.Chmod(dir, 0400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+
+	root, err := Attacher(tempDir).Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+
+	_, d, err := root.Walk([]string{"d"})
+	if err != nil {
+		t.Fatalf("Walk(d) = %v", err)
+	}
+	defer d.Close()
+	if _, _, err := d.Open(p9.ReadOnly); err != nil {
+		t.Fatal(err)
+	}
+
+	ents, err := d.Readdir(0, 10)
+	if err != nil {
+		t.Fatalf("Readdir() = %v", err)
+	}
+	want := []struct {
+		name string
+		typ  p9.QIDType
+	}{
+		{"a", p9.TypeRegular},
+		{"sub", p9.TypeDir},
+	}
+	if len(ents) != len(want) {
+		t.Fatalf("Readdir() = %v, want entries %v", ents, want)
+	}
+	for i, w := range want {
+		e := ents[i]
+		if e.Name != w.name || e.Type != w.typ || e.QID.Type != w.typ {
+			t.Errorf("entry %d = %+v, want name %q type %v", i, e, w.name, w.typ)
+		}
+		if e.QID.Path == 0 {
+			t.Errorf("entry %q has qid path 0", e.Name)
+		}
+	}
+	if ents[0].QID.Path == ents[1].QID.Path {
+		t.Errorf("entries share qid path %#x", ents[0].QID.Path)
+	}
+
+	// The listed entry still can't be walked to.
+	if _, _, err := root.Walk([]string{"d", "a"}); !errors.Is(err, os.ErrPermission) {
+		t.Errorf("Walk(d/a) = %v, want permission error", err)
 	}
 }
 
